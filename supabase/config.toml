@@ -1,7 +1,7 @@
 project_id = "axujlpactjxsrzpssaup"
 
 [functions.crypto-prices]
-verify_jwt = false
+verify_jwt = true
 
 [functions.ai-insights]
-verify_jwt = false
+verify_jwt = true

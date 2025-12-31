@@ -1,11 +1,23 @@
-import { Activity, Settings, Wallet } from 'lucide-react';
+import { Activity, Settings, Wallet, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 
 interface HeaderProps {
   onSettingsClick?: () => void;
 }
 
 export function Header({ onSettingsClick }: HeaderProps) {
+  const { signOut, user } = useAuth();
+  const navigate = useNavigate();
+
+  const handleSignOut = async () => {
+    await signOut();
+    toast.success('Signed out successfully');
+    navigate('/auth');
+  };
+
   return (
     <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
       <div className="container mx-auto px-4 py-4">
@@ -43,6 +55,13 @@ export function Header({ onSettingsClick }: HeaderProps) {
               </div>
             </div>
 
+            {/* User email */}
+            {user && (
+              <div className="hidden lg:block text-xs text-muted-foreground font-mono">
+                {user.email}
+              </div>
+            )}
+
             {/* Settings */}
             <Button
               variant="outline"
@@ -51,6 +70,17 @@ export function Header({ onSettingsClick }: HeaderProps) {
               className="border-border hover:border-primary hover:bg-primary/10"
             >
               <Settings className="w-4 h-4" />
+            </Button>
+
+            {/* Sign Out */}
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={handleSignOut}
+              className="border-border hover:border-destructive hover:bg-destructive/10"
+              title="Sign Out"
+            >
+              <LogOut className="w-4 h-4" />
             </Button>
           </div>
         </div>
