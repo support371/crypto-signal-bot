@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { CryptoPrice } from '@/types/crypto';
 import { useAuth } from '@/contexts/AuthContext';
+import { handleAuthError } from '@/lib/handleAuthError';
 
 const DEFAULT_COINS = [
   'bitcoin', 'ethereum', 'solana', 'binancecoin', 'cardano',
@@ -41,8 +42,10 @@ export function useCryptoPrices(symbols?: string[]) {
         setLastUpdate(new Date());
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to fetch prices';
-      setError(message);
+      if (!handleAuthError(err)) {
+        const message = err instanceof Error ? err.message : 'Failed to fetch prices';
+        setError(message);
+      }
     } finally {
       setIsLoading(false);
     }

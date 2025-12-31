@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { CryptoPrice } from '@/types/crypto';
 import { toast } from 'sonner';
+import { handleAuthError } from '@/lib/handleAuthError';
 
 export function useAIInsights() {
   const [insight, setInsight] = useState<string | null>(null);
@@ -26,15 +27,20 @@ export function useAIInsights() {
         setInsight(data.insight);
       }
     } catch (err) {
+      if (handleAuthError(err)) {
+        setInsight(null);
+        return;
+      }
+
       const message = err instanceof Error ? err.message : 'Failed to generate insight';
       console.error('AI insight error:', err);
-      
+
       if (message.includes('Rate limited')) {
         toast.error('AI rate limited - please try again later');
       } else if (message.includes('credits')) {
         toast.error('AI credits exhausted');
       }
-      
+
       setInsight(null);
     } finally {
       setIsLoading(false);
