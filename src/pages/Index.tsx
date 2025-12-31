@@ -8,17 +8,32 @@ import { SignalPanel } from '@/components/dashboard/SignalPanel';
 import { RiskGauge } from '@/components/dashboard/RiskGauge';
 import { MicrostructureDisplay } from '@/components/dashboard/MicrostructureDisplay';
 import { AIInsightCard } from '@/components/dashboard/AIInsightCard';
+import { SettingsModal, UserSettings, DEFAULT_SETTINGS } from '@/components/dashboard/SettingsModal';
+import { toast } from 'sonner';
 
 const Index = () => {
   const [selectedSymbol, setSelectedSymbol] = useState('bitcoin');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
+  
   const { prices, isLoading, error } = useCryptoPrices();
   const selectedCoin = prices.find(p => p.id === selectedSymbol) || null;
   
-  const { signal, risk, microstructure } = useSignalEngine(selectedCoin);
+  const { signal, risk, microstructure } = useSignalEngine(selectedCoin, {
+    riskTolerance: settings.riskTolerance,
+    spreadStressThreshold: settings.spreadStressThreshold,
+    volatilitySensitivity: settings.volatilitySensitivity,
+    positionSizeFraction: settings.positionSizeFraction,
+  });
+
+  const handleSettingsChange = (newSettings: UserSettings) => {
+    setSettings(newSettings);
+    toast.success('Settings updated successfully');
+  };
 
   return (
     <div className="min-h-screen bg-background scanlines">
-      <Header />
+      <Header onSettingsClick={() => setSettingsOpen(true)} />
       
       <PriceTicker 
         prices={prices} 
@@ -80,6 +95,14 @@ const Index = () => {
           </span>
         </div>
       </footer>
+
+      {/* Settings Modal */}
+      <SettingsModal
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        settings={settings}
+        onSettingsChange={handleSettingsChange}
+      />
     </div>
   );
 };
