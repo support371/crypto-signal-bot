@@ -1,10 +1,8 @@
-import { toast } from 'sonner';
-
 /**
- * Checks if an error is a 401 authentication error and shows a user-friendly toast.
+ * Checks if an error is a 401 authentication error.
  * Returns true if it was a 401 error (caller should handle gracefully).
  */
-export function handleAuthError(error: unknown): boolean {
+export function isAuthError(error: unknown): boolean {
   const anyErr = error as any;
   const status: number | undefined =
     (typeof anyErr?.status === 'number' && anyErr.status) ||
@@ -12,26 +10,32 @@ export function handleAuthError(error: unknown): boolean {
 
   const message = error instanceof Error ? error.message : String(error);
 
-  const is401 =
+  return (
     status === 401 ||
     message.includes('401') ||
     message.includes('Invalid token') ||
     message.includes('Invalid JWT') ||
-    message.includes('Unauthorized');
+    message.includes('Unauthorized')
+  );
+}
 
-  if (!is401) return false;
+// Callback to trigger the auth banner (set by AuthBannerContext)
+let triggerAuthBannerFn: (() => void) | null = null;
 
-  toast.error('Session expired or not logged in', {
-    id: 'auth-required',
-    description: 'Please sign in to continue.',
-    action: {
-      label: 'Sign In',
-      onClick: () => {
-        window.location.href = '/auth';
-      },
-    },
-    duration: 8000,
-  });
+export function setAuthBannerTrigger(fn: (() => void) | null) {
+  triggerAuthBannerFn = fn;
+}
+
+/**
+ * Checks if an error is a 401 authentication error and triggers the auth banner.
+ * Returns true if it was a 401 error (caller should handle gracefully).
+ */
+export function handleAuthError(error: unknown): boolean {
+  if (!isAuthError(error)) return false;
+
+  if (triggerAuthBannerFn) {
+    triggerAuthBannerFn();
+  }
 
   return true;
 }
