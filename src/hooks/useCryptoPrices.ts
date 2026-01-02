@@ -31,11 +31,19 @@ export function useCryptoPrices(symbols?: string[]) {
     try {
       setError(null);
 
+      // Always pull the freshest token (auto-refresh may update it without our context re-rendering yet)
+      const { data: authData } = await supabase.auth.getSession();
+      const accessToken = authData.session?.access_token;
+
       const { data, error: fnError } = await supabase.functions.invoke('crypto-prices', {
         body: { symbols: symbols || DEFAULT_COINS },
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
+        ...(accessToken
+          ? {
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+              },
+            }
+          : {}),
       });
 
       if (fnError) throw new Error(fnError.message);
