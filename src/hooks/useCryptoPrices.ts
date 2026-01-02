@@ -1,13 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { CryptoPrice } from '@/types/crypto';
 import { useAuth } from '@/contexts/AuthContext';
-import { handleAuthError } from '@/lib/handleAuthError';
+import { invokeEdgeFunction } from '@/lib/invokeEdgeFunction';
 
 const DEFAULT_COINS = [
   'bitcoin', 'ethereum', 'solana', 'binancecoin', 'cardano',
   'ripple', 'polkadot', 'avalanche-2', 'dogecoin', 'chainlink'
 ];
+
+interface CryptoPricesResponse {
+  prices: CryptoPrice[];
+}
 
 export function useCryptoPrices(symbols?: string[]) {
   const { session, isLoading: authLoading } = useAuth();
@@ -18,7 +21,6 @@ export function useCryptoPrices(symbols?: string[]) {
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
   const fetchPrices = useCallback(async () => {
-    // If not authenticated yet, don't call the backend function (it requires a user JWT).
     if (authLoading) return;
     if (!session) {
       setIsLoading(false);
@@ -31,32 +33,20 @@ export function useCryptoPrices(symbols?: string[]) {
     try {
       setError(null);
 
-      // Always pull the freshest token (auto-refresh may update it without our context re-rendering yet)
-      const { data: authData } = await supabase.auth.getSession();
-      const accessToken = authData.session?.access_token;
+      const { data, error: invokeError } = await invokeEdgeFunction<CryptoPricesResponse>(
+        'crypto-prices',
+        { body: { symbols: symbols || DEFAULT_COINS } }
+      );
 
-      const { data, error: fnError } = await supabase.functions.invoke('crypto-prices', {
-        body: { symbols: symbols || DEFAULT_COINS },
-        ...(accessToken
-          ? {
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-              },
-            }
-          : {}),
-      });
-
-      if (fnError) throw new Error(fnError.message);
+      if (invokeError) throw invokeError;
 
       if (data?.prices) {
         setPrices(data.prices);
         setLastUpdate(new Date());
       }
     } catch (err) {
-      if (!handleAuthError(err)) {
-        const message = err instanceof Error ? err.message : 'Failed to fetch prices';
-        setError(message);
-      }
+      const message = err instanceof Error ? err.message : 'Failed to fetch prices';
+      setError(message);
     } finally {
       setIsLoading(false);
     }
@@ -67,11 +57,9 @@ export function useCryptoPrices(symbols?: string[]) {
 
     if (authLoading || !session) return;
 
-    // Refresh every 30 seconds
     const interval = setInterval(fetchPrices, 30000);
     return () => clearInterval(interval);
   }, [authLoading, session, fetchPrices]);
 
   return { prices, isLoading, error, lastUpdate, refetch: fetchPrices };
 }
-

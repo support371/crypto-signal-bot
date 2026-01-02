@@ -1,8 +1,11 @@
 import { useState, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { CryptoPrice } from '@/types/crypto';
 import { toast } from 'sonner';
-import { handleAuthError } from '@/lib/handleAuthError';
+import { invokeEdgeFunction } from '@/lib/invokeEdgeFunction';
+
+interface AIInsightResponse {
+  insight: string;
+}
 
 export function useAIInsights() {
   const [insight, setInsight] = useState<string | null>(null);
@@ -15,33 +18,19 @@ export function useAIInsights() {
   ) => {
     setIsLoading(true);
     try {
-      const { data: authData } = await supabase.auth.getSession();
-      const accessToken = authData.session?.access_token;
-
-      const { data, error } = await supabase.functions.invoke('ai-insights', {
-        body: { priceData, signal, riskScore },
-        ...(accessToken
-          ? {
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-              },
-            }
-          : {}),
-      });
+      const { data, error } = await invokeEdgeFunction<AIInsightResponse>(
+        'ai-insights',
+        { body: { priceData, signal, riskScore } }
+      );
 
       if (error) {
-        throw new Error(error.message);
+        throw error;
       }
 
       if (data?.insight) {
         setInsight(data.insight);
       }
     } catch (err) {
-      if (handleAuthError(err)) {
-        setInsight(null);
-        return;
-      }
-
       const message = err instanceof Error ? err.message : 'Failed to generate insight';
       console.error('AI insight error:', err);
 
