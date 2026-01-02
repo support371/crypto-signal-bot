@@ -33,6 +33,9 @@ export function useCryptoPrices(symbols?: string[]) {
 
       const { data, error: fnError } = await supabase.functions.invoke('crypto-prices', {
         body: { symbols: symbols || DEFAULT_COINS },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
       });
 
       if (fnError) throw new Error(fnError.message);
