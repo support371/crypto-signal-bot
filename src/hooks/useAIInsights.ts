@@ -15,8 +15,18 @@ export function useAIInsights() {
   ) => {
     setIsLoading(true);
     try {
+      const { data: authData } = await supabase.auth.getSession();
+      const accessToken = authData.session?.access_token;
+
       const { data, error } = await supabase.functions.invoke('ai-insights', {
-        body: { priceData, signal, riskScore }
+        body: { priceData, signal, riskScore },
+        ...(accessToken
+          ? {
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+              },
+            }
+          : {}),
       });
 
       if (error) {
