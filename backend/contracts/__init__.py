@@ -1,0 +1,1 @@
+# Make 'contracts' a package
