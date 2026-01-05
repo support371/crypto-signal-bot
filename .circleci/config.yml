@@ -1,0 +1,31 @@
+version: 2.1
+
+jobs:
+  build:
+    docker:
+      - image: cimg/node:16.13.2
+      - image: cimg/python:3.10.2
+    steps:
+      - checkout
+      - run:
+          name: "Install Frontend Dependencies"
+          command: |
+            npm install
+      - run:
+          name: "Build Frontend"
+          command: |
+            npm run build
+      - run:
+          name: "Install Backend Dependencies"
+          command: |
+            pip install -r backend/requirements.txt
+      - run:
+          name: "Placeholder for Deployment"
+          command: |
+            echo "Deployment step would go here"
+
+workflows:
+  version: 2
+  build-and-deploy:
+    jobs:
+      - build
