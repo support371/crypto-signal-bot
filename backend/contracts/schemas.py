@@ -4,12 +4,31 @@ Core data contracts for the trading pipeline, using Pydantic for validation.
 from typing import Dict, Any, Literal
 from pydantic import BaseModel, Field
 
+from enum import Enum
+
 SignalDirection = Literal["UP", "DOWN", "NEUTRAL"]
 MarketRegime = Literal["TREND", "RANGE", "CHAOS"]
 Posture = Literal["GREEN", "AMBER", "RED"]
-IntentAction = Literal["ENTER_LONG", "ENTER_SHORT", "EXIT", "REDUCE", "HOLD"]
-OrderStatus = Literal["NEW", "SENT", "ACKED", "PARTIAL", "FILLED", "CANCELED", "REJECTED"]
-OrderSide = Literal["BUY", "SELL"]
+
+class IntentAction(str, Enum):
+    ENTER_LONG = "ENTER_LONG"
+    ENTER_SHORT = "ENTER_SHORT"
+    EXIT = "EXIT"
+    REDUCE = "REDUCE"
+    HOLD = "HOLD"
+
+class OrderStatus(str, Enum):
+    NEW = "NEW"
+    SENT = "SENT"
+    ACKED = "ACKED"
+    PARTIAL = "PARTIAL"
+    FILLED = "FILLED"
+    CANCELED = "CANCELED"
+    REJECTED = "REJECTED"
+
+class OrderSide(str, Enum):
+    BUY = "BUY"
+    SELL = "SELL"
 
 class Signal(BaseModel):
     direction: SignalDirection

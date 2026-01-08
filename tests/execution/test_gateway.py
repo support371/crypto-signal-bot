@@ -9,5 +9,5 @@ def test_get_bitget_adapter():
     assert isinstance(gateway, StubBitgetAdapter)
 
 def test_unknown_venue_raises_error():
-    with pytest.raises(ValueError, match="Unknown venue"):
+    with pytest.raises(ValueError, match="No execution gateway found for venue: unknown_venue"):
         get_execution_gateway("unknown_venue")
