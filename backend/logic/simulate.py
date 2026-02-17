@@ -10,7 +10,7 @@ from dataclasses import dataclass
 import random
 import time
 
-from backend.models import MarketTick, Signal, RiskDecision, Features
+from backend.models_core import MarketTick, Signal, RiskDecision, Features
 from backend.logic.features import compute_features
 from backend.logic.signals import build_signal
 from backend.logic.risk import compute_risk_score, risk_gate

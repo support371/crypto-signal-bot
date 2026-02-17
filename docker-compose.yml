@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - backend/env/.env
+    environment:
+      - TRADING_MODE=paper
+      - NETWORK=testnet
+      - CORS_ORIGINS=http://localhost:5173,http://localhost:8080,http://localhost:3000
+      - AUDIT_STORE_PATH=backend/data/audit.json
+    volumes:
+      - ./backend:/app/backend
+      - audit-data:/app/backend/data
+
+volumes:
+  audit-data:

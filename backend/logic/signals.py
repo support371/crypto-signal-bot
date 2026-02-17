@@ -2,7 +2,7 @@
 Signal engine: classify regime and generate direction + confidence.
 """
 
-from backend.models import Features, Signal
+from backend.models_core import Features, Signal
 
 
 def classify_regime(features: Features) -> str:

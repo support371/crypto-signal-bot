@@ -3,7 +3,7 @@ Risk engine: compute risk score and decide ENTER / EXIT / HOLD.
 Paper-only sizing, no real trading.
 """
 
-from backend.models import Features, Signal, RiskDecision
+from backend.models_core import Features, Signal, RiskDecision
 
 
 def compute_risk_score(features: Features) -> float:
