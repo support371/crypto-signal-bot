@@ -16,6 +16,39 @@ const authSchema = z.object({
   password: z.string().min(6, 'Password must be at least 6 characters'),
 });
 
+/**
+ * Map Supabase auth error messages to user-friendly messages.
+ * Uses case-insensitive matching for resilience across Supabase versions.
+ */
+function friendlyAuthError(message: string): string {
+  const lower = message.toLowerCase();
+
+  if (lower.includes('invalid login credentials') || lower.includes('invalid_credentials')) {
+    return 'Invalid email or password. Please try again.';
+  }
+  if (lower.includes('email not confirmed')) {
+    return 'Please confirm your email before signing in. Check your inbox.';
+  }
+  if (lower.includes('user already registered') || lower.includes('already exists')) {
+    return 'An account with this email already exists. Try signing in instead.';
+  }
+  if (lower.includes('rate limit') || lower.includes('too many requests') || lower.includes('429')) {
+    return 'Too many attempts. Please wait a moment and try again.';
+  }
+  if (lower.includes('password') && lower.includes('weak')) {
+    return 'Password is too weak. Please choose a stronger password.';
+  }
+  if (lower.includes('network') || lower.includes('fetch') || lower.includes('failed to fetch') || lower.includes('load failed')) {
+    return 'Network error. Please check your connection and try again.';
+  }
+  if (lower.includes('signup disabled') || lower.includes('signups not allowed')) {
+    return 'Sign up is currently disabled. Please contact support.';
+  }
+
+  // Fallback — show the original message
+  return message || 'An unexpected error occurred. Please try again.';
+}
+
 const Auth = () => {
   const navigate = useNavigate();
   const { user, isLoading: authLoading, signIn, signUp } = useAuth();
@@ -54,20 +87,18 @@ const Auth = () => {
     if (!validateForm()) return;
 
     setIsLoading(true);
-    const { error } = await signIn(email, password);
-    setIsLoading(false);
-
-    if (error) {
-      if (error.message.includes('Invalid login credentials')) {
-        toast.error('Invalid email or password');
-      } else if (error.message.includes('Email not confirmed')) {
-        toast.error('Please confirm your email before signing in');
+    try {
+      const { error } = await signIn(email, password);
+      if (error) {
+        toast.error(friendlyAuthError(error.message));
       } else {
-        toast.error(error.message);
+        toast.success('Welcome back!');
+        navigate('/');
       }
-    } else {
-      toast.success('Welcome back!');
-      navigate('/');
+    } catch {
+      toast.error('An unexpected error occurred. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -76,17 +107,17 @@ const Auth = () => {
     if (!validateForm()) return;
 
     setIsLoading(true);
-    const { error } = await signUp(email, password);
-    setIsLoading(false);
-
-    if (error) {
-      if (error.message.includes('User already registered')) {
-        toast.error('An account with this email already exists');
+    try {
+      const { error } = await signUp(email, password);
+      if (error) {
+        toast.error(friendlyAuthError(error.message));
       } else {
-        toast.error(error.message);
+        toast.success('Account created! Check your email to confirm, then sign in.');
       }
-    } else {
-      toast.success('Account created! You can now sign in.');
+    } catch {
+      toast.error('An unexpected error occurred. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -164,9 +195,9 @@ const Auth = () => {
                 </div>
               </CardContent>
               <CardFooter>
-                <Button 
-                  type="submit" 
-                  className="w-full font-mono" 
+                <Button
+                  type="submit"
+                  className="w-full font-mono"
                   disabled={isLoading}
                 >
                   {isLoading ? (
@@ -226,9 +257,9 @@ const Auth = () => {
                 </div>
               </CardContent>
               <CardFooter>
-                <Button 
-                  type="submit" 
-                  className="w-full font-mono" 
+                <Button
+                  type="submit"
+                  className="w-full font-mono"
                   disabled={isLoading}
                 >
                   {isLoading ? (
