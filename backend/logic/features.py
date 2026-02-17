@@ -7,7 +7,7 @@ Transforms a sliding window of MarketTick data into a Features object.
 from typing import List, Optional
 import statistics
 
-from backend.models import MarketTick, Features
+from backend.models_core import MarketTick, Features
 
 
 def compute_features(window: List[MarketTick],

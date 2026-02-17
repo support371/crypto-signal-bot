@@ -1,2 +1,26 @@
 __pycache__/
 *.pyc
+*.pyo
+
+# Backend data (audit persistence)
+backend/data/
+
+# Environment files with secrets
+backend/env/.env
+!backend/env/.env.example
+
+# Python
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Node
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+
+# Docker
+docker-compose.override.yml

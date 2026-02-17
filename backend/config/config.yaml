@@ -1,0 +1,35 @@
+# Backend configuration for Crypto Signal Bot
+# Risk limits, kill-switch thresholds, and exchange settings.
+
+risk:
+  max_position_pct: 0.05       # Max 5% of portfolio in a single position
+  max_daily_loss_pct: 0.03     # Max 3% daily loss before halt
+  volatility_threshold: 0.08   # Spread > 8% triggers CHAOS regime
+  max_leverage: 1.0            # No leverage (spot only)
+  max_slippage_pct: 0.005      # 0.5% max slippage tolerance
+  risk_score_reject_threshold: 70.0
+
+kill_switch:
+  max_api_errors: 10           # Halt after 10 consecutive API errors
+  max_failed_orders: 5         # Halt after 5 consecutive failed orders
+  max_daily_loss_pct: 0.05     # Halt after 5% daily loss
+
+exchange:
+  default: binance
+  binance:
+    base_url_testnet: https://testnet.binance.vision
+    base_url_mainnet: https://api.binance.com
+    recv_window: 5000
+    timeout: 10
+
+paper:
+  starting_balance_usdt: 10000.0
+  slippage_range_pct: [0.01, 0.05]
+
+server:
+  host: 0.0.0.0
+  port: 8000
+  cors_origins:
+    - http://localhost:5173
+    - http://localhost:8080
+    - http://localhost:3000
