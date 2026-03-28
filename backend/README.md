@@ -1,27 +1,85 @@
 # Crypto Signal Bot Backend
 
-This backend is a simulated crypto automation control center designed for paper trading only.
+This backend is the active FastAPI trading backend currently merged into `main`.
 
-## Implemented modules
+## Runtime model
 
-1. **Listener** — generates market and listing events.
-2. **Scorer** — scores opportunities from listener output.
-3. **Guardian** — applies hard risk rules and approval logic.
-4. **Execution Router** — turns approved intents into simulated orders and positions.
-5. **Audit Store** — persists events, scores, approvals, rejections, orders, and fills.
-6. **Health API** — exposes module status and runtime metrics.
+- Default mode: `paper`
+- Current execution logic: **paper-only**
+- Live intent endpoint exists, but in the merged backend it still routes through paper execution logic unless future real exchange integration is added deliberately
+- No real exchange connection is active by default
 
-## Run
+## Main application
+
+- Entry point: `backend/app.py`
+- Framework: **FastAPI**
+- Local serving: **Uvicorn**
+
+## Available routes
+
+### HTTP
+- `GET /health`
+- `GET /config`
+- `GET /balance`
+- `GET /orders`
+- `GET /price`
+- `GET /audit`
+- `GET /metrics`
+- `POST /intent/live`
+- `POST /intent/paper`
+- `POST /withdraw`
+- `POST /analyze-features`
+- `POST /simulate-session`
+
+### WebSocket
+- `WS /ws/updates`
+
+## Implemented backend capabilities
+
+- paper portfolio management
+- synthetic pricing
+- simulated order fills
+- execution intent processing
+- risk scoring and risk gating
+- audit persistence
+- websocket updates for status and order flow
+- metrics exposure
+- environment-based configuration
+- Docker and docker-compose support
+
+## Important logic note
+
+The backend already includes a guarded live-intent endpoint, but the currently merged implementation is still paper-first and should be treated as non-live until a separate live execution adapter path is intentionally added and reviewed.
+
+## Install and run
 
 ```bash
 cd backend
-npm start
+pip install -r requirements.txt
+uvicorn app:app --reload
 ```
 
-Default port: `8787`
+## Tests
 
-## Important
+The repo already includes backend tests under `backend/tests/`.
 
-- Default mode is `paper`.
-- Bitget and BTCC settings are placeholders only.
-- Data is persisted to JSON files in `backend/data/`.
+Run them with:
+
+```bash
+cd backend
+pytest
+```
+
+## Key files
+
+- `backend/app.py`
+- `backend/logic/audit_store.py`
+- `backend/logic/paper_trading.py`
+- `backend/logic/risk.py`
+- `backend/logic/signals.py`
+- `backend/logic/simulate.py`
+- `backend/models/execution_intent.py`
+- `backend/models/risk.py`
+- `backend/tests/test_api.py`
+- `backend/tests/test_risk.py`
+- `backend/tests/test_signals.py`
