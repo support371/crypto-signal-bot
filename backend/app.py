@@ -9,6 +9,7 @@ Endpoints:
 - GET  /price           — Current market price for a symbol
 - GET  /audit           — Persisted audit trail
 - GET  /metrics         — Prometheus metrics
+- POST /market-state    — Backend-owned signal/risk/microstructure snapshot
 - POST /intent/live     — Submit a live trading intent (routes to paper in paper mode)
 - POST /intent/paper    — Submit a paper trading intent (always paper)
 - POST /withdraw        — Profit withdrawal (paper only)
@@ -17,27 +18,18 @@ Endpoints:
 All logic is paper-only. No real exchange connections.
 """
 
-import os
-import time
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional, Set
+import os
+import time
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from backend.models_core import Features
-from backend.logic.signals import build_signal
-from backend.logic.risk import compute_risk_score, risk_gate
-from backend.logic.simulate import simulate_session, StepResult
-from backend.logic.paper_trading import (
-    PaperPortfolio,
-    simulate_fill,
-    _synthetic_price,
-)
 from backend.logic.audit_store import (
     append_intent,
     append_order,
@@ -45,6 +37,14 @@ from backend.logic.audit_store import (
     append_withdrawal,
     get_audit,
 )
+from backend.logic.paper_trading import (
+    PaperPortfolio,
+    _synthetic_price,
+    simulate_fill,
+)
+from backend.logic.risk import compute_risk_score, risk_gate
+from backend.logic.signals import build_signal
+from backend.logic.simulate import StepResult, simulate_session
 from backend.models.execution_intent import (
     ExecutionIntent,
     IntentRequest,
@@ -52,6 +52,7 @@ from backend.models.execution_intent import (
     IntentStatus,
     Side,
 )
+from backend.models_core import Features
 
 # ---------------------------------------------------------------------------
 # Load .env
@@ -59,7 +60,6 @@ from backend.models.execution_intent import (
 _env_path = os.path.join(os.path.dirname(__file__), "env", ".env")
 if os.path.exists(_env_path):
     load_dotenv(_env_path)
-# Also try root .env
 load_dotenv()
 
 TRADING_MODE = os.getenv("TRADING_MODE", "paper")
@@ -74,7 +74,7 @@ logger = logging.getLogger("backend")
 # ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
-app = FastAPI(title="Crypto Signal Bot — Trading Backend", version="2.0.0")
+app = FastAPI(title="Crypto Signal Bot — Trading Backend", version="2.1.0")
 
 # ---------------------------------------------------------------------------
 # CORS
@@ -96,21 +96,17 @@ app.add_middleware(
 # Shared state
 # ---------------------------------------------------------------------------
 paper_portfolio = PaperPortfolio()
-
-# Kill-switch state
 kill_switch_active = False
 kill_switch_reason: Optional[str] = None
 api_error_count = 0
 failed_order_count = 0
-
-# WebSocket clients
 ws_clients: Set[WebSocket] = set()
 
 # ---------------------------------------------------------------------------
 # Prometheus-style counters (lightweight, no dependency needed at import time)
 # ---------------------------------------------------------------------------
 try:
-    from prometheus_client import Counter, Gauge, generate_latest, CONTENT_TYPE_LATEST
+    from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, generate_latest
 
     orders_total = Counter("orders_total", "Total orders submitted", ["side", "mode"])
     risk_blocks_total = Counter("risk_blocks_total", "Total risk-blocked intents")
@@ -123,7 +119,7 @@ except ImportError:
     _prometheus_available = False
 
 # ---------------------------------------------------------------------------
-# Pydantic request/response models (existing endpoints)
+# Pydantic request/response models
 # ---------------------------------------------------------------------------
 
 
@@ -165,6 +161,18 @@ class WithdrawRequest(BaseModel):
     asset: str = "USDT"
     amount: float = 100.0
     address: str = "paper-wallet"
+
+
+class MarketStateRequest(BaseModel):
+    symbol: str = "BTCUSDT"
+    price: float = Field(..., gt=0)
+    change24h: float = 0.0
+    volume24h: float = 0.0
+    marketCap: float = 0.0
+    riskTolerance: float = Field(0.5, ge=0.0, le=1.0)
+    spreadStressThreshold: float = Field(0.002, gt=0.0)
+    volatilitySensitivity: float = Field(0.5, ge=0.0, le=2.0)
+    positionSizeFraction: float = Field(0.1, ge=0.0, le=1.0)
 
 
 # ---------------------------------------------------------------------------
@@ -217,12 +225,11 @@ async def general_error_handler(request, exc: Exception):
 
 
 # ---------------------------------------------------------------------------
-# WebSocket broadcast helper
+# Helpers
 # ---------------------------------------------------------------------------
 
 
 async def broadcast(message: Dict[str, Any]):
-    """Push a message to all connected WebSocket clients."""
     dead: List[WebSocket] = []
     for ws in ws_clients:
         try:
@@ -231,6 +238,149 @@ async def broadcast(message: Dict[str, Any]):
             dead.append(ws)
     for ws in dead:
         ws_clients.discard(ws)
+
+
+def _clamp(value: float, lower: float, upper: float) -> float:
+    return max(lower, min(value, upper))
+
+
+def _derive_market_features(
+    *,
+    change24h: float,
+    volume24h: float,
+    market_cap: float,
+    spread_stress_threshold: float,
+    volatility_sensitivity: float,
+) -> Tuple[Features, Dict[str, Any]]:
+    change_ratio = change24h / 100.0
+    hourly_velocity = change_ratio / 24.0
+    liquidity_ratio = (volume24h / market_cap) if market_cap > 0 else 0.0
+
+    spread_floor = max(0.0005, spread_stress_threshold * 0.35)
+    spread_ceiling = max(spread_floor, spread_stress_threshold * 2.5)
+    liquidity_stress = max(0.0, 0.03 - liquidity_ratio) * 0.12
+    spread_pct = _clamp(
+        spread_floor + abs(change_ratio) * 0.08 + liquidity_stress,
+        spread_floor,
+        max(spread_ceiling, 0.08),
+    )
+
+    imbalance = _clamp(change24h / 8.0, -1.0, 1.0)
+    depth_decay_internal = _clamp((liquidity_ratio - 0.05) * 4.0, -1.0, 1.0)
+
+    sensitivity = max(0.5, volatility_sensitivity)
+    vol_threshold = max(0.03, 0.05 * sensitivity)
+    vol_spike = abs(change_ratio) >= vol_threshold
+    short_reversal = abs(change24h) <= 1.5 and liquidity_ratio >= 0.02
+
+    features = Features(
+        spread_pct=spread_pct,
+        imbalance=imbalance,
+        mid_vel=hourly_velocity,
+        depth_decay=depth_decay_internal,
+        vol_spike=vol_spike,
+        short_reversal=short_reversal,
+    )
+
+    microstructure = {
+        "spreadPercentage": round(spread_pct, 6),
+        "orderBookImbalance": round(imbalance, 4),
+        "midPriceVelocity": round(change24h / 24.0, 4),
+        "volatilitySpike": vol_spike,
+        "depthDecay": round(_clamp((depth_decay_internal + 1.0) / 2.0, 0.0, 1.0), 4),
+    }
+    return features, microstructure
+
+
+def _check_kill_switch():
+    if kill_switch_active:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Kill switch active: {kill_switch_reason}",
+        )
+
+
+def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
+    global failed_order_count
+
+    intent = ExecutionIntent(
+        symbol=req.symbol.upper(),
+        side=req.side,
+        order_type=req.order_type,
+        quantity=req.quantity,
+        price=req.price,
+        time_in_force=req.time_in_force,
+        mode=mode,
+    )
+
+    feats = Features(
+        spread_pct=0.02,
+        imbalance=0.1 if req.side == Side.BUY else -0.1,
+        mid_vel=0.001,
+        depth_decay=0.0,
+        vol_spike=False,
+        short_reversal=False,
+    )
+    risk_score = compute_risk_score(feats)
+
+    if risk_score >= 70.0:
+        intent.status = IntentStatus.RISK_REJECTED
+        intent.notes = f"Risk score too high: {risk_score:.1f}"
+        if _prometheus_available:
+            risk_blocks_total.inc()
+        append_risk_event(
+            {
+                "intent_id": intent.id,
+                "risk_score": risk_score,
+                "reason": intent.notes,
+            }
+        )
+        append_intent(intent.model_dump())
+        return IntentResponse(
+            id=intent.id,
+            status=intent.status.value,
+            notes=intent.notes,
+        )
+
+    intent.status = IntentStatus.RISK_APPROVED
+
+    market_price = _synthetic_price(intent.symbol)
+    intent = simulate_fill(intent, paper_portfolio, market_price)
+
+    if intent.status == IntentStatus.FAILED:
+        failed_order_count += 1
+
+    if _prometheus_available:
+        orders_total.labels(side=intent.side.value, mode=mode).inc()
+
+    intent_data = intent.model_dump()
+    append_intent(intent_data)
+    if intent.status == IntentStatus.FILLED:
+        append_order(intent_data)
+
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.ensure_future(
+                broadcast(
+                    {
+                        "type": "order_update",
+                        "intent_id": intent.id,
+                        "status": intent.status.value,
+                        "symbol": intent.symbol,
+                        "side": intent.side.value,
+                        "fill_price": intent.fill_price,
+                    }
+                )
+            )
+    except RuntimeError:
+        pass
+
+    return IntentResponse(
+        id=intent.id,
+        status=intent.status.value,
+        notes=intent.notes,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -252,7 +402,6 @@ def health():
 
 @app.get("/config")
 def get_config():
-    """Return sanitized config (no secrets)."""
     return {
         "trading_mode": TRADING_MODE,
         "network": NETWORK,
@@ -316,111 +465,57 @@ def get_metrics():
     return {"message": "prometheus_client not installed"}
 
 
-# ---------------------------------------------------------------------------
-# Trading intent endpoints
-# ---------------------------------------------------------------------------
+@app.post("/market-state")
+def market_state(req: MarketStateRequest):
+    features, microstructure = _derive_market_features(
+        change24h=req.change24h,
+        volume24h=req.volume24h,
+        market_cap=req.marketCap,
+        spread_stress_threshold=req.spreadStressThreshold,
+        volatility_sensitivity=req.volatilitySensitivity,
+    )
 
+    signal = build_signal(features)
+    raw_risk_score = compute_risk_score(features)
+    tolerance_adjustment = (req.riskTolerance - 0.5) * 20.0
+    effective_risk_score = _clamp(raw_risk_score - tolerance_adjustment, 0.0, 100.0)
+    decision = risk_gate(
+        signal,
+        effective_risk_score,
+        base_fraction=req.positionSizeFraction,
+    )
 
-def _check_kill_switch():
+    reasoning = decision.reason
     if kill_switch_active:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Kill switch active: {kill_switch_reason}",
-        )
+        reasoning = f"{reasoning}. Trading halted: {kill_switch_reason or 'kill switch active'}"
 
-
-def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
-    """Core intent processing: risk check -> paper fill -> audit."""
-    global failed_order_count
-
-    intent = ExecutionIntent(
-        symbol=req.symbol.upper(),
-        side=req.side,
-        order_type=req.order_type,
-        quantity=req.quantity,
-        price=req.price,
-        time_in_force=req.time_in_force,
-        mode=mode,
-    )
-
-    # Simple risk check using the existing risk engine
-    feats = Features(
-        spread_pct=0.02,
-        imbalance=0.1 if req.side == Side.BUY else -0.1,
-        mid_vel=0.001,
-        depth_decay=0.0,
-        vol_spike=False,
-        short_reversal=False,
-    )
-    risk_score = compute_risk_score(feats)
-
-    if risk_score >= 70.0:
-        intent.status = IntentStatus.RISK_REJECTED
-        intent.notes = f"Risk score too high: {risk_score:.1f}"
-        if _prometheus_available:
-            risk_blocks_total.inc()
-        append_risk_event({
-            "intent_id": intent.id,
-            "risk_score": risk_score,
-            "reason": intent.notes,
-        })
-        append_intent(intent.model_dump())
-        return IntentResponse(
-            id=intent.id,
-            status=intent.status.value,
-            notes=intent.notes,
-        )
-
-    intent.status = IntentStatus.RISK_APPROVED
-
-    # Paper fill
-    market_price = _synthetic_price(intent.symbol)
-    intent = simulate_fill(intent, paper_portfolio, market_price)
-
-    if intent.status == IntentStatus.FAILED:
-        failed_order_count += 1
-
-    if _prometheus_available:
-        orders_total.labels(side=intent.side.value, mode=mode).inc()
-
-    # Persist
-    intent_data = intent.model_dump()
-    append_intent(intent_data)
-    if intent.status == IntentStatus.FILLED:
-        append_order(intent_data)
-
-    # Broadcast update (fire-and-forget for sync endpoint)
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.ensure_future(
-                broadcast({
-                    "type": "order_update",
-                    "intent_id": intent.id,
-                    "status": intent.status.value,
-                    "symbol": intent.symbol,
-                    "side": intent.side.value,
-                    "fill_price": intent.fill_price,
-                })
-            )
-    except RuntimeError:
-        pass
-
-    return IntentResponse(
-        id=intent.id,
-        status=intent.status.value,
-        notes=intent.notes,
-    )
+    return {
+        "symbol": req.symbol.upper(),
+        "price": req.price,
+        "signal": {
+            "direction": signal.direction,
+            "confidence": int(round(signal.confidence * 100)),
+            "regime": signal.regime,
+            "horizon": signal.horizon_minutes,
+        },
+        "risk": {
+            "score": int(round(effective_risk_score)),
+            "decision": decision.intent,
+            "approved": decision.approved and not kill_switch_active,
+            "positionSize": decision.size_fraction if not kill_switch_active else 0.0,
+            "reasoning": reasoning,
+        },
+        "microstructure": microstructure,
+        "backend": {
+            "mode": TRADING_MODE,
+            "killSwitchActive": kill_switch_active,
+            "killSwitchReason": kill_switch_reason,
+        },
+    }
 
 
 @app.post("/intent/live", response_model=IntentResponse)
 def intent_live(req: IntentRequest):
-    """
-    Submit a live trading intent.
-
-    In paper mode (default), routes to paper execution.
-    Kill switch blocks all live intents when active.
-    """
     _check_kill_switch()
     mode = "live" if TRADING_MODE == "live" else "paper"
     return _process_intent(req, mode)
@@ -428,17 +523,11 @@ def intent_live(req: IntentRequest):
 
 @app.post("/intent/paper", response_model=IntentResponse)
 def intent_paper(req: IntentRequest):
-    """
-    Submit a paper trading intent.
-
-    Always runs in paper mode regardless of TRADING_MODE setting.
-    """
     return _process_intent(req, "paper")
 
 
 @app.post("/withdraw")
 def withdraw(req: WithdrawRequest):
-    """Paper withdrawal — deducts from paper portfolio."""
     balance = paper_portfolio.get_balance(req.asset)
     if balance < req.amount:
         raise HTTPException(
@@ -468,25 +557,26 @@ async def websocket_updates(ws: WebSocket):
     ws_clients.add(ws)
     logger.info("WebSocket client connected (%d total)", len(ws_clients))
     try:
-        # Send initial health snapshot
-        await ws.send_json({
-            "type": "health",
-            "kill_switch_active": kill_switch_active,
-            "mode": TRADING_MODE,
-            "api_error_count": api_error_count,
-        })
-        # Keep alive — wait for disconnect
+        await ws.send_json(
+            {
+                "type": "health",
+                "kill_switch_active": kill_switch_active,
+                "mode": TRADING_MODE,
+                "api_error_count": api_error_count,
+            }
+        )
         while True:
             try:
                 await asyncio.wait_for(ws.receive_text(), timeout=30.0)
             except asyncio.TimeoutError:
-                # Send periodic health ping
-                await ws.send_json({
-                    "type": "health",
-                    "kill_switch_active": kill_switch_active,
-                    "mode": TRADING_MODE,
-                    "api_error_count": api_error_count,
-                })
+                await ws.send_json(
+                    {
+                        "type": "health",
+                        "kill_switch_active": kill_switch_active,
+                        "mode": TRADING_MODE,
+                        "api_error_count": api_error_count,
+                    }
+                )
     except WebSocketDisconnect:
         pass
     finally:
