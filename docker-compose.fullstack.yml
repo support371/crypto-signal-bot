@@ -1,0 +1,29 @@
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      TRADING_MODE: ${TRADING_MODE:-paper}
+      NETWORK: ${NETWORK:-testnet}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+      AUDIT_STORE_PATH: backend/data/audit.json
+    volumes:
+      - audit-data:/app/backend/data
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        VITE_BACKEND_URL: ${VITE_BACKEND_URL:-/api}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+
+volumes:
+  audit-data:
