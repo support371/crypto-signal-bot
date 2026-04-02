@@ -1,0 +1,14 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.github
+.env
+.env.*
+dist
+coverage
+__pycache__
+*.pyc
+.pytest_cache
+backend/data/*.json
+backend/env/.env
