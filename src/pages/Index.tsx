@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
 import { Header } from '@/components/dashboard/Header';
 import { AIInsightCard } from '@/components/dashboard/AIInsightCard';
+import { GuardianPanel } from '@/components/dashboard/GuardianPanel';
 import { MicrostructureDisplay } from '@/components/dashboard/MicrostructureDisplay';
 import { PriceChart } from '@/components/dashboard/PriceChart';
 import { PriceTicker } from '@/components/dashboard/PriceTicker';
@@ -9,7 +10,9 @@ import { RiskGauge } from '@/components/dashboard/RiskGauge';
 import { SettingsModal, UserSettings, DEFAULT_SETTINGS } from '@/components/dashboard/SettingsModal';
 import { SignalPanel } from '@/components/dashboard/SignalPanel';
 import { useBackendStatus } from '@/hooks/useBackendStatus';
+import { useBackendWebSocket } from '@/hooks/useBackendWebSocket';
 import { useCryptoPrices } from '@/hooks/useCryptoPrices';
+import { useGuardianStatus } from '@/hooks/useGuardianStatus';
 import { useSignalEngine } from '@/hooks/useSignalEngine';
 
 const Index = () => {
@@ -18,7 +21,8 @@ const Index = () => {
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
 
   const { prices, isLoading, error } = useCryptoPrices();
-  const { health, paperBalance, isConnected } = useBackendStatus();
+  const { health, paperBalance, isConnected, refetch: refetchStatus } = useBackendStatus();
+  const { guardian, isLoading: guardianLoading, refetch: refetchGuardian } = useGuardianStatus();
   const selectedCoin = prices.find((price) => price.id === selectedSymbol) || null;
 
   const { signal, risk, microstructure } = useSignalEngine(selectedCoin, {
@@ -26,6 +30,38 @@ const Index = () => {
     spreadStressThreshold: settings.spreadStressThreshold,
     volatilitySensitivity: settings.volatilitySensitivity,
     positionSizeFraction: settings.positionSizeFraction,
+  });
+
+  const handleGuardianAlert = useCallback(
+    (msg: { reason: string; kill_switch_active: boolean }) => {
+      toast.error(`Guardian alert: ${msg.reason}`, { duration: 8000 });
+      refetchStatus();
+      refetchGuardian();
+    },
+    [refetchStatus, refetchGuardian]
+  );
+
+  const handleKillSwitchChange = useCallback(() => {
+    refetchStatus();
+    refetchGuardian();
+  }, [refetchStatus, refetchGuardian]);
+
+  const handleOrderUpdate = useCallback(
+    (msg: { status: string; symbol: string; side: string; fill_price: number | null }) => {
+      if (msg.status === 'FILLED') {
+        toast.success(
+          `Order filled: ${msg.side} ${msg.symbol}${msg.fill_price ? ` @ ${msg.fill_price}` : ''}`
+        );
+        refetchStatus();
+      }
+    },
+    [refetchStatus]
+  );
+
+  const { connected: wsConnected } = useBackendWebSocket({
+    onGuardianAlert: handleGuardianAlert,
+    onKillSwitchChange: handleKillSwitchChange,
+    onOrderUpdate: handleOrderUpdate,
   });
 
   const handleSettingsChange = (newSettings: UserSettings) => {
@@ -87,22 +123,36 @@ const Index = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
           <MicrostructureDisplay features={microstructure} isLoading={isLoading} />
           <AIInsightCard
             selectedCoin={selectedCoin}
             signal={signal?.direction}
             riskScore={risk?.score}
           />
+          <GuardianPanel
+            guardian={guardian}
+            isLoading={guardianLoading}
+            onKillSwitchToggle={() => {
+              refetchGuardian();
+              refetchStatus();
+            }}
+          />
         </div>
       </main>
 
       <footer className="border-t border-border bg-muted/20 py-4 mt-8">
         <div className="container mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-2 text-xs text-muted-foreground font-mono">
-          <span>LOVABLE AI RISK AGENT v1.1 // BACKEND-OWNED MARKET STATE</span>
-          <span className="flex items-center gap-2">
-            <span className={`w-2 h-2 rounded-full ${footerDotClass} ${isConnected && !health?.kill_switch_active ? 'animate-pulse' : ''}`} />
-            {footerLabel}
+          <span>CRYPTO SIGNAL BOT v2.2 // BACKEND-OWNED MARKET STATE</span>
+          <span className="flex items-center gap-3">
+            <span className="flex items-center gap-1.5">
+              <span className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-accent animate-pulse' : 'bg-muted-foreground'}`} />
+              {wsConnected ? 'WS LIVE' : 'WS OFFLINE'}
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className={`w-1.5 h-1.5 rounded-full ${footerDotClass} ${isConnected && !health?.kill_switch_active ? 'animate-pulse' : ''}`} />
+              {footerLabel}
+            </span>
           </span>
         </div>
       </footer>

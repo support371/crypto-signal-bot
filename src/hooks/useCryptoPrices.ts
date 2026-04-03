@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { CryptoPrice } from '@/types/crypto';
-import { fetchBackendJson } from '@/lib/backendApi';
+import { fetchBackendJson } from '@/lib/backend';
 
 interface BackendPriceResponse {
   symbol: string;

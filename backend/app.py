@@ -2,32 +2,38 @@
 FastAPI backend for the Crypto Signal Bot.
 
 Endpoints:
-- GET  /health          — System health + kill switch status
-- GET  /config          — Current config (sanitized)
-- GET  /balance         — Paper portfolio balances
-- GET  /orders          — Open paper orders
-- GET  /price           — Current market price for a symbol
-- GET  /audit           — Persisted audit trail
-- GET  /metrics         — Prometheus metrics
-- POST /market-state    — Backend-owned signal/risk/microstructure snapshot
-- POST /intent/live     — Submit a live trading intent (routes to paper in paper mode)
-- POST /intent/paper    — Submit a paper trading intent (always paper)
-- POST /withdraw        — Profit withdrawal (paper only)
-- WS   /ws/updates      — Real-time order status and health updates
+- GET  /health              — System health + kill switch status
+- GET  /config              — Current config (sanitized)
+- GET  /balance             — Paper portfolio balances
+- GET  /positions           — Open positions
+- GET  /orders              — Open paper orders
+- GET  /price               — Current market price for a symbol
+- GET  /audit               — Persisted audit trail
+- GET  /metrics             — Prometheus metrics
+- GET  /signal/latest       — Latest signal from last market-state call
+- GET  /guardian/status     — Guardian service state
+- POST /market-state        — Backend-owned signal/risk/microstructure snapshot
+- POST /intent/live         — Submit a live trading intent (routes to paper in paper mode)
+- POST /intent/paper        — Submit a paper trading intent (always paper)
+- POST /kill-switch         — Activate or deactivate kill switch (requires auth)
+- POST /withdraw            — Profit withdrawal (paper only, requires auth)
+- WS   /ws/updates          — Real-time order status and health updates
 
-All logic is paper-only. No real exchange connections.
+All logic is paper-only by default. No real exchange connections unless explicitly configured.
 """
 
 import asyncio
 import logging
 import os
 import time
+from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Security, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.security.api_key import APIKeyHeader
 from pydantic import BaseModel, Field
 
 from backend.logic.audit_store import (
@@ -64,6 +70,7 @@ load_dotenv()
 
 TRADING_MODE = os.getenv("TRADING_MODE", "paper")
 NETWORK = os.getenv("NETWORK", "testnet")
+BACKEND_API_KEY = os.getenv("BACKEND_API_KEY", "")
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -74,7 +81,7 @@ logger = logging.getLogger("backend")
 # ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
-app = FastAPI(title="Crypto Signal Bot — Trading Backend", version="2.1.0")
+app = FastAPI(title="Crypto Signal Bot — Trading Backend", version="2.2.0")
 
 # ---------------------------------------------------------------------------
 # CORS
@@ -93,6 +100,45 @@ app.add_middleware(
 )
 
 # ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
+_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+def require_auth(api_key: Optional[str] = Security(_api_key_header)):
+    """Require API key on POST endpoints when BACKEND_API_KEY is configured."""
+    if not BACKEND_API_KEY:
+        # No key configured — open (development mode)
+        return
+    if api_key != BACKEND_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+
+# ---------------------------------------------------------------------------
+# Rate limiting (simple in-memory sliding window)
+# ---------------------------------------------------------------------------
+_rate_limit_window_seconds = 60
+_rate_limit_max_requests = int(os.getenv("RATE_LIMIT_RPM", "120"))
+_rate_limit_store: Dict[str, List[float]] = defaultdict(list)
+
+
+def rate_limit(request: Request):
+    """Allow up to RATE_LIMIT_RPM requests per minute per IP on GET endpoints."""
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.time()
+    window_start = now - _rate_limit_window_seconds
+    timestamps = _rate_limit_store[client_ip]
+    # Prune old entries
+    _rate_limit_store[client_ip] = [t for t in timestamps if t > window_start]
+    if len(_rate_limit_store[client_ip]) >= _rate_limit_max_requests:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded. Max {_rate_limit_max_requests} requests per minute.",
+        )
+    _rate_limit_store[client_ip].append(now)
+
+
+# ---------------------------------------------------------------------------
 # Shared state
 # ---------------------------------------------------------------------------
 paper_portfolio = PaperPortfolio()
@@ -101,6 +147,77 @@ kill_switch_reason: Optional[str] = None
 api_error_count = 0
 failed_order_count = 0
 ws_clients: Set[WebSocket] = set()
+
+# Latest signal cache (updated on every /market-state call)
+_latest_signal: Optional[Dict[str, Any]] = None
+_latest_signal_ts: Optional[float] = None
+
+# ---------------------------------------------------------------------------
+# Guardian state
+# ---------------------------------------------------------------------------
+_guardian_triggered = False
+_guardian_trigger_reason: Optional[str] = None
+_guardian_trigger_ts: Optional[float] = None
+_guardian_drawdown_pct: float = 0.0
+_guardian_starting_nav: float = 10000.0
+
+_GUARDIAN_MAX_API_ERRORS = int(os.getenv("GUARDIAN_MAX_API_ERRORS", "10"))
+_GUARDIAN_MAX_FAILED_ORDERS = int(os.getenv("GUARDIAN_MAX_FAILED_ORDERS", "5"))
+_GUARDIAN_MAX_DRAWDOWN_PCT = float(os.getenv("GUARDIAN_MAX_DRAWDOWN_PCT", "0.05"))
+
+
+def _guardian_evaluate() -> Optional[str]:
+    """Evaluate guardian conditions. Returns trigger reason or None."""
+    global _guardian_drawdown_pct
+
+    # API errors threshold
+    if api_error_count >= _GUARDIAN_MAX_API_ERRORS:
+        return f"API error threshold reached ({api_error_count} errors)"
+
+    # Failed order threshold
+    if failed_order_count >= _GUARDIAN_MAX_FAILED_ORDERS:
+        return f"Failed order threshold reached ({failed_order_count} failures)"
+
+    # Drawdown check
+    current_usdt = paper_portfolio.get_balance("USDT")
+    if _guardian_starting_nav > 0:
+        _guardian_drawdown_pct = max(
+            0.0, (_guardian_starting_nav - current_usdt) / _guardian_starting_nav
+        )
+        if _guardian_drawdown_pct >= _GUARDIAN_MAX_DRAWDOWN_PCT:
+            return (
+                f"Drawdown limit breached ({_guardian_drawdown_pct*100:.1f}% >= "
+                f"{_GUARDIAN_MAX_DRAWDOWN_PCT*100:.1f}%)"
+            )
+
+    return None
+
+
+async def _guardian_check_and_broadcast():
+    """Check guardian conditions; activate kill switch and broadcast if triggered."""
+    global kill_switch_active, kill_switch_reason
+    global _guardian_triggered, _guardian_trigger_reason, _guardian_trigger_ts
+
+    if kill_switch_active:
+        return  # Already halted
+
+    reason = _guardian_evaluate()
+    if reason:
+        kill_switch_active = True
+        kill_switch_reason = f"Guardian: {reason}"
+        _guardian_triggered = True
+        _guardian_trigger_reason = reason
+        _guardian_trigger_ts = time.time()
+        logger.warning("Guardian triggered kill switch: %s", reason)
+        await broadcast(
+            {
+                "type": "guardian_alert",
+                "reason": reason,
+                "kill_switch_active": True,
+                "timestamp": _guardian_trigger_ts,
+            }
+        )
+
 
 # ---------------------------------------------------------------------------
 # Prometheus-style counters (lightweight, no dependency needed at import time)
@@ -173,6 +290,11 @@ class MarketStateRequest(BaseModel):
     spreadStressThreshold: float = Field(0.002, gt=0.0)
     volatilitySensitivity: float = Field(0.5, ge=0.0, le=2.0)
     positionSizeFraction: float = Field(0.1, ge=0.0, le=1.0)
+
+
+class KillSwitchRequest(BaseModel):
+    activate: bool
+    reason: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -373,6 +495,7 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
                     }
                 )
             )
+            asyncio.ensure_future(_guardian_check_and_broadcast())
     except RuntimeError:
         pass
 
@@ -384,11 +507,11 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
 
 
 # ---------------------------------------------------------------------------
-# Endpoints
+# Endpoints — GET (rate-limited)
 # ---------------------------------------------------------------------------
 
 
-@app.get("/health")
+@app.get("/health", dependencies=[Depends(rate_limit)])
 def health():
     return {
         "kill_switch_active": kill_switch_active,
@@ -397,20 +520,23 @@ def health():
         "failed_order_count": failed_order_count,
         "halted": kill_switch_active,
         "mode": TRADING_MODE,
+        "guardian_triggered": _guardian_triggered,
     }
 
 
-@app.get("/config")
+@app.get("/config", dependencies=[Depends(rate_limit)])
 def get_config():
     return {
         "trading_mode": TRADING_MODE,
         "network": NETWORK,
         "cors_origins": ALLOWED_ORIGINS,
         "kill_switch_active": kill_switch_active,
+        "auth_enabled": bool(BACKEND_API_KEY),
+        "rate_limit_rpm": _rate_limit_max_requests,
     }
 
 
-@app.get("/balance")
+@app.get("/balance", dependencies=[Depends(rate_limit)])
 def get_balance():
     return {
         "balances": paper_portfolio.get_all_balances(),
@@ -418,7 +544,12 @@ def get_balance():
     }
 
 
-@app.get("/orders")
+@app.get("/positions", dependencies=[Depends(rate_limit)])
+def get_positions():
+    return {"positions": paper_portfolio.get_positions()}
+
+
+@app.get("/orders", dependencies=[Depends(rate_limit)])
 def get_orders(symbol: Optional[str] = Query(None)):
     orders = paper_portfolio.open_orders
     if symbol:
@@ -440,7 +571,7 @@ def get_orders(symbol: Optional[str] = Query(None)):
     }
 
 
-@app.get("/price")
+@app.get("/price", dependencies=[Depends(rate_limit)])
 def get_price(symbol: str = Query("BTCUSDT")):
     price = _synthetic_price(symbol.upper())
     return {
@@ -450,7 +581,7 @@ def get_price(symbol: str = Query("BTCUSDT")):
     }
 
 
-@app.get("/audit")
+@app.get("/audit", dependencies=[Depends(rate_limit)])
 def get_audit_trail():
     return get_audit()
 
@@ -465,8 +596,48 @@ def get_metrics():
     return {"message": "prometheus_client not installed"}
 
 
+@app.get("/signal/latest", dependencies=[Depends(rate_limit)])
+def get_signal_latest():
+    if _latest_signal is None:
+        return {
+            "available": False,
+            "message": "No signal computed yet. POST to /market-state first.",
+        }
+    return {
+        "available": True,
+        "timestamp": _latest_signal_ts,
+        **_latest_signal,
+    }
+
+
+@app.get("/guardian/status", dependencies=[Depends(rate_limit)])
+def get_guardian_status():
+    return {
+        "triggered": _guardian_triggered,
+        "trigger_reason": _guardian_trigger_reason,
+        "trigger_ts": _guardian_trigger_ts,
+        "kill_switch_active": kill_switch_active,
+        "kill_switch_reason": kill_switch_reason,
+        "drawdown_pct": round(_guardian_drawdown_pct * 100, 2),
+        "api_error_count": api_error_count,
+        "failed_order_count": failed_order_count,
+        "thresholds": {
+            "max_api_errors": _GUARDIAN_MAX_API_ERRORS,
+            "max_failed_orders": _GUARDIAN_MAX_FAILED_ORDERS,
+            "max_drawdown_pct": _GUARDIAN_MAX_DRAWDOWN_PCT * 100,
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Endpoints — POST (authenticated)
+# ---------------------------------------------------------------------------
+
+
 @app.post("/market-state")
 def market_state(req: MarketStateRequest):
+    global _latest_signal, _latest_signal_ts
+
     features, microstructure = _derive_market_features(
         change24h=req.change24h,
         volume24h=req.volume24h,
@@ -489,7 +660,7 @@ def market_state(req: MarketStateRequest):
     if kill_switch_active:
         reasoning = f"{reasoning}. Trading halted: {kill_switch_reason or 'kill switch active'}"
 
-    return {
+    result = {
         "symbol": req.symbol.upper(),
         "price": req.price,
         "signal": {
@@ -513,21 +684,66 @@ def market_state(req: MarketStateRequest):
         },
     }
 
+    # Cache for /signal/latest
+    _latest_signal = result
+    _latest_signal_ts = time.time()
+
+    return result
+
 
 @app.post("/intent/live", response_model=IntentResponse)
-def intent_live(req: IntentRequest):
+def intent_live(req: IntentRequest, _: None = Depends(require_auth)):
     _check_kill_switch()
     mode = "live" if TRADING_MODE == "live" else "paper"
     return _process_intent(req, mode)
 
 
 @app.post("/intent/paper", response_model=IntentResponse)
-def intent_paper(req: IntentRequest):
+def intent_paper(req: IntentRequest, _: None = Depends(require_auth)):
     return _process_intent(req, "paper")
 
 
+@app.post("/kill-switch")
+def kill_switch(req: KillSwitchRequest, _: None = Depends(require_auth)):
+    global kill_switch_active, kill_switch_reason
+    global _guardian_triggered, _guardian_trigger_reason, _guardian_trigger_ts
+
+    kill_switch_active = req.activate
+    if req.activate:
+        kill_switch_reason = req.reason or "Manual activation"
+        if _prometheus_available:
+            kill_switch_triggers.inc()
+        logger.warning("Kill switch activated: %s", kill_switch_reason)
+    else:
+        kill_switch_reason = None
+        _guardian_triggered = False
+        _guardian_trigger_reason = None
+        _guardian_trigger_ts = None
+        logger.info("Kill switch deactivated")
+
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.ensure_future(
+                broadcast(
+                    {
+                        "type": "kill_switch",
+                        "active": kill_switch_active,
+                        "reason": kill_switch_reason,
+                    }
+                )
+            )
+    except RuntimeError:
+        pass
+
+    return {
+        "kill_switch_active": kill_switch_active,
+        "kill_switch_reason": kill_switch_reason,
+    }
+
+
 @app.post("/withdraw")
-def withdraw(req: WithdrawRequest):
+def withdraw(req: WithdrawRequest, _: None = Depends(require_auth)):
     balance = paper_portfolio.get_balance(req.asset)
     if balance < req.amount:
         raise HTTPException(
@@ -563,6 +779,7 @@ async def websocket_updates(ws: WebSocket):
                 "kill_switch_active": kill_switch_active,
                 "mode": TRADING_MODE,
                 "api_error_count": api_error_count,
+                "guardian_triggered": _guardian_triggered,
             }
         )
         while True:
@@ -575,6 +792,7 @@ async def websocket_updates(ws: WebSocket):
                         "kill_switch_active": kill_switch_active,
                         "mode": TRADING_MODE,
                         "api_error_count": api_error_count,
+                        "guardian_triggered": _guardian_triggered,
                     }
                 )
     except WebSocketDisconnect:
