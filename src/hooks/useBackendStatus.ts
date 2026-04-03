@@ -8,6 +8,14 @@ interface BackendHealth {
   failed_order_count: number;
   halted: boolean;
   mode: string;
+  guardian_triggered: boolean;
+}
+
+interface BackendConfig {
+  trading_mode: string;
+  network: string;
+  auth_enabled: boolean;
+  rate_limit_rpm: number;
 }
 
 interface BalanceResponse {
@@ -17,6 +25,7 @@ interface BalanceResponse {
 
 export function useBackendStatus(pollIntervalMs = 30000) {
   const [health, setHealth] = useState<BackendHealth | null>(null);
+  const [config, setConfig] = useState<BackendConfig | null>(null);
   const [paperBalance, setPaperBalance] = useState<number | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -24,13 +33,15 @@ export function useBackendStatus(pollIntervalMs = 30000) {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const [healthData, balanceData] = await Promise.all([
+      const [healthData, balanceData, configData] = await Promise.all([
         fetchBackendJson<BackendHealth>('/health'),
         fetchBackendJson<BalanceResponse>('/balance'),
+        fetchBackendJson<BackendConfig>('/config'),
       ]);
 
       setHealth(healthData);
       setPaperBalance(balanceData?.balances?.USDT ?? 0);
+      setConfig(configData);
       setIsConnected(true);
       setError(null);
     } catch (err) {
@@ -45,12 +56,12 @@ export function useBackendStatus(pollIntervalMs = 30000) {
   useEffect(() => {
     fetchStatus();
     const interval = window.setInterval(fetchStatus, pollIntervalMs);
-
     return () => window.clearInterval(interval);
   }, [fetchStatus, pollIntervalMs]);
 
   return {
     health,
+    config,
     paperBalance,
     isConnected,
     isLoading,

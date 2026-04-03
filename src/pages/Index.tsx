@@ -20,8 +20,8 @@ const Index = () => {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
 
-  const { prices, isLoading, error } = useCryptoPrices();
-  const { health, paperBalance, isConnected, refetch: refetchStatus } = useBackendStatus();
+  const { prices, isLoading, error, source: priceSource } = useCryptoPrices();
+  const { health, config, paperBalance, isConnected, refetch: refetchStatus } = useBackendStatus();
   const { guardian, isLoading: guardianLoading, refetch: refetchGuardian } = useGuardianStatus();
   const selectedCoin = prices.find((price) => price.id === selectedSymbol) || null;
 
@@ -133,6 +133,7 @@ const Index = () => {
           <GuardianPanel
             guardian={guardian}
             isLoading={guardianLoading}
+            authEnabled={config?.auth_enabled}
             onKillSwitchToggle={() => {
               refetchGuardian();
               refetchStatus();
@@ -143,7 +144,14 @@ const Index = () => {
 
       <footer className="border-t border-border bg-muted/20 py-4 mt-8">
         <div className="container mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-2 text-xs text-muted-foreground font-mono">
-          <span>CRYPTO SIGNAL BOT v2.2 // BACKEND-OWNED MARKET STATE</span>
+          <span>
+            CRYPTO SIGNAL BOT v2.2
+            {priceSource && (
+              <span className="ml-2 opacity-60">
+                // PRICES: {priceSource === 'coingecko' ? 'COINGECKO LIVE' : 'BACKEND SYNTHETIC'}
+              </span>
+            )}
+          </span>
           <span className="flex items-center gap-3">
             <span className="flex items-center gap-1.5">
               <span className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-accent animate-pulse' : 'bg-muted-foreground'}`} />

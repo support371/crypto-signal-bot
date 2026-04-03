@@ -1,5 +1,6 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { SUPABASE_CONFIGURED } from '@/integrations/supabase/client';
 import { Loader2 } from 'lucide-react';
 
 interface ProtectedRouteProps {
@@ -8,6 +9,11 @@ interface ProtectedRouteProps {
 
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { user, isLoading } = useAuth();
+
+  // Local mode: no Supabase configured — skip the auth gate entirely.
+  if (!SUPABASE_CONFIGURED) {
+    return <>{children}</>;
+  }
 
   if (isLoading) {
     return (

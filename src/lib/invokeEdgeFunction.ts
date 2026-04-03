@@ -1,4 +1,4 @@
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, SUPABASE_CONFIGURED } from '@/integrations/supabase/client';
 import { handleAuthError } from '@/lib/handleAuthError';
 
 interface InvokeOptions {
@@ -13,21 +13,24 @@ interface InvokeResult<T> {
 
 /**
  * Centralized Edge Function invoker with automatic auth token handling and error processing.
- * - Fetches the latest session token before each call
- * - Attaches Authorization header automatically
- * - Processes 401 errors via handleAuthError (triggers auth banner)
+ * - Returns { data: null, error } silently when Supabase is not configured (local mode).
+ * - Fetches the latest session token before each call when configured.
+ * - Attaches Authorization header automatically.
+ * - Processes 401 errors via handleAuthError (triggers auth banner).
  */
 export async function invokeEdgeFunction<T = unknown>(
   functionName: string,
   options: InvokeOptions = {}
 ): Promise<InvokeResult<T>> {
+  if (!SUPABASE_CONFIGURED) {
+    return { data: null, error: new Error('Supabase not configured') };
+  }
+
   try {
-    // Always fetch the freshest token (auto-refresh may update without React re-rendering)
     const { data: authData } = await supabase.auth.getSession();
     const accessToken = authData.session?.access_token;
 
     if (!accessToken) {
-      // No session - trigger auth banner and return early
       handleAuthError(new Error('401: No active session'));
       return { data: null, error: new Error('Not authenticated') };
     }
@@ -48,7 +51,6 @@ export async function invokeEdgeFunction<T = unknown>(
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
 
-    // Handle 401 errors centrally
     if (handleAuthError(error)) {
       return { data: null, error };
     }

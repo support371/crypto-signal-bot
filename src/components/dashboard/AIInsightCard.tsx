@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useAIInsights } from '@/hooks/useAIInsights';
 import { CryptoPrice } from '@/types/crypto';
-import { Brain, RefreshCw, Sparkles } from 'lucide-react';
+import { Brain, RefreshCw, Sparkles, PlugZap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -12,24 +12,22 @@ interface AIInsightCardProps {
 }
 
 export function AIInsightCard({ selectedCoin, signal, riskScore }: AIInsightCardProps) {
-  const { insight, isLoading, generateInsight } = useAIInsights();
+  const { insight, isLoading, generateInsight, available } = useAIInsights();
 
   useEffect(() => {
-    // Generate insight when coin changes
-    if (selectedCoin) {
+    if (selectedCoin && available) {
       generateInsight(selectedCoin, signal, riskScore);
     }
-  }, [selectedCoin?.id]);
+  }, [selectedCoin?.id, available]);
 
   const handleRefresh = () => {
-    generateInsight(selectedCoin ?? undefined, signal, riskScore);
+    if (available) generateInsight(selectedCoin ?? undefined, signal, riskScore);
   };
 
   return (
     <div className="cyber-card p-6 relative overflow-hidden">
-      {/* Animated background */}
       <div className="absolute inset-0 bg-gradient-to-br from-secondary/5 via-transparent to-primary/5 pointer-events-none" />
-      
+
       <div className="relative">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -40,19 +38,29 @@ export function AIInsightCard({ selectedCoin, signal, riskScore }: AIInsightCard
               AI Market Insight
             </h3>
           </div>
-          
+
           <Button
             variant="ghost"
             size="icon"
             onClick={handleRefresh}
-            disabled={isLoading}
+            disabled={isLoading || !available}
             className="h-8 w-8"
           >
-            <RefreshCw className={cn("w-4 h-4", isLoading && "animate-spin")} />
+            <RefreshCw className={cn('w-4 h-4', isLoading && 'animate-spin')} />
           </Button>
         </div>
 
-        {isLoading ? (
+        {!available ? (
+          <div className="text-center py-6 space-y-2">
+            <PlugZap className="w-8 h-8 text-muted-foreground/40 mx-auto" />
+            <p className="text-sm text-muted-foreground">
+              AI insights require Supabase.
+            </p>
+            <p className="text-xs text-muted-foreground/60">
+              Set <span className="font-mono">VITE_SUPABASE_URL</span> to enable.
+            </p>
+          </div>
+        ) : isLoading ? (
           <div className="space-y-3 animate-pulse">
             <div className="h-4 bg-muted rounded w-3/4" />
             <div className="h-4 bg-muted rounded w-full" />
@@ -62,9 +70,7 @@ export function AIInsightCard({ selectedCoin, signal, riskScore }: AIInsightCard
           <div className="space-y-3">
             <div className="flex items-start gap-2">
               <Sparkles className="w-4 h-4 text-secondary mt-1 flex-shrink-0" />
-              <p className="text-sm leading-relaxed text-foreground/90">
-                {insight}
-              </p>
+              <p className="text-sm leading-relaxed text-foreground/90">{insight}</p>
             </div>
           </div>
         ) : (
@@ -73,12 +79,10 @@ export function AIInsightCard({ selectedCoin, signal, riskScore }: AIInsightCard
           </div>
         )}
 
-        {selectedCoin && (
+        {available && selectedCoin && (
           <div className="mt-4 pt-4 border-t border-border/50">
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span className="px-2 py-1 rounded bg-muted/50 font-mono">
-                {selectedCoin.symbol}
-              </span>
+              <span className="px-2 py-1 rounded bg-muted/50 font-mono">{selectedCoin.symbol}</span>
               <span>•</span>
               <span>Powered by Gemini AI</span>
             </div>

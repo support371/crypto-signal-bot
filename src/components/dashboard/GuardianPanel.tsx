@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Shield, ShieldAlert, ShieldOff, AlertTriangle, Zap } from 'lucide-react';
+import { Shield, ShieldAlert, ShieldOff, AlertTriangle, Zap, LockOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { fetchBackendJson } from '@/lib/backend';
@@ -24,10 +24,11 @@ export interface GuardianStatus {
 interface GuardianPanelProps {
   guardian: GuardianStatus | null;
   isLoading?: boolean;
+  authEnabled?: boolean;
   onKillSwitchToggle?: () => void;
 }
 
-export function GuardianPanel({ guardian, isLoading, onKillSwitchToggle }: GuardianPanelProps) {
+export function GuardianPanel({ guardian, isLoading, authEnabled, onKillSwitchToggle }: GuardianPanelProps) {
   const [toggling, setToggling] = useState(false);
 
   const handleKillSwitchToggle = async () => {
@@ -119,6 +120,16 @@ export function GuardianPanel({ guardian, isLoading, onKillSwitchToggle }: Guard
           {isHalted ? 'RESUME' : 'HALT'}
         </Button>
       </div>
+
+      {/* Auth warning */}
+      {authEnabled === false && (
+        <div className="mb-3 px-3 py-2 rounded-lg bg-warning/10 border border-warning/30 flex items-center gap-2">
+          <LockOpen className="w-3 h-3 text-warning shrink-0" />
+          <p className="text-xs font-mono text-warning">
+            Kill switch is unauthenticated — set <span className="font-bold">BACKEND_API_KEY</span> to restrict access.
+          </p>
+        </div>
+      )}
 
       {/* Trigger reason */}
       {(guardian?.kill_switch_reason || guardian?.trigger_reason) && (

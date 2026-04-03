@@ -1,4 +1,7 @@
 name: CI
+# NOTE: CI jobs require GitHub Actions minutes. If the account has a billing
+# issue, jobs will fail immediately with "account is locked". Resolve billing
+# at github.com/settings/billing to re-enable CI execution.
 
 on:
   push:
