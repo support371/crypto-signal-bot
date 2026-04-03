@@ -8,12 +8,14 @@ import { PortfolioPanel } from '@/components/dashboard/PortfolioPanel';
 import { PriceChart } from '@/components/dashboard/PriceChart';
 import { PriceTicker } from '@/components/dashboard/PriceTicker';
 import { RiskGauge } from '@/components/dashboard/RiskGauge';
-import { SettingsModal, UserSettings, DEFAULT_SETTINGS } from '@/components/dashboard/SettingsModal';
+import { SettingsModal } from '@/components/dashboard/SettingsModal';
+import type { UserSettings } from '@/components/dashboard/SettingsModal';
 import { SignalPanel } from '@/components/dashboard/SignalPanel';
 import { useBackendStatus } from '@/hooks/useBackendStatus';
 import { useBackendWebSocket } from '@/hooks/useBackendWebSocket';
 import { useCryptoPrices } from '@/hooks/useCryptoPrices';
 import { useGuardianStatus } from '@/hooks/useGuardianStatus';
+import { usePersistedSettings } from '@/hooks/usePersistedSettings';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { useSignalEngine } from '@/hooks/useSignalEngine';
 import { fetchBackendJson } from '@/lib/backend';
@@ -21,7 +23,7 @@ import { fetchBackendJson } from '@/lib/backend';
 const Index = () => {
   const [selectedSymbol, setSelectedSymbol] = useState('bitcoin');
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
+  const { settings, setSettings } = usePersistedSettings();
 
   const { prices, isLoading, error, source: priceSource } = useCryptoPrices();
   const { health, config, paperBalance, isConnected, refetch: refetchStatus } = useBackendStatus();

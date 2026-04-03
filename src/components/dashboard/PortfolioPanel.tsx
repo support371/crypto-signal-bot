@@ -18,7 +18,7 @@ interface QuickTradeProps {
 function QuickTrade({ symbol, signal, risk, price, onFilled }: QuickTradeProps) {
   const [submitting, setSubmitting] = useState(false);
 
-  const canTrade = signal && risk && risk.approved && !risk.positionSize === false;
+  const canTrade = signal && risk && risk.approved && risk.positionSize > 0;
 
   const handleTrade = async (side: 'BUY' | 'SELL') => {
     if (!risk) return;
