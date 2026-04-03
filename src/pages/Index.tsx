@@ -1,9 +1,10 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Header } from '@/components/dashboard/Header';
 import { AIInsightCard } from '@/components/dashboard/AIInsightCard';
 import { GuardianPanel } from '@/components/dashboard/GuardianPanel';
 import { MicrostructureDisplay } from '@/components/dashboard/MicrostructureDisplay';
+import { PortfolioPanel } from '@/components/dashboard/PortfolioPanel';
 import { PriceChart } from '@/components/dashboard/PriceChart';
 import { PriceTicker } from '@/components/dashboard/PriceTicker';
 import { RiskGauge } from '@/components/dashboard/RiskGauge';
@@ -13,7 +14,9 @@ import { useBackendStatus } from '@/hooks/useBackendStatus';
 import { useBackendWebSocket } from '@/hooks/useBackendWebSocket';
 import { useCryptoPrices } from '@/hooks/useCryptoPrices';
 import { useGuardianStatus } from '@/hooks/useGuardianStatus';
+import { usePortfolio } from '@/hooks/usePortfolio';
 import { useSignalEngine } from '@/hooks/useSignalEngine';
+import { fetchBackendJson } from '@/lib/backend';
 
 const Index = () => {
   const [selectedSymbol, setSelectedSymbol] = useState('bitcoin');
@@ -23,6 +26,7 @@ const Index = () => {
   const { prices, isLoading, error, source: priceSource } = useCryptoPrices();
   const { health, config, paperBalance, isConnected, refetch: refetchStatus } = useBackendStatus();
   const { guardian, isLoading: guardianLoading, refetch: refetchGuardian } = useGuardianStatus();
+  const { portfolio, isLoading: portfolioLoading, refetch: refetchPortfolio } = usePortfolio();
   const selectedCoin = prices.find((price) => price.id === selectedSymbol) || null;
 
   const { signal, risk, microstructure } = useSignalEngine(selectedCoin, {
@@ -31,6 +35,61 @@ const Index = () => {
     volatilitySensitivity: settings.volatilitySensitivity,
     positionSizeFraction: settings.positionSizeFraction,
   });
+
+  // Auto-trade: fire a paper intent whenever signal flips and autoTradeEnabled is on.
+  // Use a ref to avoid re-firing on every render for the same signal direction.
+  const lastAutoTradeSig = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (
+      !settings.autoTradeEnabled ||
+      !signal ||
+      !risk ||
+      !risk.approved ||
+      !selectedCoin ||
+      health?.kill_switch_active
+    ) {
+      return;
+    }
+
+    const sig = `${selectedCoin.id}:${signal.direction}:${signal.regime}`;
+    if (sig === lastAutoTradeSig.current) return;
+    lastAutoTradeSig.current = sig;
+
+    const side = signal.direction === 'DOWN' ? 'SELL' : 'BUY';
+    const qty = selectedCoin.price > 0
+      ? Number(((risk.positionSize * 1000) / selectedCoin.price).toFixed(6))
+      : 0.001;
+
+    fetchBackendJson('/intent/paper', {
+      method: 'POST',
+      body: JSON.stringify({
+        symbol: `${selectedCoin.symbol.toUpperCase()}USDT`,
+        side,
+        order_type: 'MARKET',
+        quantity: Math.max(qty, 0.0001),
+      }),
+    })
+      .then(() => {
+        toast.info(
+          `Auto-trade: paper ${side} ${selectedCoin.symbol} (confidence ${signal.confidence}%)`,
+          { duration: 5000 }
+        );
+        refetchPortfolio();
+        refetchStatus();
+      })
+      .catch(() => {
+        // Silently swallow — kill switch or risk rejection; next poll will re-evaluate.
+      });
+  }, [
+    settings.autoTradeEnabled,
+    signal?.direction,
+    signal?.regime,
+    signal?.confidence,
+    risk?.approved,
+    selectedCoin?.id,
+    health?.kill_switch_active,
+  ]);
 
   const handleGuardianAlert = useCallback(
     (msg: { reason: string; kill_switch_active: boolean }) => {
@@ -53,9 +112,10 @@ const Index = () => {
           `Order filled: ${msg.side} ${msg.symbol}${msg.fill_price ? ` @ ${msg.fill_price}` : ''}`
         );
         refetchStatus();
+        refetchPortfolio();
       }
     },
-    [refetchStatus]
+    [refetchStatus, refetchPortfolio]
   );
 
   const { connected: wsConnected } = useBackendWebSocket({
@@ -66,6 +126,8 @@ const Index = () => {
 
   const handleSettingsChange = (newSettings: UserSettings) => {
     setSettings(newSettings);
+    // Reset auto-trade guard so the new signal direction fires immediately.
+    lastAutoTradeSig.current = null;
     toast.success('Settings updated successfully');
   };
 
@@ -123,7 +185,7 @@ const Index = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 lg:gap-6">
           <MicrostructureDisplay features={microstructure} isLoading={isLoading} />
           <AIInsightCard
             selectedCoin={selectedCoin}
@@ -139,17 +201,29 @@ const Index = () => {
               refetchStatus();
             }}
           />
+          <PortfolioPanel
+            portfolio={portfolio}
+            isLoading={portfolioLoading}
+            selectedSymbol={selectedCoin?.symbol ?? 'BTC'}
+            selectedPrice={selectedCoin?.price ?? 0}
+            signal={signal}
+            risk={risk}
+            onRefetch={refetchPortfolio}
+          />
         </div>
       </main>
 
       <footer className="border-t border-border bg-muted/20 py-4 mt-8">
         <div className="container mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-2 text-xs text-muted-foreground font-mono">
           <span>
-            CRYPTO SIGNAL BOT v2.2
+            CRYPTO SIGNAL BOT v2.3
             {priceSource && (
               <span className="ml-2 opacity-60">
                 // PRICES: {priceSource === 'coingecko' ? 'COINGECKO LIVE' : 'BACKEND SYNTHETIC'}
               </span>
+            )}
+            {settings.autoTradeEnabled && (
+              <span className="ml-2 text-accent opacity-80">// AUTO-TRADE ON</span>
             )}
           </span>
           <span className="flex items-center gap-3">
