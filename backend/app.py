@@ -49,6 +49,7 @@ from backend.logic.earnings import (
     record_fill as earnings_record_fill,
     reset_earnings,
 )
+from backend.logic.exchange_adapter import ExchangeAdapter, build_adapter
 from backend.logic.paper_trading import (
     PaperPortfolio,
     _synthetic_price,
@@ -148,6 +149,17 @@ def rate_limit(request: Request):
 # Shared state
 # ---------------------------------------------------------------------------
 paper_portfolio = PaperPortfolio()
+
+# Exchange adapter — resolved once at startup based on env config.
+# PaperAdapter is always the default; BinanceCCXTAdapter only when TRADING_MODE=live
+# and credentials + ccxt are present.
+exchange_adapter: ExchangeAdapter = build_adapter(
+    trading_mode=TRADING_MODE,
+    network=NETWORK,
+    portfolio=paper_portfolio,
+    synthetic_price_fn=_synthetic_price,
+)
+
 kill_switch_active = False
 kill_switch_reason: Optional[str] = None
 api_error_count = 0
@@ -472,8 +484,28 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
 
     intent.status = IntentStatus.RISK_APPROVED
 
-    market_price = _synthetic_price(intent.symbol)
-    intent = simulate_fill(intent, paper_portfolio, market_price)
+    # Dispatch to exchange adapter (paper by default; CCXT testnet/mainnet if configured)
+    try:
+        result = exchange_adapter.place_order(
+            symbol=intent.symbol,
+            side=intent.side.value,
+            order_type=intent.order_type.value,
+            quantity=intent.quantity,
+            price=intent.price,
+        )
+        intent.fill_price = result.get("fill_price")
+        intent.fill_quantity = result.get("quantity", intent.quantity)
+        intent.notes = result.get("notes", "")
+        intent.updated_at = result.get("timestamp", time.time())
+        raw_status = result.get("status", "FAILED")
+        try:
+            intent.status = IntentStatus(raw_status)
+        except ValueError:
+            intent.status = IntentStatus.FAILED
+    except Exception as exc:
+        logger.error("Adapter place_order error: %s", exc)
+        intent.status = IntentStatus.FAILED
+        intent.notes = str(exc)
 
     if intent.status == IntentStatus.FAILED:
         failed_order_count += 1
@@ -534,6 +566,7 @@ def health():
         "failed_order_count": failed_order_count,
         "halted": kill_switch_active,
         "mode": TRADING_MODE,
+        "adapter": exchange_adapter.mode,
         "guardian_triggered": _guardian_triggered,
     }
 
@@ -543,6 +576,7 @@ def get_config():
     return {
         "trading_mode": TRADING_MODE,
         "network": NETWORK,
+        "adapter": exchange_adapter.mode,
         "cors_origins": ALLOWED_ORIGINS,
         "kill_switch_active": kill_switch_active,
         "auth_enabled": bool(BACKEND_API_KEY),

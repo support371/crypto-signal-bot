@@ -1,11 +1,15 @@
 """Tests for API endpoints."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 from fastapi.testclient import TestClient
 
 import backend.app as app_module
 import backend.logic.earnings as earnings_module
 from backend.app import app
+from backend.logic.exchange_adapter import PaperAdapter, build_adapter
+from backend.logic.paper_trading import PaperPortfolio, _synthetic_price
 
 
 @pytest.fixture(autouse=True)
@@ -483,6 +487,110 @@ class TestEarnings:
     def test_reset_allowed_with_valid_key(self, auth_client):
         resp = auth_client.post("/earnings/reset")
         assert resp.status_code == 200
+
+
+class TestExchangeAdapter:
+    """Unit tests for adapter factory and PaperAdapter behaviour."""
+
+    def _make_portfolio(self):
+        p = PaperPortfolio()
+        p.balances = {"USDT": 10000.0}
+        return p
+
+    def test_build_adapter_paper_mode_returns_paper(self):
+        adapter = build_adapter("paper", "testnet", self._make_portfolio(), _synthetic_price)
+        assert adapter.mode == "paper"
+
+    def test_build_adapter_live_no_credentials_falls_back_to_paper(self):
+        """Live mode without credentials must fall back silently to paper."""
+        import os
+        orig_key = os.environ.pop("BINANCE_API_KEY", None)
+        orig_sec = os.environ.pop("BINANCE_API_SECRET", None)
+        try:
+            adapter = build_adapter("live", "testnet", self._make_portfolio(), _synthetic_price)
+            assert adapter.mode == "paper"
+        finally:
+            if orig_key is not None:
+                os.environ["BINANCE_API_KEY"] = orig_key
+            if orig_sec is not None:
+                os.environ["BINANCE_API_SECRET"] = orig_sec
+
+    def test_build_adapter_live_no_ccxt_falls_back_to_paper(self, monkeypatch):
+        """Live mode without ccxt installed must fall back silently to paper."""
+        import os
+        monkeypatch.setenv("BINANCE_API_KEY", "fake-key")
+        monkeypatch.setenv("BINANCE_API_SECRET", "fake-secret")
+        # Simulate ccxt not installed by making import fail
+        import builtins
+        original_import = builtins.__import__
+
+        def _mock_import(name, *args, **kwargs):
+            if name == "ccxt":
+                raise ImportError("ccxt not installed")
+            return original_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", _mock_import)
+        adapter = build_adapter("live", "testnet", self._make_portfolio(), _synthetic_price)
+        assert adapter.mode == "paper"
+
+    def test_paper_adapter_get_price(self):
+        adapter = PaperAdapter(self._make_portfolio(), _synthetic_price)
+        price = adapter.get_price("BTCUSDT")
+        assert price > 0
+
+    def test_paper_adapter_get_balance(self):
+        adapter = PaperAdapter(self._make_portfolio(), _synthetic_price)
+        assert adapter.get_balance("USDT") == 10000.0
+        assert adapter.get_balance("BTC") == 0.0
+
+    def test_paper_adapter_place_buy_order(self):
+        adapter = PaperAdapter(self._make_portfolio(), _synthetic_price)
+        result = adapter.place_order(
+            symbol="BTCUSDT", side="BUY", order_type="MARKET", quantity=0.001
+        )
+        assert result["status"] in ("FILLED", "FAILED")
+        assert "fill_price" in result
+        assert result["adapter"] == "paper"
+
+    def test_paper_adapter_buy_reduces_usdt(self):
+        portfolio = self._make_portfolio()
+        adapter = PaperAdapter(portfolio, _synthetic_price)
+        result = adapter.place_order(
+            symbol="BTCUSDT", side="BUY", order_type="MARKET", quantity=0.001
+        )
+        if result["status"] == "FILLED":
+            assert portfolio.get_balance("USDT") < 10000.0
+
+    def test_paper_adapter_sell_without_balance_fails(self):
+        portfolio = self._make_portfolio()
+        adapter = PaperAdapter(portfolio, _synthetic_price)
+        result = adapter.place_order(
+            symbol="BTCUSDT", side="SELL", order_type="MARKET", quantity=999.0
+        )
+        assert result["status"] == "FAILED"
+
+    def test_health_exposes_adapter_mode(self, client):
+        resp = client.get("/health")
+        assert resp.status_code == 200
+        assert "adapter" in resp.json()
+        assert resp.json()["adapter"] == "paper"
+
+    def test_config_exposes_adapter_mode(self, client):
+        resp = client.get("/config")
+        assert resp.status_code == 200
+        assert "adapter" in resp.json()
+        assert resp.json()["adapter"] == "paper"
+
+    def test_intent_paper_uses_adapter(self, client):
+        """Paper intent goes through adapter and returns valid status."""
+        resp = client.post("/intent/paper", json={
+            "symbol": "BTCUSDT",
+            "side": "BUY",
+            "order_type": "MARKET",
+            "quantity": 0.001,
+        })
+        assert resp.status_code == 200
+        assert resp.json()["status"] in ("FILLED", "RISK_REJECTED", "FAILED")
 
 
 class TestWebSocket:

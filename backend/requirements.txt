@@ -10,3 +10,7 @@ httpx
 pytest
 pytest-asyncio
 httpx
+
+# Optional: required only when TRADING_MODE=live
+# Install with: pip install ccxt
+# ccxt
