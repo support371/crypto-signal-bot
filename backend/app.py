@@ -27,6 +27,7 @@ import logging
 import os
 import time
 from collections import defaultdict
+from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from dotenv import load_dotenv
@@ -50,6 +51,7 @@ from backend.logic.earnings import (
     reset_earnings,
 )
 from backend.logic.exchange_adapter import ExchangeAdapter, build_adapter
+from backend.logic.startup_checks import run as run_startup_checks
 from backend.logic.paper_trading import (
     PaperPortfolio,
     _synthetic_price,
@@ -88,7 +90,17 @@ logger = logging.getLogger("backend")
 # ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
-app = FastAPI(title="Crypto Signal Bot — Trading Backend", version="2.2.0")
+@asynccontextmanager
+async def lifespan(application):
+    run_startup_checks(
+        trading_mode=TRADING_MODE,
+        network=NETWORK,
+        adapter_mode=exchange_adapter.mode,
+    )
+    yield
+
+
+app = FastAPI(title="Crypto Signal Bot — Trading Backend", version="2.2.0", lifespan=lifespan)
 
 # ---------------------------------------------------------------------------
 # CORS

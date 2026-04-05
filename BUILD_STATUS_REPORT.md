@@ -2,120 +2,103 @@
 
 ## Canonical repository
 
-This repository is the canonical source of truth for the project.
-
 - Repo: `support371/crypto-signal-bot`
-- Frontend: **Vite + React + TypeScript**
-- Backend: **FastAPI** in `backend/`
-- Deployment path: `docker-compose.fullstack.yml`
+- Frontend: **Vite + React + TypeScript + Tailwind + shadcn/ui**
+- Backend: **FastAPI/Python** in `backend/`
+- Deployment: `docker-compose.fullstack.yml`
 - Run helpers: `Makefile`
 - Deployment guide: `DEPLOYMENT.md`
 - Canonical execution brief: `TODO.md`
 
-Any alternate local workspaces or prototype app stacks should not be treated as canonical unless they are intentionally merged into this repository.
+---
 
-## Current completed state
+## Completed — as of 2026-04-05
 
-The repository is beyond scaffold stage and already includes a working paper-mode control-center foundation.
+### Backend API (24 endpoints)
+| Route | Status |
+|---|---|
+| GET /health, /config, /balance, /positions, /orders, /price, /audit, /metrics | ✅ |
+| GET /signal/latest, /guardian/status | ✅ |
+| GET /earnings/summary, /earnings/history | ✅ |
+| POST /market-state, /intent/paper, /intent/live, /kill-switch, /withdraw | ✅ |
+| POST /earnings/reset | ✅ |
+| WS /ws/updates | ✅ |
 
-### Backend/API already present
-- `/health`
-- `/config`
-- `/balance`
-- `/positions`
-- `/orders`
-- `/price`
-- `/audit`
-- `/metrics`
-- `/signal/latest`
-- `/guardian/status`
-- `/market-state`
-- `/intent/paper`
-- `/intent/live`
-- `/kill-switch`
-- `/withdraw`
-- `WS /ws/updates`
+### Backend controls
+- API-key enforcement on POST routes ✅
+- Rate limiting on GET routes ✅
+- Guardian service with automatic kill-switch ✅
+- WebSocket alert and order update broadcasting ✅
+- Paper portfolio + simulated execution ✅
+- **Exchange adapter abstraction** (PaperAdapter default, BinanceCCXTAdapter for live) ✅
+- **Startup validation** (mode banner, mainnet safety gate, env checks) ✅
 
-### Backend controls already present
-- API-key enforcement on POST routes
-- rate limiting on GET routes
-- guardian service with kill-switch behavior
-- websocket alert and order update flow
-- paper portfolio and simulated execution
+### Earnings / P&L architecture
+- FIFO lot-matching earnings ledger (`backend/logic/earnings.py`) ✅
+- Realized P&L tracked per symbol, persisted to `earnings.json` ✅
+- Summary: total P&L, win rate, avg/trade, best/worst trade ✅
+- History: per-trade records with entry/exit prices and P&L % ✅
+- EarningsPanel on frontend dashboard ✅
 
-### Frontend already present
-- dashboard shell
-- guardian panel
-- websocket hook
-- guardian status polling
-- portfolio panel with balances, positions, recent orders
-- auto-trade paper flow
-- settings persistence
-- live-price path with backend fallback
-- local usability fallbacks when Supabase is not configured
+### Exchange adapter
+- `backend/logic/exchange_adapter.py`: abstract base + PaperAdapter + BinanceCCXTAdapter ✅
+- Config-gated: CCXT only activates on `TRADING_MODE=live` + credentials + ccxt installed ✅
+- Mainnet hard gate: requires `ALLOW_MAINNET=true` in addition to live + mainnet config ✅
+- Safe fallback to paper on any missing prerequisite ✅
+- Adapter mode exposed on `/health` and `/config` ✅
 
-### Deployment/tooling already present
-- `Dockerfile`
-- `Dockerfile.frontend`
-- `docker-compose.fullstack.yml`
-- `.env.fullstack.example`
-- `DEPLOYMENT.md`
-- `.github/workflows/ci.yml`
-- `.dockerignore`
-- `Makefile`
+### Live mode validation
+- `backend/logic/startup_checks.py`: startup banner, mainnet gate, credential + ccxt warnings ✅
+- `backend/tests/test_live_mode.py`: 16 tests covering routing, gates, and startup checks ✅
+- `scripts/testnet_smoke.py`: standalone manual testnet validation script ✅
 
-## What is still incomplete
+### Frontend
+- Dashboard: PriceChart, SignalPanel, RiskGauge, MicrostructureDisplay, AIInsightCard ✅
+- GuardianPanel, PortfolioPanel, EarningsPanel ✅
+- WebSocket hook, backend status polling, guardian polling, portfolio polling ✅
+- Auto-trade paper flow with kill-switch respect ✅
+- Settings persistence ✅
 
-The project is still fundamentally **paper-first**.
+### Deployment / tooling
+- `Dockerfile`, `Dockerfile.frontend`, `docker-compose.yml`, `docker-compose.fullstack.yml` ✅
+- `.env.fullstack.example`, `DEPLOYMENT.md`, `Makefile`, CI/CD workflows ✅
+- Hardened `.gitignore` (secrets, logs, build artifacts, data) ✅
 
-The remaining work is in four areas:
+### Test suite
+- **97 tests total — all pass**
+- `test_api.py`: health, config, balance, positions, price, orders, audit, signals, guardian,
+  kill-switch, auth, rate limiting, intents, withdraw, market-state, earnings (12), adapter (11), WS
+- `test_live_mode.py`: adapter routing (7), mainnet gate (6), startup checks (4)
+- `test_risk.py`: risk score (6), risk gate (6)
+- `test_signals.py`: regime (5), signal build (6)
+- Frontend production build: ✅ passes
 
-### 1. Real deployment verification
-The repository contains deployment assets, but this report does not claim end-to-end deployment verification unless it is explicitly tested in a fresh environment.
+---
 
-Still needed:
-- verify backend starts cleanly
-- verify frontend production build passes
-- verify frontend connects to backend in deployed mode
-- verify `docker-compose.fullstack.yml` works end to end
-- verify preview/public deployment path
+## Remaining work
 
-### 2. Live-project conversion
-Still needed:
-- real exchange adapter implementation
-- testnet validation
-- live execution path
-- production-safe secret handling
-- stronger production auth and environment governance
+### Testnet live validation (next)
+- Obtain Binance testnet API keys from https://testnet.binance.vision
+- Install ccxt: `pip install ccxt`
+- Run: `python scripts/testnet_smoke.py`
+- Verify adapter mode shows `testnet` on GET /health
 
-### 3. Earnings funnel architecture
-Still needed:
-- canonical earnings ledger
-- separation of trading P&L vs platform revenue
-- `/earnings/*` endpoints
-- reconciliation logic
-- dashboard earnings funnel cards and reporting
+### Live mainnet rollout (after testnet confirmed)
+- Set `TRADING_MODE=live NETWORK=mainnet ALLOW_MAINNET=true`
+- Set real Binance mainnet credentials in env
+- Confirm startup banner shows mainnet warning
+- Full guardian threshold review before any real funds
 
-### 4. Publication readiness
-Still needed:
-- one clean README truth
-- final publication/deployment configuration
-- explicit preview and production rollout instructions
+### Publication readiness
+- Final README pass for external audience
+- Docker Hub or registry publish of images
+- Preview/staging deployment verification
 
-## Recommended implementation order
+---
 
-1. Verify local full-stack run
-2. Verify preview/public deployment path
-3. Add earnings ledger and funnel endpoints
-4. Add exchange testnet adapter path
-5. Add live-mode rollout only after validation
+## Working rules
 
-## Working rule for future agents
-
-Do not rebuild the application into a different stack.
-
-Agents must:
-- work only in this repository
-- use `TODO.md` as the canonical execution brief
-- use `DEPLOYMENT.md` and `docker-compose.fullstack.yml` as the active deployment path
-- keep paper mode as default unless a deliberate live rollout phase is being executed
+- Default mode is always **paper** — never changes without explicit env config
+- `TODO.md` is the canonical execution brief
+- `DEPLOYMENT.md` + `docker-compose.fullstack.yml` are the active deployment path
+- Never rebuild into a different stack

@@ -1,26 +1,55 @@
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
+*.so
 
-# Backend data (audit persistence)
+# Backend data (audit + earnings persistence — never commit live data)
 backend/data/
 
-# Environment files with secrets
+# Environment files with secrets — NEVER commit these
 backend/env/.env
+.env
+.env.local
+.env.*.local
 !backend/env/.env.example
+!.env.fullstack.example
 
 # Python
 *.egg-info/
+*.egg
 dist/
 build/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
 
-# Node
+# Node / frontend
 node_modules/
+.vite/
+
+# Frontend production build output
+dist/
 
 # IDE
 .vscode/
 .idea/
+*.swp
+*.swo
 
 # Docker
 docker-compose.override.yml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+server.log
+
+# ccxt credential cache
+.ccxt/
