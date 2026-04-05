@@ -9,9 +9,25 @@ services:
       TRADING_MODE: ${TRADING_MODE:-paper}
       NETWORK: ${NETWORK:-testnet}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+      BACKEND_API_KEY: ${BACKEND_API_KEY:-}
       AUDIT_STORE_PATH: backend/data/audit.json
+      EARNINGS_STORE_PATH: backend/data/earnings.json
+      RATE_LIMIT_RPM: ${RATE_LIMIT_RPM:-120}
+      GUARDIAN_MAX_API_ERRORS: ${GUARDIAN_MAX_API_ERRORS:-10}
+      GUARDIAN_MAX_FAILED_ORDERS: ${GUARDIAN_MAX_FAILED_ORDERS:-5}
+      GUARDIAN_MAX_DRAWDOWN_PCT: ${GUARDIAN_MAX_DRAWDOWN_PCT:-0.05}
+      # Live mode — only set these when TRADING_MODE=live
+      BINANCE_API_KEY: ${BINANCE_API_KEY:-}
+      BINANCE_API_SECRET: ${BINANCE_API_SECRET:-}
+      ALLOW_MAINNET: ${ALLOW_MAINNET:-}
     volumes:
       - audit-data:/app/backend/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   frontend:
     build:
@@ -21,7 +37,8 @@ services:
         VITE_BACKEND_URL: ${VITE_BACKEND_URL:-/api}
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     ports:
       - "8080:80"
 

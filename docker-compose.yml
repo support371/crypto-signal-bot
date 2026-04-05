@@ -10,13 +10,24 @@ services:
     env_file:
       - backend/env/.env
     environment:
-      - TRADING_MODE=paper
-      - NETWORK=testnet
-      - CORS_ORIGINS=http://localhost:5173,http://localhost:8080,http://localhost:3000
-      - AUDIT_STORE_PATH=backend/data/audit.json
+      TRADING_MODE: ${TRADING_MODE:-paper}
+      NETWORK: ${NETWORK:-testnet}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:8080,http://localhost:3000}
+      AUDIT_STORE_PATH: backend/data/audit.json
+      EARNINGS_STORE_PATH: backend/data/earnings.json
+      RATE_LIMIT_RPM: ${RATE_LIMIT_RPM:-120}
+      GUARDIAN_MAX_API_ERRORS: ${GUARDIAN_MAX_API_ERRORS:-10}
+      GUARDIAN_MAX_FAILED_ORDERS: ${GUARDIAN_MAX_FAILED_ORDERS:-5}
+      GUARDIAN_MAX_DRAWDOWN_PCT: ${GUARDIAN_MAX_DRAWDOWN_PCT:-0.05}
     volumes:
       - ./backend:/app/backend
       - audit-data:/app/backend/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
   audit-data:

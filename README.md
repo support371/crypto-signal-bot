@@ -1,174 +1,230 @@
 # Crypto Signal Bot
 
-A crypto automation control center with a React frontend and a FastAPI backend for paper-trading operations, risk controls, auditability, and trading workflow simulation.
+![CI](https://github.com/Support371/crypto-signal-bot/actions/workflows/ci.yml/badge.svg)
 
-## Current status
+A full-stack crypto trading control center — React dashboard frontend, FastAPI backend, paper trading by default with a path to live testnet and mainnet execution.
 
-- Backend: **FastAPI/Python** in `backend/`
-- Frontend: **Vite + React + TypeScript + Tailwind + shadcn/ui**
-- Default operating mode: **paper** (no real money, no real exchange connections)
-- Guardian service monitors drawdown, API errors, and order failures — activates kill switch automatically
+## Features
 
-## Run commands
+- **Signal engine** — regime classification (TREND / RANGE / CHAOS), directional signals with confidence scoring
+- **Risk gate** — composite risk score from spread stress, depth decay, volatility, and price shock; blocks or sizes positions accordingly
+- **Guardian service** — monitors drawdown, API errors, and failed orders; activates kill switch automatically when thresholds breach
+- **Paper trading** — full order simulation with realistic slippage, portfolio tracking, and FIFO realized P&L
+- **Earnings ledger** — per-trade realized P&L, win rate, best/worst trade, trade history
+- **Exchange adapter** — pluggable: `PaperAdapter` (default) or `BinanceCCXTAdapter` (testnet/mainnet, config-gated)
+- **WebSocket** — real-time order updates and guardian alerts
+- **Auth + rate limiting** — optional API key on write endpoints, sliding-window rate limiting on reads
+- **Dashboard** — live prices, signal panel, risk gauge, guardian panel, portfolio panel, earnings panel
 
-### Backend (local)
+---
+
+## Quickstart — local development
+
+### 1. Backend
 
 ```bash
-cd /path/to/crypto-signal-bot
-
-# Install dependencies
+# Install Python deps
 pip install -r backend/requirements.txt
 
-# Copy env (first time only)
+# Copy env (first time)
 cp backend/env/.env.example backend/env/.env
 
 # Start
 uvicorn backend.app:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### Frontend (local)
+### 2. Frontend
 
 ```bash
-cd /path/to/crypto-signal-bot
-
-# Install dependencies
+# Install npm deps
 npm install
 
-# Start dev server (connects to backend at http://localhost:8000 by default)
+# Start dev server (talks to backend at http://localhost:8000)
 npm run dev
-
-# Production build
-npm run build
 ```
 
-### Docker (backend only)
+Open [http://localhost:5173](http://localhost:5173)
+
+### 3. Docker — full stack
 
 ```bash
-docker compose up --build
-# Backend available at http://localhost:8000
-```
+# Copy env (optional — defaults to paper mode)
+cp .env.fullstack.example .env
 
-### Docker (full stack — backend + frontend via nginx)
-
-```bash
+# Start backend + frontend via nginx
 docker compose -f docker-compose.fullstack.yml up --build
-# App available at http://localhost:8080
 ```
 
-### Tests
+Open [http://localhost:8080](http://localhost:8080)
+
+---
+
+## Make targets
 
 ```bash
-cd /path/to/crypto-signal-bot
-
-# Run all backend tests
-python -m pytest backend/tests/ -v
-
-# Run specific test file
-python -m pytest backend/tests/test_api.py -v
-python -m pytest backend/tests/test_signals.py -v
-python -m pytest backend/tests/test_risk.py -v
+make install          # Install all backend + frontend deps
+make backend          # Start backend dev server
+make frontend         # Start frontend dev server
+make test             # Run backend test suite
+make test-v           # Verbose test output
+make build            # Production frontend build
+make compose-up       # Full-stack Docker start
+make compose-down     # Full-stack Docker stop
+make testnet-smoke    # Manual Binance testnet validation
+make clean            # Remove build artifacts
 ```
 
-## API routes
+---
+
+## API reference
 
 ### GET (rate-limited, open)
+
 | Route | Description |
 |---|---|
-| `GET /health` | System health, kill switch state, guardian status |
+| `GET /health` | System health, kill switch state, adapter mode |
 | `GET /config` | Current config (sanitized, no secrets) |
 | `GET /balance` | Paper portfolio balances and positions |
 | `GET /positions` | Open positions |
 | `GET /orders` | Open paper orders |
-| `GET /price?symbol=BTCUSDT` | Synthetic market price |
+| `GET /price?symbol=BTCUSDT` | Synthetic or live market price |
 | `GET /audit` | Persisted audit trail |
 | `GET /metrics` | Prometheus metrics |
 | `GET /signal/latest` | Latest signal from last /market-state call |
-| `GET /guardian/status` | Guardian service state and thresholds |
+| `GET /guardian/status` | Guardian state and thresholds |
+| `GET /earnings/summary` | Realized P&L summary, win rate, avg/trade |
+| `GET /earnings/history` | Per-trade closed trade history |
 
 ### POST (authenticated when `BACKEND_API_KEY` is set)
+
 | Route | Description |
 |---|---|
-| `POST /market-state` | Submit market data, receive signal + risk + microstructure |
+| `POST /market-state` | Submit market data → signal + risk + microstructure |
 | `POST /intent/paper` | Submit paper trading intent |
-| `POST /intent/live` | Submit intent (routes to paper unless live mode enabled) |
+| `POST /intent/live` | Submit intent (routes to paper unless live mode active) |
 | `POST /kill-switch` | Activate or deactivate kill switch |
 | `POST /withdraw` | Withdraw from paper portfolio |
+| `POST /earnings/reset` | Reset earnings ledger |
 
 ### WebSocket
+
 | Route | Description |
 |---|---|
-| `WS /ws/updates` | Real-time order updates, health, guardian alerts |
+| `WS /ws/updates` | Real-time order updates, health pings, guardian alerts |
+
+---
 
 ## Configuration
 
-Copy `backend/env/.env.example` to `backend/env/.env` and set:
+### Backend (`backend/env/.env`)
 
 ```env
-TRADING_MODE=paper          # paper | live
-NETWORK=testnet             # testnet | mainnet
-BACKEND_API_KEY=            # Set to require API key on POST endpoints
+TRADING_MODE=paper              # paper | live
+NETWORK=testnet                 # testnet | mainnet
+BACKEND_API_KEY=                # Restricts POST endpoints when set
+BINANCE_API_KEY=                # Required for TRADING_MODE=live
+BINANCE_API_SECRET=             # Required for TRADING_MODE=live
+ALLOW_MAINNET=                  # Must be "true" to enable mainnet (safety gate)
 CORS_ORIGINS=http://localhost:5173,http://localhost:8080
-RATE_LIMIT_RPM=120          # Max GET requests per minute per IP
-GUARDIAN_MAX_API_ERRORS=10  # API errors before kill switch
+RATE_LIMIT_RPM=120
+GUARDIAN_MAX_API_ERRORS=10
 GUARDIAN_MAX_FAILED_ORDERS=5
-GUARDIAN_MAX_DRAWDOWN_PCT=0.05  # 5% drawdown triggers halt
+GUARDIAN_MAX_DRAWDOWN_PCT=0.05
 AUDIT_STORE_PATH=backend/data/audit.json
+EARNINGS_STORE_PATH=backend/data/earnings.json
 ```
 
-Frontend env (`.env` at repo root):
+### Frontend (`.env` at repo root)
+
 ```env
 VITE_BACKEND_URL=http://localhost:8000
 ```
 
-## Authentication
+---
 
-When `BACKEND_API_KEY` is set, POST endpoints require the header:
-```
-X-API-Key: <your-key>
-```
+## Safety model
 
-GET endpoints are open but rate-limited (default 120 req/min per IP).
+| Layer | Behaviour |
+|---|---|
+| Default mode | Paper trading — no exchange connection, no real funds |
+| Live mode gate | `TRADING_MODE=live` + credentials + `ccxt` installed |
+| Mainnet gate | `ALLOW_MAINNET=true` required in addition to live + mainnet config |
+| Guardian | Auto-activates kill switch on drawdown / error thresholds |
+| Kill switch | Blocks all trade intents; visible on `/health` and dashboard |
+| Auth | Optional `X-API-Key` header on all write endpoints |
+| Secrets | Always in env vars, never in code or git |
 
-## Guardian service
-
-The guardian automatically activates the kill switch when:
-- API errors exceed `GUARDIAN_MAX_API_ERRORS` (default 10)
-- Failed orders exceed `GUARDIAN_MAX_FAILED_ORDERS` (default 5)
-- Paper portfolio drawdown exceeds `GUARDIAN_MAX_DRAWDOWN_PCT` (default 5%)
-
-Guardian state is visible at `GET /guardian/status` and broadcast via WebSocket (`type: "guardian_alert"`).
+---
 
 ## Architecture
 
 ```
 crypto-signal-bot/
 ├── backend/
-│   ├── app.py              # FastAPI application (all routes)
+│   ├── app.py                    # FastAPI app — all routes, lifespan startup checks
 │   ├── logic/
-│   │   ├── signals.py      # Signal engine (regime classification, direction)
-│   │   ├── risk.py         # Risk scoring and risk gate
-│   │   ├── paper_trading.py # Paper portfolio and order fills
-│   │   ├── audit_store.py  # JSON-backed audit persistence
-│   │   └── simulate.py     # Session simulator
+│   │   ├── signals.py            # Regime classification + signal generation
+│   │   ├── risk.py               # Risk scoring + risk gate
+│   │   ├── paper_trading.py      # Paper portfolio + order fill simulation
+│   │   ├── earnings.py           # FIFO P&L ledger, realized earnings tracking
+│   │   ├── exchange_adapter.py   # Adapter abstraction: Paper | CCXT testnet/mainnet
+│   │   ├── startup_checks.py     # Mode validation, mainnet gate, env audit
+│   │   ├── audit_store.py        # JSON-backed audit persistence
+│   │   └── simulate.py           # Session simulator
 │   ├── models/
-│   │   └── execution_intent.py
-│   ├── models_core.py      # Features, Signal, RiskDecision
-│   ├── config/config.yaml  # Risk and exchange config
-│   ├── env/.env.example    # Environment template
-│   └── tests/              # pytest test suite
-├── src/                    # React frontend
-│   ├── components/dashboard/
-│   ├── hooks/              # useBackendStatus, useSignalEngine, etc.
-│   └── lib/backend.ts      # API client
-├── Dockerfile              # Backend image
-├── Dockerfile.frontend     # Frontend nginx image
-├── docker-compose.yml      # Backend only
-└── docker-compose.fullstack.yml  # Backend + frontend
+│   │   └── execution_intent.py   # Order intent models
+│   ├── models_core.py            # Features, Signal, RiskDecision
+│   ├── config/config.yaml        # Risk and exchange config
+│   ├── env/.env.example          # Environment template
+│   └── tests/                    # 99-test pytest suite
+├── src/                          # React frontend
+│   ├── components/dashboard/     # SignalPanel, GuardianPanel, EarningsPanel, …
+│   ├── hooks/                    # useSignalEngine, useGuardianStatus, useEarnings, …
+│   └── lib/backend.ts            # Typed API client
+├── scripts/
+│   └── testnet_smoke.py          # Manual Binance testnet validation script
+├── deploy/nginx.conf             # Nginx reverse proxy + WebSocket config
+├── Dockerfile                    # Backend image (Python 3.11-slim)
+├── Dockerfile.frontend           # Frontend image (Node build + nginx serve)
+├── docker-compose.yml            # Backend only
+└── docker-compose.fullstack.yml  # Backend + frontend via nginx
 ```
 
-## Safety
+---
 
-- Paper mode is the default and cannot be disabled without explicit env config
-- Live trading requires `TRADING_MODE=live` plus exchange credentials
-- All secrets stay in env, never in code
-- Kill switch can be activated via API (`POST /kill-switch`) or automatically by the guardian
+## Testing
+
+```bash
+# All tests
+python -m pytest backend/tests/ -v
+
+# Specific suites
+python -m pytest backend/tests/test_api.py -v        # API endpoints (58 tests)
+python -m pytest backend/tests/test_live_mode.py -v  # Live mode + mainnet gate (17 tests)
+python -m pytest backend/tests/test_risk.py -v       # Risk engine (12 tests)
+python -m pytest backend/tests/test_signals.py -v    # Signal engine (11 tests)
+
+# Frontend build
+npm run build
+```
+
+**99 tests — all pass.**
+
+---
+
+## Testnet quick-start
+
+```bash
+pip install ccxt
+# Get free testnet keys at https://testnet.binance.vision
+export TRADING_MODE=live
+export NETWORK=testnet
+export BINANCE_API_KEY=your-testnet-key
+export BINANCE_API_SECRET=your-testnet-secret
+
+# Dry run (no order placed)
+python scripts/testnet_smoke.py --dry-run
+
+# Full smoke test
+python scripts/testnet_smoke.py
+```

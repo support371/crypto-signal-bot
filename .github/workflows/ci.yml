@@ -11,7 +11,9 @@ on:
 
 jobs:
   backend:
+    name: Backend tests
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,21 +23,31 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements.txt') }}
+          restore-keys: ${{ runner.os }}-pip-
+
       - name: Install backend dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
 
       - name: Verify backend imports
-        run: |
-          python -m py_compile backend/app.py
+        run: python -m py_compile backend/app.py
 
-      - name: Run backend tests
-        run: |
-          pytest backend/tests -q
+      - name: Run all backend tests
+        run: python -m pytest backend/tests/ -v --tb=short
+
+      - name: Verify live-mode tests pass
+        run: python -m pytest backend/tests/test_live_mode.py -v --tb=short
 
   frontend:
+    name: Frontend build
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,3 +66,9 @@ jobs:
           VITE_BACKEND_URL: /api
           VITE_API_BASE_URL: /api
         run: npm run build
+
+      - name: Verify dist output
+        run: |
+          test -f dist/index.html
+          test -d dist/assets
+          echo "Frontend build output verified"
