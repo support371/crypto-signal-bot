@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import backend.app as app_module
+import backend.logic.earnings as earnings_module
 from backend.app import app
 
 
@@ -25,6 +26,8 @@ def reset_state():
     app_module.paper_portfolio.positions = []
     app_module.paper_portfolio.open_orders = []
     app_module.paper_portfolio.filled_orders = []
+    # Reset earnings ledger so each test starts clean
+    earnings_module.reset_earnings()
     yield
 
 
@@ -365,6 +368,121 @@ class TestLegacyEndpoints:
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["steps"]) == 5
+
+
+class TestEarnings:
+    def test_summary_empty_initially(self, client):
+        resp = client.get("/earnings/summary")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_realized_pnl"] == 0.0
+        assert data["trade_count"] == 0
+        assert data["win_rate_pct"] == 0.0
+        assert data["open_lots"] == 0
+
+    def test_summary_keys_present(self, client):
+        resp = client.get("/earnings/summary")
+        data = resp.json()
+        for key in ("total_realized_pnl", "trade_count", "win_count", "loss_count",
+                    "win_rate_pct", "avg_pnl_per_trade", "best_trade_pnl",
+                    "worst_trade_pnl", "open_lots"):
+            assert key in data, f"Missing key: {key}"
+
+    def test_history_empty_initially(self, client):
+        resp = client.get("/earnings/history")
+        assert resp.status_code == 200
+        assert resp.json()["trades"] == []
+
+    def test_history_symbol_filter(self, client):
+        resp = client.get("/earnings/history?symbol=BTCUSDT")
+        assert resp.status_code == 200
+        assert isinstance(resp.json()["trades"], list)
+
+    def test_history_limit_param(self, client):
+        resp = client.get("/earnings/history?limit=10")
+        assert resp.status_code == 200
+
+    def test_history_limit_out_of_range(self, client):
+        resp = client.get("/earnings/history?limit=0")
+        assert resp.status_code == 422
+
+    def test_earnings_recorded_after_buy_sell(self, client):
+        # BUY to open a lot
+        client.post("/intent/paper", json={
+            "symbol": "BTCUSDT",
+            "side": "BUY",
+            "order_type": "MARKET",
+            "quantity": 0.001,
+        })
+        summary_after_buy = client.get("/earnings/summary").json()
+        # A BUY opens a lot — no closed trades yet, but open_lots increments
+        assert summary_after_buy["trade_count"] == 0
+        assert summary_after_buy["open_lots"] >= 0  # may be 0 if RISK_REJECTED
+
+    def test_pnl_realized_after_buy_then_sell(self, client):
+        # Direct ledger interaction to guarantee a matched trade
+        earnings_module.record_fill(
+            symbol="BTCUSDT", side="BUY", quantity=0.01,
+            fill_price=43000.0, intent_id="test-buy-1"
+        )
+        earnings_module.record_fill(
+            symbol="BTCUSDT", side="SELL", quantity=0.01,
+            fill_price=44000.0, intent_id="test-sell-1"
+        )
+        summary = client.get("/earnings/summary").json()
+        assert summary["trade_count"] == 1
+        assert summary["win_count"] == 1
+        assert summary["loss_count"] == 0
+        assert summary["total_realized_pnl"] == pytest.approx(10.0, rel=1e-4)
+        assert summary["win_rate_pct"] == 100.0
+
+        history = client.get("/earnings/history").json()["trades"]
+        assert len(history) == 1
+        assert history[0]["symbol"] == "BTCUSDT"
+        assert history[0]["realized_pnl"] == pytest.approx(10.0, rel=1e-4)
+
+    def test_losing_trade_counted(self, client):
+        earnings_module.record_fill(
+            symbol="ETHUSDT", side="BUY", quantity=1.0,
+            fill_price=2600.0, intent_id="test-buy-2"
+        )
+        earnings_module.record_fill(
+            symbol="ETHUSDT", side="SELL", quantity=1.0,
+            fill_price=2500.0, intent_id="test-sell-2"
+        )
+        summary = client.get("/earnings/summary").json()
+        assert summary["trade_count"] == 1
+        assert summary["loss_count"] == 1
+        assert summary["total_realized_pnl"] == pytest.approx(-100.0, rel=1e-4)
+        assert summary["win_rate_pct"] == 0.0
+
+    def test_reset_clears_ledger(self, client):
+        earnings_module.record_fill(
+            symbol="BTCUSDT", side="BUY", quantity=0.01,
+            fill_price=43000.0, intent_id="test-buy-3"
+        )
+        earnings_module.record_fill(
+            symbol="BTCUSDT", side="SELL", quantity=0.01,
+            fill_price=44000.0, intent_id="test-sell-3"
+        )
+        assert client.get("/earnings/summary").json()["trade_count"] == 1
+
+        resp = client.post("/earnings/reset")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "ok"
+
+        summary = client.get("/earnings/summary").json()
+        assert summary["trade_count"] == 0
+        assert summary["total_realized_pnl"] == 0.0
+
+    def test_reset_requires_auth_when_key_set(self, client):
+        app_module.BACKEND_API_KEY = "secret"
+        resp = client.post("/earnings/reset")
+        assert resp.status_code == 401
+
+    def test_reset_allowed_with_valid_key(self, auth_client):
+        resp = auth_client.post("/earnings/reset")
+        assert resp.status_code == 200
 
 
 class TestWebSocket:

@@ -43,6 +43,12 @@ from backend.logic.audit_store import (
     append_withdrawal,
     get_audit,
 )
+from backend.logic.earnings import (
+    get_history as earnings_get_history,
+    get_summary as earnings_get_summary,
+    record_fill as earnings_record_fill,
+    reset_earnings,
+)
 from backend.logic.paper_trading import (
     PaperPortfolio,
     _synthetic_price,
@@ -479,6 +485,14 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
     append_intent(intent_data)
     if intent.status == IntentStatus.FILLED:
         append_order(intent_data)
+        earnings_record_fill(
+            symbol=intent.symbol,
+            side=intent.side.value,
+            quantity=intent.fill_quantity or intent.quantity,
+            fill_price=intent.fill_price or 0.0,
+            intent_id=intent.id,
+            timestamp=intent.updated_at,
+        )
 
     try:
         loop = asyncio.get_event_loop()
@@ -760,6 +774,33 @@ def withdraw(req: WithdrawRequest, _: None = Depends(require_auth)):
     }
     append_withdrawal(withdrawal_data)
     return {"status": "ok", "withdrawal": withdrawal_data}
+
+
+# ---------------------------------------------------------------------------
+# Endpoints — Earnings
+# ---------------------------------------------------------------------------
+
+
+@app.get("/earnings/summary", dependencies=[Depends(rate_limit)])
+def get_earnings_summary():
+    """Aggregate realized P&L summary for the paper portfolio."""
+    return earnings_get_summary()
+
+
+@app.get("/earnings/history", dependencies=[Depends(rate_limit)])
+def get_earnings_history(
+    symbol: Optional[str] = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+):
+    """Closed trade history with per-trade realized P&L, newest first."""
+    return {"trades": earnings_get_history(symbol=symbol, limit=limit)}
+
+
+@app.post("/earnings/reset")
+def reset_earnings_ledger(_: None = Depends(require_auth)):
+    """Reset the earnings ledger (paper mode utility, requires auth when key set)."""
+    reset_earnings()
+    return {"status": "ok", "message": "Earnings ledger cleared"}
 
 
 # ---------------------------------------------------------------------------

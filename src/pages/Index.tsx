@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Header } from '@/components/dashboard/Header';
 import { AIInsightCard } from '@/components/dashboard/AIInsightCard';
+import { EarningsPanel } from '@/components/dashboard/EarningsPanel';
 import { GuardianPanel } from '@/components/dashboard/GuardianPanel';
 import { MicrostructureDisplay } from '@/components/dashboard/MicrostructureDisplay';
 import { PortfolioPanel } from '@/components/dashboard/PortfolioPanel';
@@ -14,6 +15,7 @@ import { SignalPanel } from '@/components/dashboard/SignalPanel';
 import { useBackendStatus } from '@/hooks/useBackendStatus';
 import { useBackendWebSocket } from '@/hooks/useBackendWebSocket';
 import { useCryptoPrices } from '@/hooks/useCryptoPrices';
+import { useEarnings } from '@/hooks/useEarnings';
 import { useGuardianStatus } from '@/hooks/useGuardianStatus';
 import { usePersistedSettings } from '@/hooks/usePersistedSettings';
 import { usePortfolio } from '@/hooks/usePortfolio';
@@ -29,6 +31,7 @@ const Index = () => {
   const { health, config, paperBalance, isConnected, refetch: refetchStatus } = useBackendStatus();
   const { guardian, isLoading: guardianLoading, refetch: refetchGuardian } = useGuardianStatus();
   const { portfolio, isLoading: portfolioLoading, refetch: refetchPortfolio } = usePortfolio();
+  const { summary: earningsSummary, trades: earningsTrades, isLoading: earningsLoading, refetch: refetchEarnings } = useEarnings();
   const selectedCoin = prices.find((price) => price.id === selectedSymbol) || null;
 
   const { signal, risk, microstructure } = useSignalEngine(selectedCoin, {
@@ -115,9 +118,10 @@ const Index = () => {
         );
         refetchStatus();
         refetchPortfolio();
+        refetchEarnings();
       }
     },
-    [refetchStatus, refetchPortfolio]
+    [refetchStatus, refetchPortfolio, refetchEarnings]
   );
 
   const { connected: wsConnected } = useBackendWebSocket({
@@ -212,6 +216,16 @@ const Index = () => {
             risk={risk}
             onRefetch={refetchPortfolio}
           />
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 lg:gap-6">
+          <div className="lg:col-span-1">
+            <EarningsPanel
+              summary={earningsSummary}
+              trades={earningsTrades}
+              isLoading={earningsLoading}
+            />
+          </div>
         </div>
       </main>
 
