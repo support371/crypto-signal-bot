@@ -7,7 +7,7 @@ The application ships as two containers:
 - **Frontend** — Vite/React build served by Nginx, port 8080 externally; proxies `/api/*` and `/ws/*` to the backend
 
 Default mode is always **paper trading** — no exchange connection, no real funds.
-Optional hybrid paper mode keeps execution paper-only while using live public Binance market data.
+Optional hybrid paper mode keeps execution paper-only while using selected live public exchange market data.
 
 This repo has two deployment paths:
 - Docker Compose for full local/backend+frontend operation
@@ -135,7 +135,9 @@ The backend still needs separate hosting and is not auto-deployed by Vercel from
 | Variable | Default | Description |
 |---|---|---|
 | `TRADING_MODE` | `paper` | `paper` or `live` |
-| `PAPER_USE_LIVE_MARKET_DATA` | `false` | `true` = paper execution with live public Binance market data |
+| `EXCHANGE` | `binance` | Authenticated live execution venue: `binance`, `bitget`, or `btcc` |
+| `PAPER_USE_LIVE_MARKET_DATA` | `false` | `true` = paper execution with live public market data |
+| `MARKET_DATA_PUBLIC_EXCHANGE` | `binance` | Public feed used in hybrid paper mode; defaults to `EXCHANGE` in runtime config |
 | `NETWORK` | `testnet` | `testnet` or `mainnet` |
 | `BACKEND_API_KEY` | _(empty)_ | API key for POST endpoints; empty = open dev mode |
 | `CORS_ORIGINS` | localhost origins | Comma-separated allowed origins |
@@ -156,12 +158,17 @@ The backend still needs separate hosting and is not auto-deployed by Vercel from
 | `AUDIT_STORE_PATH` | `backend/data/audit.json` | Audit trail file |
 | `EARNINGS_STORE_PATH` | `backend/data/earnings.json` | Earnings ledger file |
 
-### Live mode (set only when TRADING_MODE=live)
+### Live mode credentials (set only when TRADING_MODE=live)
 
 | Variable | Description |
 |---|---|
 | `BINANCE_API_KEY` | Binance API key (testnet or mainnet) |
 | `BINANCE_API_SECRET` | Binance API secret |
+| `BITGET_API_KEY` | Bitget API key |
+| `BITGET_API_SECRET` | Bitget API secret |
+| `BITGET_API_PASSPHRASE` | Bitget API passphrase |
+| `BTCC_API_KEY` | BTCC API key |
+| `BTCC_API_SECRET` | BTCC API secret |
 | `ALLOW_MAINNET` | Must be `true` to enable mainnet — additional safety gate |
 
 ### Optional frontend auth / AI
@@ -181,6 +188,8 @@ If `BACKEND_API_KEY` is configured, the frontend dashboard can still operate wri
 
 ```env
 TRADING_MODE=paper
+EXCHANGE=binance
+MARKET_DATA_PUBLIC_EXCHANGE=binance
 PAPER_USE_LIVE_MARKET_DATA=false
 NETWORK=testnet
 ```
@@ -189,18 +198,26 @@ NETWORK=testnet
 
 ```env
 TRADING_MODE=paper
+EXCHANGE=binance
+MARKET_DATA_PUBLIC_EXCHANGE=bitget
 PAPER_USE_LIVE_MARKET_DATA=true
 NETWORK=testnet
 ```
 
-This keeps execution on the `PaperAdapter` while enabling public Binance market data for `/price`, `/signal/latest`, `/guardian/status`, `/exchange/status`, and `WS /ws/updates`.
+This keeps execution on the `PaperAdapter` while enabling selected public market data for `/price`, `/signal/latest`, `/guardian/status`, `/exchange/status`, and `WS /ws/updates`.
+
+Validate synthetic paper mode with:
+
+```bash
+make synthetic-paper-smoke
+```
 
 Validate a running backend with:
 
 ```bash
 make live-paper-smoke
 # or against nginx:
-.venv/bin/python scripts/live_paper_smoke.py --base-url http://localhost:8080/api
+.venv/bin/python scripts/live_paper_smoke.py --base-url http://localhost:8080/api --exchange bitget
 ```
 
 Validate the full compose stack end to end with:
@@ -215,10 +232,11 @@ Run the canonical stabilization/release verification path with:
 make release-verify
 ```
 
-### Live Binance testnet mode
+### Live exchange certification mode
 
 ```env
 TRADING_MODE=live
+EXCHANGE=binance
 PAPER_USE_LIVE_MARKET_DATA=false
 NETWORK=testnet
 BINANCE_API_KEY=your-testnet-key
@@ -227,16 +245,15 @@ BINANCE_API_SECRET=your-testnet-secret
 
 ## Testnet deployment
 
-1. Get free Binance testnet keys at https://testnet.binance.vision
-
-2. Install ccxt:
+1. Install ccxt:
 ```bash
    .venv/bin/pip install ccxt
    ```
 
-3. Set env:
+2. Set env:
    ```env
    TRADING_MODE=live
+   EXCHANGE=binance
    PAPER_USE_LIVE_MARKET_DATA=false
    NETWORK=testnet
    BINANCE_API_KEY=your-testnet-key
@@ -245,13 +262,15 @@ BINANCE_API_SECRET=your-testnet-secret
    VITE_SUPABASE_PUBLISHABLE_KEY=
    ```
 
-4. Validate with the smoke test:
+3. Validate with the smoke test:
    ```bash
    make testnet-smoke-dry   # connection only
    make testnet-smoke       # full order test
    ```
+   Use `EXCHANGE=bitget` to run the same harness against Bitget demo/testnet credentials.
+   `EXCHANGE=btcc` currently remains blocked for authenticated testnet/demo certification and will fail fast.
 
-5. Confirm `GET /health` returns `"adapter": "testnet"` and `GET /exchange/status` returns `"execution_mode": "testnet"`.
+4. Confirm `GET /health` returns `"adapter": "testnet"` and `GET /exchange/status` returns `"execution_mode": "testnet"`.
 
 ---
 
@@ -259,11 +278,12 @@ BINANCE_API_SECRET=your-testnet-secret
 
 > **Only proceed after testnet validation is complete.**
 
-1. Obtain mainnet Binance API keys with Spot trading enabled.
+1. Obtain production exchange credentials with Spot trading enabled.
 
 2. Set env:
    ```env
    TRADING_MODE=live
+   EXCHANGE=binance
    NETWORK=mainnet
    BINANCE_API_KEY=your-mainnet-key
    BINANCE_API_SECRET=your-mainnet-secret
@@ -315,8 +335,9 @@ curl http://localhost:8000/health
 Response includes:
 - `mode` — paper | live
 - `adapter` — paper | testnet | mainnet
+- `exchange` — selected hybrid market-data exchange when active
 - `market_data_mode` — synthetic_paper | live_public_paper | live_execution
-- `market_data_mode` — synthetic_paper | live_public_paper | live_execution
+- `market_data_source` — synthetic or selected exchange feed source
 - `kill_switch_active` — boolean
 - `guardian_triggered` — boolean
 - `api_error_count`, `failed_order_count`

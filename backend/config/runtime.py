@@ -44,6 +44,8 @@ class PaperConfig:
 class RuntimeConfig:
     trading_mode: str
     network: str
+    exchange: str
+    market_data_public_exchange: str
     backend_api_key: str
     rate_limit_rpm: int
     allow_mainnet: bool
@@ -107,6 +109,13 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw.lower() in {"1", "true", "yes", "on"}
 
 
+def _normalize_exchange(value: str, default: str = "binance") -> str:
+    normalized = (value or "").strip().lower()
+    if normalized in {"binance", "bitget", "btcc"}:
+        return normalized
+    return default
+
+
 def _env_csv(name: str, default: list[str]) -> list[str]:
     raw = os.getenv(name)
     if raw is None or raw == "":
@@ -144,6 +153,25 @@ def get_runtime_config() -> RuntimeConfig:
     return RuntimeConfig(
         trading_mode=_env_str("TRADING_MODE", "paper"),
         network=_env_str("NETWORK", "testnet"),
+        exchange=_normalize_exchange(
+            _env_str(
+                "EXCHANGE",
+                str(_get_nested(defaults, "exchange", "default", default="binance")),
+            )
+        ),
+        market_data_public_exchange=_normalize_exchange(
+            _env_str(
+                "MARKET_DATA_PUBLIC_EXCHANGE",
+                str(
+                    _get_nested(
+                        defaults,
+                        "market_data",
+                        "public_exchange",
+                        default=_get_nested(defaults, "exchange", "default", default="binance"),
+                    )
+                ),
+            )
+        ),
         backend_api_key=_env_str("BACKEND_API_KEY", ""),
         rate_limit_rpm=_env_int("RATE_LIMIT_RPM", 120),
         allow_mainnet=_env_bool("ALLOW_MAINNET", False),

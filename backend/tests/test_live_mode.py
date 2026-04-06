@@ -17,6 +17,12 @@ from fastapi.testclient import TestClient
 import backend.app as app_module
 from backend.app import app
 from backend.logic.exchange_adapter import PaperAdapter, build_adapter
+from backend.logic.market_data import (
+    BTCCPublicMarketDataService,
+    BitgetPublicMarketDataService,
+    BinancePublicMarketDataService,
+    build_public_market_data_service,
+)
 from backend.logic.paper_trading import PaperPortfolio, _synthetic_price
 from backend.logic.startup_checks import run as run_startup_checks
 
@@ -75,6 +81,14 @@ class TestAdapterRouting:
     def test_live_partial_credentials_falls_back_paper(self, monkeypatch):
         monkeypatch.setenv("BINANCE_API_KEY", "only-key-no-secret")
         monkeypatch.delenv("BINANCE_API_SECRET", raising=False)
+        adapter = _build("live", "testnet")
+        assert adapter.mode == "paper"
+
+    def test_live_bitget_missing_passphrase_falls_back_paper(self, monkeypatch):
+        monkeypatch.setenv("EXCHANGE", "bitget")
+        monkeypatch.setenv("BITGET_API_KEY", "fake-key")
+        monkeypatch.setenv("BITGET_API_SECRET", "fake-secret")
+        monkeypatch.delenv("BITGET_API_PASSPHRASE", raising=False)
         adapter = _build("live", "testnet")
         assert adapter.mode == "paper"
 
@@ -199,6 +213,20 @@ class TestStartupChecks:
         monkeypatch.setenv("BACKEND_API_KEY", "some-secret-key")
         # Should complete without raising
         run_startup_checks(trading_mode="paper", network="testnet", adapter_mode="paper")
+
+
+class TestMarketDataProviderFactory:
+    def test_build_public_market_data_service_defaults_binance(self):
+        service = build_public_market_data_service("binance", symbols=["BTCUSDT"])
+        assert isinstance(service, BinancePublicMarketDataService)
+
+    def test_build_public_market_data_service_supports_bitget(self):
+        service = build_public_market_data_service("bitget", symbols=["BTCUSDT"])
+        assert isinstance(service, BitgetPublicMarketDataService)
+
+    def test_build_public_market_data_service_supports_btcc(self):
+        service = build_public_market_data_service("btcc", symbols=["BTCUSDT"])
+        assert isinstance(service, BTCCPublicMarketDataService)
 
 
 class FakeMarketDataService:

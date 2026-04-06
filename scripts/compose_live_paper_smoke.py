@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import argparse
 from pathlib import Path
 
 from compose_preflight import detect_compose_v2
@@ -34,6 +35,15 @@ def run(cmd: list[str], *, env: dict[str, str]) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Compose-driven live-paper smoke")
+    parser.add_argument(
+        "--exchange",
+        choices=("binance", "bitget", "btcc"),
+        default=os.getenv("MARKET_DATA_PUBLIC_EXCHANGE", os.getenv("EXCHANGE", "binance")).lower(),
+        help="Public market-data exchange to validate through compose.",
+    )
+    args = parser.parse_args()
+
     if not detect_compose_v2():
         print("[FAIL] Docker Compose v2 is not available.")
         print("       Install the Docker Compose plugin, then re-run.")
@@ -44,6 +54,8 @@ def main() -> None:
     env.setdefault("TRADING_MODE", "paper")
     env.setdefault("PAPER_USE_LIVE_MARKET_DATA", "true")
     env.setdefault("NETWORK", "testnet")
+    env.setdefault("EXCHANGE", "binance")
+    env["MARKET_DATA_PUBLIC_EXCHANGE"] = args.exchange
     env.setdefault("VITE_BACKEND_URL", "/api")
     env.setdefault("VITE_API_BASE_URL", "/api")
     env.setdefault("CORS_ORIGINS", "http://localhost:8080")
@@ -59,6 +71,8 @@ def main() -> None:
         "http://127.0.0.1:8080/api",
         "--timeout",
         "45",
+        "--exchange",
+        args.exchange,
     ]
 
     section("1 / Prebuild images")

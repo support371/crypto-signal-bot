@@ -2,8 +2,8 @@
 """
 Hybrid live-paper smoke test for a running backend instance.
 
-Validates that paper execution stays active while public Binance market data is
-flowing through the API and websocket surfaces.
+Validates that paper execution stays active while selected public exchange
+market data is flowing through the API and websocket surfaces.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ import asyncio
 import sys
 import time
 from urllib.parse import urlparse, urlunparse
+import os
 
 import httpx
 import websockets
@@ -71,7 +72,15 @@ def wait_for_json(
     sys.exit(1)
 
 
-async def check_websocket(base_url: str, timeout_seconds: float) -> None:
+def expected_sources(exchange: str) -> set[str]:
+    return {
+        "binance": {"binance-public", "binance-rest"},
+        "bitget": {"bitget-public", "bitget-rest"},
+        "btcc": {"btcc-poll"},
+    }[exchange]
+
+
+async def check_websocket(base_url: str, timeout_seconds: float, exchange: str) -> None:
     ws_url = build_ws_url(base_url)
     async with websockets.connect(ws_url, ping_interval=20, ping_timeout=20) as ws:
         raw = await asyncio.wait_for(ws.recv(), timeout=timeout_seconds)
@@ -89,10 +98,14 @@ async def check_websocket(base_url: str, timeout_seconds: float) -> None:
         if message.get("market_data_mode") != "live_public_paper":
             print(f"  [FAIL] websocket did not report live-paper mode: {message}")
             sys.exit(1)
+        if message.get("type") != "health":
+            print(f"  [FAIL] websocket initial message malformed: {message}")
+            sys.exit(1)
         print("  [OK] websocket health snapshot reports live_public_paper")
 
 
-def run_smoke(base_url: str, timeout_seconds: float) -> None:
+def run_smoke(base_url: str, timeout_seconds: float, exchange: str) -> None:
+    sources = expected_sources(exchange)
     with httpx.Client(timeout=10.0) as client:
         section("1 / Health and config")
         health = wait_for_json(
@@ -112,6 +125,10 @@ def run_smoke(base_url: str, timeout_seconds: float) -> None:
             config_payload.get("paper_use_live_market_data") is True,
             "/config enables PAPER_USE_LIVE_MARKET_DATA",
         )
+        require(
+            config_payload.get("market_data_public_exchange") == exchange,
+            "/config exposes selected public market-data exchange",
+        )
 
         section("2 / Exchange status")
         exchange_status = wait_for_json(
@@ -121,9 +138,10 @@ def run_smoke(base_url: str, timeout_seconds: float) -> None:
             label="/exchange/status reports connected live-paper feed",
             predicate=lambda payload: payload.get("trading_mode") == "paper"
             and payload.get("execution_mode") == "paper"
+            and payload.get("exchange") == exchange
             and payload.get("market_data_mode") == "live_public_paper"
             and payload.get("connected") is True
-            and payload.get("source") in {"binance-public", "binance-rest"},
+            and payload.get("source") in sources,
         )
         require(
             exchange_status.get("connection_state") in {"streaming", "polling"},
@@ -137,10 +155,11 @@ def run_smoke(base_url: str, timeout_seconds: float) -> None:
             timeout_seconds=timeout_seconds,
             label="/price returns live market data",
             predicate=lambda payload: payload.get("market_data_mode") == "live_public_paper"
-            and payload.get("source") in {"binance-public", "binance-rest"}
+            and payload.get("source") in sources
             and float(payload.get("price", 0.0)) > 0.0,
         )
         require(price.get("source") != "synthetic", "/price is not using synthetic fallback")
+        require(price.get("exchange") == exchange, "/price reflects selected public exchange")
 
         signal = wait_for_json(
             client,
@@ -150,7 +169,7 @@ def run_smoke(base_url: str, timeout_seconds: float) -> None:
             predicate=lambda payload: payload.get("available") is True,
         )
         require(
-            signal.get("backend", {}).get("marketDataSource") in {"binance-public", "binance-rest"},
+            signal.get("backend", {}).get("marketDataSource") in sources,
             "/signal/latest tracks live market source",
         )
 
@@ -161,9 +180,13 @@ def run_smoke(base_url: str, timeout_seconds: float) -> None:
             guardian_payload.get("market_data", {}).get("market_data_mode") == "live_public_paper",
             "/guardian/status includes live-paper market data state",
         )
+        require(
+            guardian_payload.get("market_data", {}).get("exchange") == exchange,
+            "/guardian/status tracks selected public exchange",
+        )
 
     section("4 / WebSocket")
-    asyncio.run(check_websocket(base_url, timeout_seconds=timeout_seconds))
+    asyncio.run(check_websocket(base_url, timeout_seconds=timeout_seconds, exchange=exchange))
 
     section("Smoke test complete")
     print("  Hybrid live-paper mode is operational.\n")
@@ -182,15 +205,22 @@ def main() -> None:
         default=25.0,
         help="Seconds to wait for the live-paper feed to come online.",
     )
+    parser.add_argument(
+        "--exchange",
+        choices=("binance", "bitget", "btcc"),
+        default=os.getenv("MARKET_DATA_PUBLIC_EXCHANGE", os.getenv("EXCHANGE", "binance")).lower(),
+        help="Public market-data exchange expected from the backend.",
+    )
     args = parser.parse_args()
 
     print("=" * 50)
     print("  Crypto Signal Bot — Live-Paper Smoke Test")
     print("=" * 50)
     print(f"  Target: {args.base_url}")
+    print(f"  Exchange: {args.exchange}")
 
     try:
-        run_smoke(args.base_url, timeout_seconds=args.timeout)
+        run_smoke(args.base_url, timeout_seconds=args.timeout, exchange=args.exchange)
     except httpx.HTTPError as exc:
         print(f"\n[FAIL] HTTP error: {exc}")
         sys.exit(1)

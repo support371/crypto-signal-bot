@@ -61,6 +61,8 @@ def reset_state():
     app_module.BACKEND_API_KEY = ""
     app_module.TRADING_MODE = "paper"
     app_module.NETWORK = "testnet"
+    app_module.EXCHANGE = "binance"
+    app_module.MARKET_DATA_PUBLIC_EXCHANGE = "binance"
     app_module.PAPER_USE_LIVE_MARKET_DATA = False
     app_module.market_data_service = None
     app_module.paper_portfolio.balances = {"USDT": 10000.0}
@@ -127,6 +129,16 @@ class TestConfigEndpoint:
         resp = client.get("/config")
         assert resp.status_code == 200
         assert resp.json()["paper_use_live_market_data"] is True
+
+    def test_config_exposes_exchange_selection(self, client):
+        app_module.EXCHANGE = "bitget"
+        app_module.MARKET_DATA_PUBLIC_EXCHANGE = "btcc"
+        resp = client.get("/config")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["exchange"] == "bitget"
+        assert data["adapter_exchange"] == "paper"
+        assert data["market_data_public_exchange"] == "btcc"
 
 
 class TestBalanceEndpoint:
@@ -275,6 +287,28 @@ class TestExchangeStatus:
         assert data["exchange"] == "binance"
         assert data["connected"] is True
         assert data["market_data_mode"] == "live_public_paper"
+
+    def test_exchange_status_tracks_selected_public_exchange(self, client):
+        app_module.PAPER_USE_LIVE_MARKET_DATA = True
+        app_module.MARKET_DATA_PUBLIC_EXCHANGE = "bitget"
+        app_module.market_data_service = FakeMarketDataService(
+            status={
+                "exchange": "bitget",
+                "market_data_mode": "live_public_paper",
+                "connected": True,
+                "connection_state": "streaming",
+                "fallback_active": False,
+                "last_update_ts": 1_700_000_000.0,
+                "last_error": None,
+                "stale": False,
+                "symbols": ["BTCUSDT"],
+                "source": "bitget-public",
+            }
+        )
+        resp = client.get("/exchange/status")
+        data = resp.json()
+        assert data["exchange"] == "bitget"
+        assert data["source"] == "bitget-public"
 
 
 class TestGuardianStatus:

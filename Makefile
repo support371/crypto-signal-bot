@@ -11,7 +11,7 @@ VENV_PIP := $(VENV_BIN)/pip
         test test-v test-live lint \
         docker-build-backend docker-build-frontend docker-build-stack \
         compose-preflight compose-up compose-down compose-backend compose-backend-down \
-        testnet-smoke testnet-smoke-dry live-paper-smoke secured-write-smoke compose-live-paper-smoke release-verify clean
+        synthetic-paper-smoke testnet-smoke testnet-smoke-dry live-paper-smoke secured-write-smoke compose-live-paper-smoke release-verify clean
 
 # ── Default ───────────────────────────────────────────────────────────────────
 help:
@@ -45,8 +45,9 @@ help:
 	@echo "    make compose-backend-down Stop backend only"
 	@echo ""
 	@echo "  Live mode:"
-	@echo "    make testnet-smoke        Run testnet smoke test (requires BINANCE_* creds)"
-	@echo "    make testnet-smoke-dry    Run testnet smoke test without placing an order"
+	@echo "    make synthetic-paper-smoke Validate synthetic paper mode against a running backend"
+	@echo "    make testnet-smoke        Run live/testnet smoke test (uses EXCHANGE, requires matching creds)"
+	@echo "    make testnet-smoke-dry    Run live/testnet smoke test without placing an order"
 	@echo "    make live-paper-smoke     Validate hybrid live-paper mode against a running backend"
 	@echo "    make secured-write-smoke  Validate write-endpoint auth flow against a running backend"
 	@echo "    make compose-live-paper-smoke  Start full stack and validate nginx /api + /ws live-paper flow"
@@ -116,20 +117,23 @@ compose-backend-down: compose-preflight
 	docker compose -f docker-compose.yml down
 
 # ── Live mode ─────────────────────────────────────────────────────────────────
+synthetic-paper-smoke:
+	$(VENV_PYTHON) scripts/synthetic_paper_smoke.py
+
 testnet-smoke:
-	$(VENV_PYTHON) scripts/testnet_smoke.py
+	$(VENV_PYTHON) scripts/testnet_smoke.py --exchange $${EXCHANGE:-binance}
 
 testnet-smoke-dry:
-	$(VENV_PYTHON) scripts/testnet_smoke.py --dry-run
+	$(VENV_PYTHON) scripts/testnet_smoke.py --exchange $${EXCHANGE:-binance} --dry-run
 
 live-paper-smoke:
-	$(VENV_PYTHON) scripts/live_paper_smoke.py
+	$(VENV_PYTHON) scripts/live_paper_smoke.py --exchange $${MARKET_DATA_PUBLIC_EXCHANGE:-$${EXCHANGE:-binance}}
 
 secured-write-smoke:
 	$(VENV_PYTHON) scripts/secured_write_smoke.py --api-key $${BACKEND_API_KEY:?set BACKEND_API_KEY first}
 
 compose-live-paper-smoke:
-	$(VENV_PYTHON) scripts/compose_live_paper_smoke.py
+	$(VENV_PYTHON) scripts/compose_live_paper_smoke.py --exchange $${MARKET_DATA_PUBLIC_EXCHANGE:-$${EXCHANGE:-binance}}
 
 release-verify:
 	$(VENV_PYTHON) scripts/release_verify.py

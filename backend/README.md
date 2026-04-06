@@ -6,8 +6,8 @@ This backend is the active FastAPI trading backend currently merged into `main`.
 
 - Default mode: `paper`
 - Synthetic paper mode is the default startup path
-- Hybrid live-paper mode is supported through public Binance market data with paper execution
-- Live Binance execution is supported only when `TRADING_MODE=live`, `ccxt` is installed, credentials are present, and mainnet is explicitly allowed when applicable
+- Hybrid live-paper mode is supported through selected public exchange market data with paper execution
+- Live execution is exchange-selected (`binance`, `bitget`, `btcc`) when `TRADING_MODE=live`, `ccxt` is installed, credentials are present, and mainnet is explicitly allowed when applicable
 - No real exchange connection is active by default
 
 ## Main application
@@ -48,7 +48,8 @@ This backend is the active FastAPI trading backend currently merged into `main`.
 
 - paper portfolio management
 - synthetic pricing
-- Binance public websocket + REST fallback market data for hybrid live-paper mode
+- Binance / Bitget websocket + REST fallback market data for hybrid live-paper mode
+- BTCC polling fallback market data for hybrid live-paper mode
 - simulated order fills
 - execution intent processing
 - risk scoring and risk gating
@@ -62,8 +63,8 @@ This backend is the active FastAPI trading backend currently merged into `main`.
 ## Important logic note
 
 Live execution scope is deliberately narrow in this repo:
-- Binance only
-- testnet or guarded mainnet only
+- exchange-selected and credential-gated
+- testnet/demo or guarded mainnet only
 - paper remains the fallback whenever live mode is not fully configured
 
 ## Install and run

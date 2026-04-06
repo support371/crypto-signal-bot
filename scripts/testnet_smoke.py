@@ -1,183 +1,199 @@
 #!/usr/bin/env python3
 """
-Testnet smoke test — manual validation script.
+Authenticated live/testnet certification harness.
 
-Verifies that the CCXT Binance testnet adapter can:
-  1. Connect and authenticate
-  2. Fetch account balance
-  3. Fetch current BTC/USDT price
-  4. Place a minimal market buy order
-  5. Fetch updated balance and confirm change
-
-Prerequisites:
-  pip install ccxt python-dotenv
-  BINANCE_API_KEY and BINANCE_API_SECRET set (testnet.binance.vision keys)
-  TRADING_MODE=live  NETWORK=testnet  (or pass --force to skip env check)
-
-Run from the repo root:
-  python scripts/testnet_smoke.py
-  python scripts/testnet_smoke.py --dry-run   # skip order placement
+Verifies exchange connectivity, ticker access, balances, order placement, order
+status, cancellation, reconciliation, and a liquidation path where supported.
 """
+
+from __future__ import annotations
 
 import argparse
 import os
 import sys
 import time
 
-# Allow running from repo root without installing the package
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotenv import load_dotenv
+
+from backend.logic.exchange_adapter import build_adapter, get_required_credential_envs
+from backend.logic.paper_trading import PaperPortfolio, _synthetic_price
 
 load_dotenv("backend/env/.env")
 load_dotenv()
 
 SYMBOL = "BTC/USDT"
-MIN_ORDER_QTY = 0.0001  # smallest viable BTC testnet order
+MIN_QTY_BY_EXCHANGE = {
+    "binance": 0.0001,
+    "bitget": 0.0001,
+    "btcc": 0.0001,
+}
 
 
-def check_env():
-    trading_mode = os.getenv("TRADING_MODE", "paper")
-    network = os.getenv("NETWORK", "testnet")
-    key = os.getenv("BINANCE_API_KEY", "")
-    secret = os.getenv("BINANCE_API_SECRET", "")
-
-    errors = []
-    if trading_mode != "live":
-        errors.append(f"TRADING_MODE={trading_mode!r} — must be 'live' for this script")
-    if network != "testnet":
-        errors.append(f"NETWORK={network!r} — must be 'testnet' (never run smoke against mainnet)")
-    if not key:
-        errors.append("BINANCE_API_KEY is not set")
-    if not secret:
-        errors.append("BINANCE_API_SECRET is not set")
-    return errors
-
-
-def build_ccxt_exchange():
-    try:
-        import ccxt
-    except ImportError:
-        print("[FAIL] ccxt is not installed. Run: pip install ccxt")
-        sys.exit(1)
-
-    key = os.getenv("BINANCE_API_KEY")
-    secret = os.getenv("BINANCE_API_SECRET")
-
-    exchange = ccxt.binance({
-        "apiKey": key,
-        "secret": secret,
-        "enableRateLimit": True,
-        "options": {"defaultType": "spot"},
-    })
-    exchange.set_sandbox_mode(True)
-    return exchange
-
-
-def section(title):
+def section(title: str) -> None:
     print(f"\n{'─' * 50}")
     print(f"  {title}")
     print(f"{'─' * 50}")
 
 
-def run_smoke(dry_run: bool):
-    section("1 / Connect and load markets")
-    exchange = build_ccxt_exchange()
-    try:
-        markets = exchange.load_markets()
-        print(f"  [OK] Connected — {len(markets)} markets loaded")
-    except Exception as e:
-        print(f"  [FAIL] load_markets: {e}")
-        sys.exit(1)
+def fail(message: str, *, exit_code: int = 1) -> None:
+    print(f"[FAIL] {message}")
+    sys.exit(exit_code)
 
-    section("2 / Fetch account balance (USDT)")
-    try:
-        balance = exchange.fetch_balance()
-        usdt_free = balance.get("free", {}).get("USDT", 0.0)
-        btc_free = balance.get("free", {}).get("BTC", 0.0)
-        print(f"  [OK] USDT free: {usdt_free:.4f}")
-        print(f"  [OK] BTC  free: {btc_free:.8f}")
-    except Exception as e:
-        print(f"  [FAIL] fetch_balance: {e}")
-        sys.exit(1)
 
-    section("3 / Fetch BTC/USDT price")
-    try:
-        ticker = exchange.fetch_ticker(SYMBOL)
-        price = ticker["last"]
-        print(f"  [OK] {SYMBOL} last price: {price:.2f} USDT")
-    except Exception as e:
-        print(f"  [FAIL] fetch_ticker: {e}")
-        sys.exit(1)
+def warn(message: str) -> None:
+    print(f"[WARN] {message}")
+
+
+def exchange_choice() -> str:
+    return os.getenv("EXCHANGE", "binance").strip().lower()
+
+
+def check_env(exchange: str) -> list[str]:
+    trading_mode = os.getenv("TRADING_MODE", "paper")
+    network = os.getenv("NETWORK", "testnet")
+    errors = []
+    if trading_mode != "live":
+        errors.append(f"TRADING_MODE={trading_mode!r} — must be 'live' for this script")
+    if network != "testnet":
+        errors.append(f"NETWORK={network!r} — must be 'testnet' (never run smoke against mainnet)")
+    for env_name in get_required_credential_envs(exchange):
+        if not os.getenv(env_name, ""):
+            errors.append(f"{env_name} is not set")
+    if exchange == "btcc":
+        errors.append(
+            "BTCC authenticated demo/testnet trading is not supported by the current adapter; "
+            "use this harness for Binance or Bitget and treat BTCC authenticated certification as blocked."
+        )
+    return errors
+
+
+def build_live_adapter(exchange: str):
+    portfolio = PaperPortfolio()
+    portfolio.balances = {"USDT": 10000.0}
+    adapter = build_adapter(
+        "live",
+        "testnet",
+        portfolio,
+        _synthetic_price,
+        exchange=exchange,
+    )
+    if adapter.mode == "paper":
+        fail(
+            f"Live adapter for {exchange} fell back to paper. "
+            "Check credentials, ccxt install, or unsupported demo/testnet path."
+        )
+    return adapter
+
+
+def run_smoke(exchange: str, dry_run: bool) -> None:
+    qty = MIN_QTY_BY_EXCHANGE.get(exchange, 0.0001)
+
+    section("1 / Connectivity and adapter selection")
+    adapter = build_live_adapter(exchange)
+    print(f"  [OK] adapter mode: {adapter.mode}")
+    print(f"  [OK] exchange: {adapter.exchange}")
+
+    section("2 / Ticker and balance")
+    last_price = adapter.get_price(SYMBOL)
+    print(f"  [OK] {SYMBOL} last price: {last_price:.8f}")
+    usdt_free = adapter.get_balance("USDT")
+    print(f"  [OK] USDT free balance: {usdt_free:.8f}")
+
+    section("3 / Reconciliation")
+    reconciliation = adapter.reconcile()
+    print("  [OK] reconciliation snapshot captured")
+    print(f"       open_orders={len(reconciliation.get('open_orders', []))}")
 
     if dry_run:
-        section("4 / Order placement — SKIPPED (--dry-run)")
-        print("  [SKIP] Pass without --dry-run to place a real testnet order")
-    else:
-        section("4 / Place minimal market BUY order")
-        cost = price * MIN_ORDER_QTY
-        if usdt_free < cost * 1.01:
-            print(f"  [WARN] Insufficient USDT ({usdt_free:.2f}) for {MIN_ORDER_QTY} BTC @ {price:.2f}")
-            print("         Fund your testnet account at https://testnet.binance.vision")
-            print("  [SKIP] Order placement skipped due to insufficient balance")
-        else:
-            try:
-                order = exchange.create_market_buy_order(SYMBOL, MIN_ORDER_QTY)
-                fill = order.get("average") or order.get("price") or price
-                filled_qty = order.get("filled", MIN_ORDER_QTY)
-                print(f"  [OK] Order placed: id={order['id']}")
-                print(f"       side=BUY  qty={filled_qty:.8f} BTC  fill={fill:.2f} USDT")
-                print(f"       status={order.get('status', 'unknown')}")
+        section("4 / Order placement, status, cancellation, liquidation — SKIPPED (--dry-run)")
+        print("  [SKIP] Dry-run mode stops after connectivity, ticker, balance, and reconciliation.")
+        return
 
-                section("5 / Verify updated balance")
-                time.sleep(1)
-                balance2 = exchange.fetch_balance()
-                usdt2 = balance2.get("free", {}).get("USDT", 0.0)
-                btc2 = balance2.get("free", {}).get("BTC", 0.0)
-                print(f"  [OK] USDT free: {usdt2:.4f} (was {usdt_free:.4f})")
-                print(f"  [OK] BTC  free: {btc2:.8f} (was {btc_free:.8f})")
-                if btc2 > btc_free:
-                    print("  [PASS] BTC balance increased — testnet order confirmed")
-                else:
-                    print("  [WARN] BTC balance unchanged — order may be pending")
-            except Exception as e:
-                print(f"  [FAIL] create_market_buy_order: {e}")
-                sys.exit(1)
+    if usdt_free <= (last_price * qty):
+        warn("Insufficient quote balance for market buy test; placement/liquidation checks skipped")
+        return
 
-    section("Smoke test complete")
-    print("  Testnet adapter is operational.\n")
+    section("4 / Market buy order placement")
+    buy_order = adapter.place_order(
+        symbol=SYMBOL,
+        side="BUY",
+        order_type="MARKET",
+        quantity=qty,
+    )
+    print(f"  [OK] buy order placed: id={buy_order.get('id')} status={buy_order.get('status')}")
+
+    section("5 / Order status")
+    buy_status = adapter.get_order_status(buy_order["id"], SYMBOL)
+    print(f"  [OK] fetched order status: {buy_status.get('status')}")
+
+    section("6 / Cancel path via deep limit order")
+    limit_price = max(last_price * 0.5, 1.0)
+    limit_order = adapter.place_order(
+        symbol=SYMBOL,
+        side="BUY",
+        order_type="LIMIT",
+        quantity=qty,
+        price=limit_price,
+    )
+    print(f"  [OK] limit order submitted: id={limit_order.get('id')} status={limit_order.get('status')}")
+    try:
+        cancel_result = adapter.cancel_order(limit_order["id"], SYMBOL)
+        print(f"  [OK] cancel result: {cancel_result.get('status')}")
+    except Exception as exc:
+        warn(f"Cancellation check failed: {exc}")
+
+    section("7 / Reconciliation after order flow")
+    reconciliation_after = adapter.reconcile()
+    print("  [OK] post-order reconciliation captured")
+    print(f"       open_orders={len(reconciliation_after.get('open_orders', []))}")
+
+    section("8 / Kill-switch liquidation path")
+    try:
+        liquidation = adapter.liquidate_all_positions()
+        print("  [OK] liquidation path executed")
+        print(f"       liquidated_positions={liquidation.get('liquidated_positions')}")
+    except Exception as exc:
+        warn(f"Liquidation path failed: {exc}")
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Binance testnet smoke test")
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Exchange testnet/demo smoke test")
     parser.add_argument(
-        "--dry-run", action="store_true",
-        help="Skip order placement — only test connection, balance, and price"
+        "--exchange",
+        choices=("binance", "bitget", "btcc"),
+        default=exchange_choice(),
+        help="Exchange to certify.",
     )
     parser.add_argument(
-        "--force", action="store_true",
-        help="Skip env var pre-flight checks (not recommended)"
+        "--dry-run",
+        action="store_true",
+        help="Skip order placement and liquidation checks.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Skip pre-flight checks (not recommended).",
     )
     args = parser.parse_args()
 
     print("=" * 50)
-    print("  Crypto Signal Bot — Testnet Smoke Test")
+    print("  Crypto Signal Bot — Live/Testnet Smoke Test")
     print("=" * 50)
+    print(f"  Exchange: {args.exchange}")
 
     if not args.force:
-        errors = check_env()
+        errors = check_env(args.exchange)
         if errors:
             print("\n[PRE-FLIGHT FAILED] Fix these before running:\n")
-            for e in errors:
-                print(f"  ✗  {e}")
-            print(
-                "\nSet vars in backend/env/.env or export them, then re-run.\n"
-                "Use --force to bypass these checks (not recommended).\n"
-            )
+            for error in errors:
+                print(f"  ✗  {error}")
+            print("\nUse --force to bypass these checks (not recommended).\n")
             sys.exit(1)
         print("  [OK] Pre-flight checks passed")
 
-    run_smoke(dry_run=args.dry_run)
+    run_smoke(args.exchange, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":

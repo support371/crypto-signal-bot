@@ -53,7 +53,7 @@ from backend.logic.earnings import (
     reset_earnings,
 )
 from backend.logic.exchange_adapter import ExchangeAdapter, build_adapter
-from backend.logic.market_data import BinancePublicMarketDataService
+from backend.logic.market_data import BasePublicMarketDataService, build_public_market_data_service
 from backend.logic.startup_checks import run as run_startup_checks
 from backend.logic.paper_trading import (
     PaperPortfolio,
@@ -83,6 +83,10 @@ load_dotenv()
 RUNTIME_CONFIG = get_runtime_config()
 TRADING_MODE = RUNTIME_CONFIG.trading_mode
 NETWORK = RUNTIME_CONFIG.network
+EXCHANGE = RUNTIME_CONFIG.exchange
+MARKET_DATA_PUBLIC_EXCHANGE = (
+    RUNTIME_CONFIG.market_data_public_exchange or RUNTIME_CONFIG.exchange
+)
 BACKEND_API_KEY = RUNTIME_CONFIG.backend_api_key
 PAPER_USE_LIVE_MARKET_DATA = RUNTIME_CONFIG.paper.use_live_market_data
 LIVE_MARKET_SYMBOLS = [
@@ -117,6 +121,7 @@ async def lifespan(application):
         trading_mode=TRADING_MODE,
         network=NETWORK,
         adapter_mode=exchange_adapter.mode,
+        exchange=EXCHANGE,
     )
     try:
         yield
@@ -197,6 +202,7 @@ exchange_adapter: ExchangeAdapter = build_adapter(
     network=NETWORK,
     portfolio=paper_portfolio,
     synthetic_price_fn=_synthetic_price,
+    exchange=EXCHANGE,
 )
 
 kill_switch_active = False
@@ -205,7 +211,7 @@ api_error_count = 0
 failed_order_count = 0
 ws_clients: Set[WebSocket] = set()
 _app_event_loop: Optional[asyncio.AbstractEventLoop] = None
-market_data_service: Optional[BinancePublicMarketDataService] = None
+market_data_service: Optional[BasePublicMarketDataService] = None
 
 # Latest signal cache (updated on every /market-state call)
 _latest_signal: Optional[Dict[str, Any]] = None
@@ -465,7 +471,7 @@ def _market_data_mode_label() -> str:
 
 def _default_market_data_status() -> Dict[str, Any]:
     return {
-        "exchange": "binance" if (_is_hybrid_live_paper_mode() or TRADING_MODE == "live") else None,
+        "exchange": MARKET_DATA_PUBLIC_EXCHANGE if _is_hybrid_live_paper_mode() else (exchange_adapter.exchange if TRADING_MODE == "live" else None),
         "market_data_mode": _market_data_mode_label(),
         "connected": False,
         "connection_state": "disabled",
@@ -474,14 +480,15 @@ def _default_market_data_status() -> Dict[str, Any]:
         "last_error": None,
         "stale": True,
         "symbols": LIVE_MARKET_SYMBOLS if _is_hybrid_live_paper_mode() else [],
-        "source": "synthetic" if TRADING_MODE == "paper" else exchange_adapter.mode,
+        "source": "synthetic" if TRADING_MODE == "paper" else f"{exchange_adapter.exchange}-{exchange_adapter.mode}",
     }
 
 
-def _get_market_data_service() -> BinancePublicMarketDataService:
+def _get_market_data_service() -> BasePublicMarketDataService:
     global market_data_service
     if market_data_service is None:
-        market_data_service = BinancePublicMarketDataService(
+        market_data_service = build_public_market_data_service(
+            MARKET_DATA_PUBLIC_EXCHANGE,
             symbols=LIVE_MARKET_SYMBOLS,
             on_market_update=_handle_market_data_update,
             on_status_change=_handle_market_data_status_change,
@@ -627,7 +634,7 @@ async def _handle_market_data_update(snapshot: Dict[str, Any]) -> None:
         change24h=float(snapshot.get("change24h", 0.0)),
         volume24h=float(snapshot.get("volume24h", 0.0)),
         market_cap=float(snapshot.get("marketCap", 0.0)),
-        market_data_source=str(snapshot.get("source", "binance-public")),
+        market_data_source=str(snapshot.get("source", f"{MARKET_DATA_PUBLIC_EXCHANGE}-public")),
     )
     _latest_signal = result
     _latest_signal_ts = float(snapshot.get("timestamp", time.time()))
@@ -641,7 +648,8 @@ async def _handle_market_data_update(snapshot: Dict[str, Any]) -> None:
             "signal": result["signal"],
             "risk": result["risk"],
             "timestamp": snapshot.get("timestamp", time.time()),
-            "source": snapshot.get("source", "binance-public"),
+            "source": snapshot.get("source", f"{MARKET_DATA_PUBLIC_EXCHANGE}-public"),
+            "exchange": snapshot.get("exchange", MARKET_DATA_PUBLIC_EXCHANGE),
         }
     )
 
@@ -772,6 +780,8 @@ def health():
         "halted": kill_switch_active,
         "mode": TRADING_MODE,
         "adapter": exchange_adapter.mode,
+        "exchange": market_data["exchange"],
+        "execution_exchange": exchange_adapter.exchange,
         "guardian_triggered": _guardian_triggered,
         "market_data_mode": market_data["market_data_mode"],
         "market_data_connected": market_data["connected"],
@@ -785,6 +795,9 @@ def get_config():
         "trading_mode": TRADING_MODE,
         "network": NETWORK,
         "adapter": exchange_adapter.mode,
+        "exchange": EXCHANGE,
+        "adapter_exchange": exchange_adapter.exchange,
+        "market_data_public_exchange": MARKET_DATA_PUBLIC_EXCHANGE,
         "paper_use_live_market_data": PAPER_USE_LIVE_MARKET_DATA,
         "config_path": RUNTIME_CONFIG.config_path,
         "cors_origins": ALLOWED_ORIGINS,
@@ -841,7 +854,8 @@ def get_price(symbol: str = Query("BTCUSDT")):
             "volume24h": float(live_snapshot.get("volume24h", 0.0)),
             "marketCap": float(live_snapshot.get("marketCap", 0.0)),
             "timestamp": live_snapshot["timestamp"],
-            "source": live_snapshot.get("source", "binance-public"),
+            "source": live_snapshot.get("source", f"{MARKET_DATA_PUBLIC_EXCHANGE}-public"),
+            "exchange": live_snapshot.get("exchange", MARKET_DATA_PUBLIC_EXCHANGE),
             "market_data_mode": _market_data_mode_label(),
         }
 
@@ -854,6 +868,7 @@ def get_price(symbol: str = Query("BTCUSDT")):
         "marketCap": 0.0,
         "timestamp": time.time(),
         "source": "synthetic",
+        "exchange": None,
         "market_data_mode": _market_data_mode_label(),
     }
 
@@ -913,6 +928,7 @@ def get_exchange_status():
     return {
         "trading_mode": TRADING_MODE,
         "execution_mode": exchange_adapter.mode,
+        "execution_exchange": exchange_adapter.exchange,
         "paper_use_live_market_data": PAPER_USE_LIVE_MARKET_DATA,
         **market_data,
     }

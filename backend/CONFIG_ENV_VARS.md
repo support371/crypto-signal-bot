@@ -1,44 +1,72 @@
-# CONFIG_ENV_VARS Documentation
+# Backend Environment Variables
 
-This document outlines the required and optional environment variables for configuring the crypto signal bot for both paper and live trading modes.
+This backend is paper-first by default. Use `backend/env/.env.example` as the
+authoritative template and override values in your deployment environment.
 
-## Required Environment Variables
+## Core runtime
 
-| Variable Name          | Purpose                               | Valid Values     | Default           | Example                     |
-|------------------------|---------------------------------------|------------------|-------------------|-----------------------------|
-| `API_KEY`             | Your API key for market access       | alphanumeric      | None              | `API_KEY=your_api_key`     |
-| `API_SECRET`          | Your API secret for secure access    | alphanumeric      | None              | `API_SECRET=your_api_secret`|
-| `TRADING_MODE`        | Mode of trading                       | `paper`, `live`   | `paper`           | `TRADING_MODE=live`        |
+| Variable | Default | Notes |
+|---|---|---|
+| `TRADING_MODE` | `paper` | `paper` or `live` |
+| `EXCHANGE` | `binance` | Authenticated live execution venue: `binance`, `bitget`, or `btcc` |
+| `PAPER_USE_LIVE_MARKET_DATA` | `false` | `true` keeps paper execution but switches market data to a live public feed |
+| `MARKET_DATA_PUBLIC_EXCHANGE` | `EXCHANGE` | Public feed used in hybrid paper mode |
+| `NETWORK` | `testnet` | `testnet` for certification/demo, `mainnet` for guarded production use |
+| `BACKEND_API_KEY` | _(empty)_ | Restricts POST endpoints when set |
+| `CORS_ORIGINS` | localhost origins | Comma-separated frontend origins |
+| `RATE_LIMIT_RPM` | `120` | GET requests per minute per IP |
 
-## Optional Environment Variables
+## Guardian and persistence
 
-| Variable Name          | Purpose                               | Valid Values               | Default           | Example                             |
-|------------------------|---------------------------------------|----------------------------|-------------------|-------------------------------------|
-| `LOG_LEVEL`           | Level of logging                      | `debug`, `info`, `warn`, `error` | `info`           | `LOG_LEVEL=debug`                  |
-| `PAPER_TRADE_AMOUNT`  | Amount to trade in paper mode        | Numeric                    | `100`             | `PAPER_TRADE_AMOUNT=200`          |
-| `LIVE_TRADE_AMOUNT`   | Amount to trade in live mode         | Numeric                    | `0`              | `LIVE_TRADE_AMOUNT=300`           |
-| `STRATEGY`            | Trading strategy to employ            | `strategy1`, `strategy2` | `strategy1`      | `STRATEGY=strategy2`              |
+| Variable | Default | Notes |
+|---|---|---|
+| `GUARDIAN_MAX_API_ERRORS` | `10` | Kill-switch threshold |
+| `GUARDIAN_MAX_FAILED_ORDERS` | `5` | Kill-switch threshold |
+| `GUARDIAN_MAX_DRAWDOWN_PCT` | `0.05` | 5% drawdown threshold |
+| `AUDIT_STORE_PATH` | `backend/data/audit.json` | Audit-trail file |
+| `EARNINGS_STORE_PATH` | `backend/data/earnings.json` | Earnings ledger file |
 
-## Paper Trading Mode
+## Live credentials
 
-- Set the `TRADING_MODE` to `paper`.
-- Example:
-  ```bash
-  export API_KEY=your_api_key
-  export API_SECRET=your_api_secret
-  export TRADING_MODE=paper
-  export PAPER_TRADE_AMOUNT=100
-  ```
+Set only the credentials that match the selected `EXCHANGE`.
 
-## Live Trading Mode
+| Exchange | Variables |
+|---|---|
+| Binance | `BINANCE_API_KEY`, `BINANCE_API_SECRET` |
+| Bitget | `BITGET_API_KEY`, `BITGET_API_SECRET`, `BITGET_API_PASSPHRASE` |
+| BTCC | `BTCC_API_KEY`, `BTCC_API_SECRET` |
 
-- Set the `TRADING_MODE` to `live`.
-- Example:
-  ```bash
-  export API_KEY=your_api_key
-  export API_SECRET=your_api_secret
-  export TRADING_MODE=live
-  export LIVE_TRADE_AMOUNT=300
-  ```
+`ALLOW_MAINNET=true` is additionally required before any mainnet execution path
+is allowed to stay live.
 
-Make sure to set all required variables appropriately and adjust optional variables according to your trading preferences.
+## Mode examples
+
+### Synthetic paper
+
+```bash
+export TRADING_MODE=paper
+export EXCHANGE=binance
+export PAPER_USE_LIVE_MARKET_DATA=false
+```
+
+### Hybrid live-paper
+
+```bash
+export TRADING_MODE=paper
+export EXCHANGE=binance
+export MARKET_DATA_PUBLIC_EXCHANGE=bitget
+export PAPER_USE_LIVE_MARKET_DATA=true
+```
+
+### Live certification
+
+```bash
+export TRADING_MODE=live
+export EXCHANGE=binance
+export NETWORK=testnet
+export BINANCE_API_KEY=...
+export BINANCE_API_SECRET=...
+```
+
+If live mode falls back to paper, check missing credentials, missing `ccxt`, or
+an unsupported exchange sandbox path before proceeding.

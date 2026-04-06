@@ -16,11 +16,12 @@ import logging
 import os
 
 from backend.config.runtime import get_runtime_config
+from backend.logic.exchange_adapter import get_required_credential_envs, normalize_exchange_name
 
 logger = logging.getLogger("backend.startup")
 
 
-def run(*, trading_mode: str, network: str, adapter_mode: str) -> None:
+def run(*, trading_mode: str, network: str, adapter_mode: str, exchange: str = "binance") -> None:
     """
     Validate environment and log startup summary.
 
@@ -34,25 +35,27 @@ def run(*, trading_mode: str, network: str, adapter_mode: str) -> None:
         Resolved adapter label from exchange_adapter.build_adapter()
         ('paper', 'testnet', or 'mainnet').
     """
-    _log_banner(trading_mode, network, adapter_mode)
+    selected_exchange = normalize_exchange_name(exchange)
+    _log_banner(trading_mode, network, adapter_mode, selected_exchange)
     _check_mainnet_gate(trading_mode, network, adapter_mode)
-    _check_credentials(trading_mode, adapter_mode)
+    _check_credentials(trading_mode, adapter_mode, selected_exchange)
     _check_api_key()
     _check_data_dirs()
     _check_ccxt_installed(trading_mode)
-    logger.info("Startup checks complete — adapter active: %s", adapter_mode)
+    logger.info("Startup checks complete — adapter active: %s (%s)", adapter_mode, selected_exchange)
 
 
 # ---------------------------------------------------------------------------
 # Internal checks
 # ---------------------------------------------------------------------------
 
-def _log_banner(trading_mode: str, network: str, adapter_mode: str) -> None:
+def _log_banner(trading_mode: str, network: str, adapter_mode: str, exchange: str) -> None:
     sep = "=" * 60
     logger.info(sep)
     logger.info("  Crypto Signal Bot — Backend starting")
     logger.info("  TRADING_MODE : %s", trading_mode)
     logger.info("  NETWORK      : %s", network)
+    logger.info("  EXCHANGE     : %s", exchange)
     logger.info("  ADAPTER      : %s", adapter_mode)
     logger.info("  AUTH         : %s", "enabled" if os.getenv("BACKEND_API_KEY") else "open (dev mode)")
     logger.info(sep)
@@ -62,7 +65,7 @@ def _log_banner(trading_mode: str, network: str, adapter_mode: str) -> None:
         logger.warning("  ⚠  MAINNET MODE ACTIVE — REAL FUNDS AT RISK  ⚠")
         logger.warning("!" * 60)
     elif adapter_mode == "testnet":
-        logger.info("  Testnet mode — Binance Spot Testnet, no real funds")
+        logger.info("  Testnet/demo mode — paper-safe exchange certification path")
     else:
         logger.info("  Paper mode — fully simulated, no exchange connection")
 
@@ -91,21 +94,24 @@ def _check_mainnet_gate(trading_mode: str, network: str, adapter_mode: str) -> N
             )
 
 
-def _check_credentials(trading_mode: str, adapter_mode: str) -> None:
+def _check_credentials(trading_mode: str, adapter_mode: str, exchange: str) -> None:
     """Warn when live mode is requested but credentials are absent."""
     if trading_mode != "live":
         return
-    key = os.getenv("BINANCE_API_KEY", "")
-    secret = os.getenv("BINANCE_API_SECRET", "")
-    if not key or not secret:
+    env_names = get_required_credential_envs(exchange)
+    missing = [env_name for env_name in env_names if not os.getenv(env_name, "")]
+    if missing:
         logger.warning(
-            "TRADING_MODE=live but BINANCE_API_KEY / BINANCE_API_SECRET are not set. "
-            "Adapter fell back to paper mode. Set credentials to enable live execution."
+            "TRADING_MODE=live but %s are not set for %s. "
+            "Adapter fell back to paper mode. Set credentials to enable live execution.",
+            ", ".join(missing),
+            exchange,
         )
     elif adapter_mode == "paper":
         logger.warning(
-            "TRADING_MODE=live with credentials set but adapter is paper — "
-            "ccxt may not be installed. Run: pip install ccxt"
+            "TRADING_MODE=live with %s credentials set but adapter is paper — "
+            "ccxt may be unavailable or the exchange/testnet path may not support authenticated trading.",
+            exchange,
         )
 
 

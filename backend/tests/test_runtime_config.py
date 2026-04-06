@@ -16,6 +16,8 @@ class TestRuntimeConfig:
 
         assert config.trading_mode == "paper"
         assert config.network == "testnet"
+        assert config.exchange == "binance"
+        assert config.market_data_public_exchange == "binance"
         assert config.paper.use_live_market_data is False
         assert config.guardian.max_api_errors == 10
         assert "http://localhost:5173" in config.server.cors_origins
@@ -23,6 +25,8 @@ class TestRuntimeConfig:
     def test_env_overrides_runtime_defaults(self, monkeypatch):
         monkeypatch.setenv("TRADING_MODE", "live")
         monkeypatch.setenv("NETWORK", "mainnet")
+        monkeypatch.setenv("EXCHANGE", "bitget")
+        monkeypatch.setenv("MARKET_DATA_PUBLIC_EXCHANGE", "btcc")
         monkeypatch.setenv("PAPER_USE_LIVE_MARKET_DATA", "true")
         monkeypatch.setenv("GUARDIAN_MAX_API_ERRORS", "7")
         monkeypatch.setenv("RATE_LIMIT_RPM", "333")
@@ -32,6 +36,8 @@ class TestRuntimeConfig:
 
         assert config.trading_mode == "live"
         assert config.network == "mainnet"
+        assert config.exchange == "bitget"
+        assert config.market_data_public_exchange == "btcc"
         assert config.paper.use_live_market_data is True
         assert config.guardian.max_api_errors == 7
         assert config.rate_limit_rpm == 333
