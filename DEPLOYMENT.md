@@ -99,6 +99,7 @@ Output Directory: dist
 ```
 
 `vercel.json` in the repo already locks those settings and includes the SPA rewrite required by React Router `BrowserRouter`.
+`.vercelignore` excludes backend, Docker, and local-only files so the Vercel deployment stays frontend-only.
 
 ### Required Vercel environment variables
 

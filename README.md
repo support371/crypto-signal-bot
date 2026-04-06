@@ -111,6 +111,7 @@ VITE_SUPABASE_PUBLISHABLE_KEY=
 
 Notes:
 - `vercel.json` already includes the SPA rewrite needed for `BrowserRouter` routes like `/auth`.
+- `.vercelignore` keeps backend, Docker, local env, and repo-only files out of the frontend deployment payload.
 - The backend should **not** be deployed on Vercel in this repo layout; host FastAPI separately and point `VITE_BACKEND_URL` at it.
 - If you leave `VITE_BACKEND_URL` unset, the frontend falls back to `http://localhost:8000`, which is correct for local dev but wrong for Vercel.
 
