@@ -87,6 +87,33 @@ Open [http://localhost:8080](http://localhost:8080)
 
 Docker Compose v2 is the supported full-stack container runtime for this repo. If `make compose-preflight` fails, install the Docker Compose plugin before using the full-stack path.
 
+### 4. Vercel — frontend only
+
+Vercel should deploy the frontend from the **repo root** (`.`). This repo is not a Vercel monorepo setup; the deploy target is the root Vite app, while the FastAPI backend should stay on separate hosting.
+
+Configured Vercel settings:
+
+```text
+Root Directory: .
+Framework Preset: Vite
+Install Command: npm install
+Build Command: npm run build
+Output Directory: dist
+```
+
+Required Vercel environment variables:
+
+```text
+VITE_BACKEND_URL=https://your-backend-host.example.com
+VITE_SUPABASE_URL=
+VITE_SUPABASE_PUBLISHABLE_KEY=
+```
+
+Notes:
+- `vercel.json` already includes the SPA rewrite needed for `BrowserRouter` routes like `/auth`.
+- The backend should **not** be deployed on Vercel in this repo layout; host FastAPI separately and point `VITE_BACKEND_URL` at it.
+- If you leave `VITE_BACKEND_URL` unset, the frontend falls back to `http://localhost:8000`, which is correct for local dev but wrong for Vercel.
+
 ---
 
 ## Make targets
@@ -180,6 +207,8 @@ VITE_BACKEND_URL=http://localhost:8000
 VITE_SUPABASE_URL=
 VITE_SUPABASE_PUBLISHABLE_KEY=
 ```
+
+Use `.env.example` as the frontend deployment template. For Vercel, set `VITE_BACKEND_URL` to your separately hosted backend origin.
 
 Leave the Supabase values empty to run in local paper-mode without auth. Set both to enable Supabase auth and edge functions.
 

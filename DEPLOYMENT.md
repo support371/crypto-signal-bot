@@ -9,6 +9,12 @@ The application ships as two containers:
 Default mode is always **paper trading** — no exchange connection, no real funds.
 Optional hybrid paper mode keeps execution paper-only while using live public Binance market data.
 
+This repo has two deployment paths:
+- Docker Compose for full local/backend+frontend operation
+- Vercel for the **frontend only**
+
+The FastAPI backend is not structured as a Vercel serverless deployment target and should be hosted separately.
+
 ---
 
 ## Local full-stack (Docker Compose)
@@ -69,6 +75,53 @@ make frontend
 
 Frontend connects to backend at `http://localhost:8000` (via `VITE_BACKEND_URL`).
 Use Node `22.12.0` LTS for the Vite frontend toolchain. The repo includes `.nvmrc`, and `make build` will fall back to the Docker Node 22 frontend build stage when your host Node is older.
+
+---
+
+## Vercel deployment
+
+### What Vercel should deploy
+
+- Deploy the **frontend only**
+- Use the **repo root** (`.`) as the Vercel project root
+- Do **not** point Vercel at `backend/`
+
+This repo is not a Vercel monorepo configuration. The root `package.json` and `vite.config.ts` are the correct frontend deployment target.
+
+### Vercel project settings
+
+```text
+Root Directory: .
+Framework Preset: Vite
+Install Command: npm install
+Build Command: npm run build
+Output Directory: dist
+```
+
+`vercel.json` in the repo already locks those settings and includes the SPA rewrite required by React Router `BrowserRouter`.
+
+### Required Vercel environment variables
+
+```text
+VITE_BACKEND_URL=https://your-backend-host.example.com
+VITE_SUPABASE_URL=
+VITE_SUPABASE_PUBLISHABLE_KEY=
+```
+
+Important:
+- `VITE_BACKEND_URL` must point to your separately hosted FastAPI backend
+- leaving it unset makes the frontend fall back to `http://localhost:8000`, which is only correct for local development
+- Supabase variables are optional; leave both empty for local-mode/no-auth behavior
+
+### Auto deployment behavior
+
+Once the GitHub repo is connected in Vercel, auto deployment from GitHub will work from `main` because:
+- the frontend deployment target is the repo root
+- the root contains `package.json` and `vite.config.ts`
+- the expected output directory is `dist`
+- `vercel.json` provides the SPA rewrite for non-file routes like `/auth`
+
+The backend still needs separate hosting and is not auto-deployed by Vercel from this repo.
 
 ---
 
