@@ -158,7 +158,7 @@ make clean            # Remove build artifacts
 | `GET /price?symbol=BTCUSDT` | Synthetic or live market price |
 | `GET /audit` | Persisted audit trail |
 | `GET /metrics` | Prometheus metrics |
-| `GET /signal/latest` | Latest backend-owned signal snapshot from manual or live-paper updates |
+| `GET /signal/latest` | Latest backend-owned signal snapshot from manual or live-paper updates (use `?symbol=BTCUSDT` when multiple symbols are active) |
 | `GET /guardian/status` | Guardian state and thresholds |
 | `GET /exchange/status` | Execution mode, market-data mode, feed status |
 | `GET /earnings/summary` | Realized P&L summary, win rate, avg/trade |
@@ -225,9 +225,9 @@ Use `.env.example` as the frontend deployment template. For Vercel, set `VITE_BA
 
 Leave the Supabase values empty to run in local paper-mode without auth. Set both to enable Supabase auth and edge functions.
 
-If `BACKEND_API_KEY` is set on the backend, open the dashboard Settings panel and enter the same value in the optional operator API key field so UI write actions can send `X-API-Key` automatically.
+If `BACKEND_API_KEY` is set on the backend, open the dashboard Settings panel and enter the same value in the optional operator API key field so UI write actions can send `X-API-Key` automatically. Supabase values are optional and frontend-only unless the backend is explicitly configured to verify Supabase JWTs (not implemented in this repo).
 
-Hybrid live-paper mode uses `MARKET_DATA_PUBLIC_EXCHANGE` for `/price`, `/signal/latest`, `/guardian/status`, `/exchange/status`, and WebSocket market updates while execution stays on the paper adapter. Binance and Bitget use websocket-first feeds with REST fallback; BTCC uses polling fallback for hybrid paper mode.
+Hybrid live-paper mode uses `MARKET_DATA_PUBLIC_EXCHANGE` for `/price`, `/signal/latest`, `/guardian/status`, `/exchange/status`, and WebSocket market updates while execution stays on the paper adapter. Binance and Bitget use websocket-first feeds with REST fallback; BTCC uses polling fallback for hybrid paper mode. If a symbol is not covered by the live-paper feed, `/price` returns a clear error instead of silently falling back to synthetic pricing.
 
 ---
 

@@ -179,6 +179,7 @@ The backend still needs separate hosting and is not auto-deployed by Vercel from
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase publishable anon key for the frontend |
 
 If both are empty, the dashboard runs in local mode without a login wall and skips Supabase edge functions.
+Supabase auth is frontend-only unless the backend is explicitly configured to verify Supabase JWTs (not implemented in this repo).
 
 If `BACKEND_API_KEY` is configured, the frontend dashboard can still operate write endpoints. Open Settings in the UI and store the same value in the operator API key field so requests include `X-API-Key`.
 
@@ -204,7 +205,7 @@ PAPER_USE_LIVE_MARKET_DATA=true
 NETWORK=testnet
 ```
 
-This keeps execution on the `PaperAdapter` while enabling selected public market data for `/price`, `/signal/latest`, `/guardian/status`, `/exchange/status`, and `WS /ws/updates`.
+This keeps execution on the `PaperAdapter` while enabling selected public market data for `/price`, `/signal/latest`, `/guardian/status`, `/exchange/status`, and `WS /ws/updates`. If a symbol is not covered by the live-paper feed, `/price` returns a clear error instead of silently falling back to synthetic pricing.
 
 Validate synthetic paper mode with:
 

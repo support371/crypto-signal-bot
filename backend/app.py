@@ -213,8 +213,10 @@ ws_clients: Set[WebSocket] = set()
 _app_event_loop: Optional[asyncio.AbstractEventLoop] = None
 market_data_service: Optional[BasePublicMarketDataService] = None
 
-# Latest signal cache (updated on every /market-state call)
-_latest_signal: Optional[Dict[str, Any]] = None
+# Latest signal cache (updated on every /market-state call or live feed update)
+_latest_signal_by_symbol: Dict[str, Dict[str, Any]] = {}
+_latest_signal_ts_by_symbol: Dict[str, float] = {}
+_latest_signal_symbol: Optional[str] = None
 _latest_signal_ts: Optional[float] = None
 
 # ---------------------------------------------------------------------------
@@ -465,22 +467,51 @@ def _market_data_mode_label() -> str:
     if _is_hybrid_live_paper_mode():
         return "live_public_paper"
     if TRADING_MODE == "live":
-        return "live_execution"
+        if exchange_adapter.mode == "paper":
+            return "synthetic_paper"
+        return "execution_only"
     return "synthetic_paper"
 
 
 def _default_market_data_status() -> Dict[str, Any]:
+    market_data_mode = _market_data_mode_label()
+    if _is_hybrid_live_paper_mode():
+        return {
+            "exchange": MARKET_DATA_PUBLIC_EXCHANGE,
+            "market_data_mode": market_data_mode,
+            "connected": False,
+            "connection_state": "disabled",
+            "fallback_active": False,
+            "last_update_ts": None,
+            "last_error": None,
+            "stale": True,
+            "symbols": LIVE_MARKET_SYMBOLS,
+            "source": "synthetic",
+        }
+    if TRADING_MODE == "live":
+        return {
+            "exchange": exchange_adapter.exchange if exchange_adapter.mode != "paper" else None,
+            "market_data_mode": market_data_mode,
+            "connected": False,
+            "connection_state": "execution_only" if exchange_adapter.mode != "paper" else "disabled",
+            "fallback_active": False,
+            "last_update_ts": None,
+            "last_error": None,
+            "stale": True,
+            "symbols": [],
+            "source": f"{exchange_adapter.exchange}-{exchange_adapter.mode}" if exchange_adapter.mode != "paper" else "synthetic",
+        }
     return {
-        "exchange": MARKET_DATA_PUBLIC_EXCHANGE if _is_hybrid_live_paper_mode() else (exchange_adapter.exchange if TRADING_MODE == "live" else None),
-        "market_data_mode": _market_data_mode_label(),
+        "exchange": None,
+        "market_data_mode": market_data_mode,
         "connected": False,
         "connection_state": "disabled",
         "fallback_active": False,
         "last_update_ts": None,
         "last_error": None,
         "stale": True,
-        "symbols": LIVE_MARKET_SYMBOLS if _is_hybrid_live_paper_mode() else [],
-        "source": "synthetic" if TRADING_MODE == "paper" else f"{exchange_adapter.exchange}-{exchange_adapter.mode}",
+        "symbols": [],
+        "source": "synthetic",
     }
 
 
@@ -626,7 +657,7 @@ def _build_market_state_result(
 
 
 async def _handle_market_data_update(snapshot: Dict[str, Any]) -> None:
-    global _latest_signal, _latest_signal_ts
+    global _latest_signal_symbol, _latest_signal_ts
 
     result = _build_market_state_result(
         symbol=snapshot["symbol"],
@@ -636,8 +667,12 @@ async def _handle_market_data_update(snapshot: Dict[str, Any]) -> None:
         market_cap=float(snapshot.get("marketCap", 0.0)),
         market_data_source=str(snapshot.get("source", f"{MARKET_DATA_PUBLIC_EXCHANGE}-public")),
     )
-    _latest_signal = result
-    _latest_signal_ts = float(snapshot.get("timestamp", time.time()))
+    symbol = snapshot["symbol"].upper()
+    timestamp = float(snapshot.get("timestamp", time.time()))
+    _latest_signal_by_symbol[symbol] = result
+    _latest_signal_ts_by_symbol[symbol] = timestamp
+    _latest_signal_symbol = symbol
+    _latest_signal_ts = timestamp
 
     await broadcast(
         {
@@ -845,8 +880,31 @@ def get_orders(symbol: Optional[str] = Query(None)):
 @app.get("/price", dependencies=[Depends(rate_limit)])
 def get_price(symbol: str = Query("BTCUSDT")):
     normalized_symbol = symbol.upper()
-    live_snapshot = _get_live_market_snapshot(normalized_symbol)
-    if live_snapshot is not None:
+    if _is_hybrid_live_paper_mode():
+        if normalized_symbol not in LIVE_MARKET_SYMBOLS:
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "error": "symbol_not_tracked",
+                    "message": f"{normalized_symbol} is not covered by the live-paper feed",
+                    "symbol": normalized_symbol,
+                    "supported_symbols": LIVE_MARKET_SYMBOLS,
+                    "market_data_mode": _market_data_mode_label(),
+                    "exchange": MARKET_DATA_PUBLIC_EXCHANGE,
+                },
+            )
+        live_snapshot = _get_live_market_snapshot(normalized_symbol)
+        if live_snapshot is None:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "error": "market_data_unavailable",
+                    "message": "Live-paper feed is not yet available for this symbol",
+                    "symbol": normalized_symbol,
+                    "market_data_mode": _market_data_mode_label(),
+                    "exchange": MARKET_DATA_PUBLIC_EXCHANGE,
+                },
+            )
         return {
             "symbol": normalized_symbol,
             "price": round(float(live_snapshot["price"]), 8),
@@ -856,6 +914,34 @@ def get_price(symbol: str = Query("BTCUSDT")):
             "timestamp": live_snapshot["timestamp"],
             "source": live_snapshot.get("source", f"{MARKET_DATA_PUBLIC_EXCHANGE}-public"),
             "exchange": live_snapshot.get("exchange", MARKET_DATA_PUBLIC_EXCHANGE),
+            "market_data_mode": _market_data_mode_label(),
+        }
+    if TRADING_MODE == "live":
+        if exchange_adapter.mode == "paper":
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "error": "execution_unavailable",
+                    "message": "Live execution adapter is not active; fell back to paper mode",
+                    "symbol": normalized_symbol,
+                    "market_data_mode": _market_data_mode_label(),
+                    "execution_mode": exchange_adapter.mode,
+                    "execution_exchange": exchange_adapter.exchange,
+                },
+            )
+        try:
+            price = exchange_adapter.get_price(normalized_symbol)
+        except Exception as exc:
+            raise ExchangeAPIError(f"Live price fetch failed: {exc}") from exc
+        return {
+            "symbol": normalized_symbol,
+            "price": round(float(price), 8),
+            "change24h": 0.0,
+            "volume24h": 0.0,
+            "marketCap": 0.0,
+            "timestamp": time.time(),
+            "source": "execution_adapter",
+            "exchange": exchange_adapter.exchange,
             "market_data_mode": _market_data_mode_label(),
         }
 
@@ -889,16 +975,48 @@ def get_metrics():
 
 
 @app.get("/signal/latest", dependencies=[Depends(rate_limit)])
-def get_signal_latest():
-    if _latest_signal is None:
+def get_signal_latest(symbol: Optional[str] = Query(None)):
+    if symbol:
+        normalized_symbol = symbol.upper()
+        signal = _latest_signal_by_symbol.get(normalized_symbol)
+        if signal is None:
+            return {
+                "available": False,
+                "message": f"No signal cached yet for {normalized_symbol}.",
+                "symbol": normalized_symbol,
+            }
+        return {
+            "available": True,
+            "timestamp": _latest_signal_ts_by_symbol.get(normalized_symbol),
+            **signal,
+        }
+
+    if not _latest_signal_by_symbol:
         return {
             "available": False,
             "message": "No signal computed yet. POST to /market-state first.",
         }
+
+    if len(_latest_signal_by_symbol) > 1 and _latest_signal_symbol is None:
+        return {
+            "available": False,
+            "message": "Multiple symbols available; request /signal/latest?symbol=...",
+            "symbols": sorted(_latest_signal_by_symbol.keys()),
+        }
+
+    if len(_latest_signal_by_symbol) > 1:
+        return {
+            "available": False,
+            "message": "Multiple symbols available; request /signal/latest?symbol=...",
+            "symbols": sorted(_latest_signal_by_symbol.keys()),
+        }
+
+    symbol_only = next(iter(_latest_signal_by_symbol.keys()))
+    signal = _latest_signal_by_symbol[symbol_only]
     return {
         "available": True,
-        "timestamp": _latest_signal_ts,
-        **_latest_signal,
+        "timestamp": _latest_signal_ts_by_symbol.get(symbol_only),
+        **signal,
     }
 
 
@@ -941,7 +1059,7 @@ def get_exchange_status():
 
 @app.post("/market-state")
 def market_state(req: MarketStateRequest, _: None = Depends(require_auth)):
-    global _latest_signal, _latest_signal_ts
+    global _latest_signal_symbol, _latest_signal_ts
 
     result = _build_market_state_result(
         symbol=req.symbol,
@@ -956,9 +1074,12 @@ def market_state(req: MarketStateRequest, _: None = Depends(require_auth)):
         market_data_source="manual",
     )
 
-    # Cache for /signal/latest
-    _latest_signal = result
-    _latest_signal_ts = time.time()
+    normalized_symbol = req.symbol.upper()
+    timestamp = time.time()
+    _latest_signal_by_symbol[normalized_symbol] = result
+    _latest_signal_ts_by_symbol[normalized_symbol] = timestamp
+    _latest_signal_symbol = normalized_symbol
+    _latest_signal_ts = timestamp
 
     return result
 

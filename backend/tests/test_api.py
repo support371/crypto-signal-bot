@@ -52,7 +52,9 @@ def reset_state():
     app_module.kill_switch_reason = None
     app_module.api_error_count = 0
     app_module.failed_order_count = 0
-    app_module._latest_signal = None
+    app_module._latest_signal_by_symbol = {}
+    app_module._latest_signal_ts_by_symbol = {}
+    app_module._latest_signal_symbol = None
     app_module._latest_signal_ts = None
     app_module._guardian_triggered = False
     app_module._guardian_trigger_reason = None
@@ -65,6 +67,12 @@ def reset_state():
     app_module.MARKET_DATA_PUBLIC_EXCHANGE = "binance"
     app_module.PAPER_USE_LIVE_MARKET_DATA = False
     app_module.market_data_service = None
+    app_module.exchange_adapter = build_adapter(
+        "paper",
+        "testnet",
+        app_module.paper_portfolio,
+        _synthetic_price,
+    )
     app_module.paper_portfolio.balances = {"USDT": 10000.0}
     app_module.paper_portfolio.positions = []
     app_module.paper_portfolio.open_orders = []
@@ -203,6 +211,30 @@ class TestPriceEndpoint:
         assert data["source"] == "binance-public"
         assert data["market_data_mode"] == "live_public_paper"
 
+    def test_price_hybrid_mode_rejects_untracked_symbol(self, client):
+        app_module.PAPER_USE_LIVE_MARKET_DATA = True
+        app_module.market_data_service = FakeMarketDataService(snapshot={})
+        resp = client.get("/price?symbol=FOOUSDT")
+        assert resp.status_code == 404
+        data = resp.json()
+        assert data["error"] == "symbol_not_tracked"
+
+    def test_price_hybrid_mode_reports_unavailable_when_feed_missing(self, client):
+        app_module.PAPER_USE_LIVE_MARKET_DATA = True
+        app_module.market_data_service = FakeMarketDataService(snapshot={})
+        resp = client.get("/price?symbol=BTCUSDT")
+        assert resp.status_code == 503
+        data = resp.json()
+        assert data["error"] == "market_data_unavailable"
+
+    def test_price_live_mode_without_execution_adapter_reports_unavailable(self, client):
+        app_module.TRADING_MODE = "live"
+        app_module.exchange_adapter = PaperAdapter(app_module.paper_portfolio, _synthetic_price)
+        resp = client.get("/price?symbol=BTCUSDT")
+        assert resp.status_code == 503
+        data = resp.json()
+        assert data["error"] == "execution_unavailable"
+
 
 class TestOrdersEndpoint:
     def test_orders_empty_initially(self, client):
@@ -244,6 +276,35 @@ class TestSignalLatest:
         assert "signal" in data
         assert "risk" in data
         assert "timestamp" in data
+
+    def test_signal_latest_symbol_specific(self, client):
+        client.post("/market-state", json={
+            "symbol": "ETHUSDT",
+            "price": 2500.0,
+            "change24h": 1.2,
+        })
+        resp = client.get("/signal/latest?symbol=ETHUSDT")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["available"] is True
+        assert data["symbol"] == "ETHUSDT"
+
+    def test_signal_latest_requires_symbol_when_multiple(self, client):
+        client.post("/market-state", json={
+            "symbol": "BTCUSDT",
+            "price": 43000.0,
+            "change24h": 1.0,
+        })
+        client.post("/market-state", json={
+            "symbol": "ETHUSDT",
+            "price": 2500.0,
+            "change24h": 1.0,
+        })
+        resp = client.get("/signal/latest")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["available"] is False
+        assert "symbols" in data
 
     def test_signal_latest_auto_populated_from_live_market_snapshot(self, client):
         app_module.PAPER_USE_LIVE_MARKET_DATA = True
