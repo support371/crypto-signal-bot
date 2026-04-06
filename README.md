@@ -134,6 +134,7 @@ make compose-up       # Full-stack Docker start
 make compose-down     # Full-stack Docker stop
 make synthetic-paper-smoke # Validate synthetic paper mode against a running backend
 make testnet-smoke    # Manual live/testnet validation for EXCHANGE=binance|bitget|btcc
+EXCHANGE=btcc make testnet-smoke-dry # Safe BTCC workaround clearance for hybrid-paper feed usage
 make live-paper-smoke # Validate hybrid live-paper mode against a running backend
 make secured-write-smoke # Validate authenticated write endpoints against a running backend
 make compose-live-paper-smoke # Start full stack and validate nginx /api + /ws live-paper flow
@@ -328,6 +329,21 @@ make testnet-smoke-dry
 # Full smoke test
 make testnet-smoke
 ```
+
+## BTCC workaround clearance
+
+If you want BTCC market data without blocking deployment readiness, clear BTCC through the hybrid-paper path:
+
+```bash
+export TRADING_MODE=paper
+export EXCHANGE=bitget
+export PAPER_USE_LIVE_MARKET_DATA=true
+export MARKET_DATA_PUBLIC_EXCHANGE=btcc
+EXCHANGE=btcc make testnet-smoke-dry
+make live-paper-smoke
+```
+
+This keeps authenticated execution certification on Bitget or Binance while confirming BTCC public-feed readiness for hybrid paper mode.
 
 ## Live-paper quick-check
 

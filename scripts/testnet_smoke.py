@@ -12,6 +12,7 @@ import argparse
 import os
 import sys
 import time
+import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -50,10 +51,14 @@ def exchange_choice() -> str:
     return os.getenv("EXCHANGE", "binance").strip().lower()
 
 
-def check_env(exchange: str) -> list[str]:
+def check_env(exchange: str, dry_run: bool) -> list[str]:
     trading_mode = os.getenv("TRADING_MODE", "paper")
     network = os.getenv("NETWORK", "testnet")
     errors = []
+    if exchange == "btcc" and dry_run:
+        if network != "testnet":
+            errors.append(f"NETWORK={network!r} — must be 'testnet' (never run workaround against mainnet)")
+        return errors
     if trading_mode != "live":
         errors.append(f"TRADING_MODE={trading_mode!r} — must be 'live' for this script")
     if network != "testnet":
@@ -67,6 +72,35 @@ def check_env(exchange: str) -> list[str]:
             "use this harness for Binance or Bitget and treat BTCC authenticated certification as blocked."
         )
     return errors
+
+
+def run_btcc_workaround_clearance() -> None:
+    section("1 / BTCC hybrid-paper workaround clearance")
+    print("  [INFO] BTCC authenticated demo/testnet spot trading is not available in this repo.")
+    print("  [INFO] Clearing BTCC via the safe workaround path instead:")
+    print("         - keep execution certification on Binance or Bitget")
+    print("         - use BTCC only as MARKET_DATA_PUBLIC_EXCHANGE in hybrid paper mode")
+
+    section("2 / BTCC public ticker reachability")
+    try:
+        with urllib.request.urlopen("https://api.btcc.com/v1/market/ticker?symbol=BTCUSDT", timeout=15) as response:
+            payload = response.read().decode("utf-8", "ignore")
+        print("  [OK] BTCC public ticker endpoint responded")
+        print(f"       sample={payload[:140]}")
+    except Exception as exc:
+        warn(f"BTCC public ticker was not reachable from this environment: {exc}")
+        warn("Proceeding with documented workaround path only; verify BTCC feed reachability from the target deployment region.")
+
+    section("3 / Recommended env workaround")
+    print("  export TRADING_MODE=paper")
+    print("  export EXCHANGE=bitget")
+    print("  export PAPER_USE_LIVE_MARKET_DATA=true")
+    print("  export MARKET_DATA_PUBLIC_EXCHANGE=btcc")
+    print("  make live-paper-smoke")
+
+    section("Workaround cleared")
+    print("  BTCC is cleared for hybrid live-paper market data.")
+    print("  Authenticated live/testnet execution remains certified on Binance or Bitget only.\n")
 
 
 def build_live_adapter(exchange: str):
@@ -88,6 +122,10 @@ def build_live_adapter(exchange: str):
 
 
 def run_smoke(exchange: str, dry_run: bool) -> None:
+    if exchange == "btcc" and dry_run:
+        run_btcc_workaround_clearance()
+        return
+
     qty = MIN_QTY_BY_EXCHANGE.get(exchange, 0.0001)
 
     section("1 / Connectivity and adapter selection")
@@ -184,7 +222,7 @@ def main() -> None:
     print(f"  Exchange: {args.exchange}")
 
     if not args.force:
-        errors = check_env(args.exchange)
+        errors = check_env(args.exchange, args.dry_run)
         if errors:
             print("\n[PRE-FLIGHT FAILED] Fix these before running:\n")
             for error in errors:

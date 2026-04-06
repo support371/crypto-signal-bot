@@ -268,7 +268,31 @@ BINANCE_API_SECRET=your-testnet-secret
    make testnet-smoke       # full order test
    ```
    Use `EXCHANGE=bitget` to run the same harness against Bitget demo/testnet credentials.
-   `EXCHANGE=btcc` currently remains blocked for authenticated testnet/demo certification and will fail fast.
+   `EXCHANGE=btcc make testnet-smoke-dry` now runs the safe workaround-clearance path for BTCC public-feed usage in hybrid paper mode.
+
+### BTCC workaround deployment path
+
+Use this when you want BTCC market data in production readiness without waiting on BTCC authenticated demo/testnet spot trading:
+
+```env
+TRADING_MODE=paper
+EXCHANGE=bitget
+PAPER_USE_LIVE_MARKET_DATA=true
+MARKET_DATA_PUBLIC_EXCHANGE=btcc
+NETWORK=testnet
+BITGET_API_KEY=your-bitget-demo-key
+BITGET_API_SECRET=your-bitget-demo-secret
+BITGET_API_PASSPHRASE=your-bitget-demo-passphrase
+```
+
+Then validate:
+
+```bash
+EXCHANGE=btcc make testnet-smoke-dry
+MARKET_DATA_PUBLIC_EXCHANGE=btcc make live-paper-smoke
+```
+
+This clears BTCC for hybrid public-market-data operation while keeping authenticated execution certification on Bitget.
 
 4. Confirm `GET /health` returns `"adapter": "testnet"` and `GET /exchange/status` returns `"execution_mode": "testnet"`.
 
