@@ -11,6 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
+import { Input } from '@/components/ui/input';
 import { Settings, Shield, Activity, Wallet, Volume2 } from 'lucide-react';
 
 export interface UserSettings {
@@ -20,6 +21,7 @@ export interface UserSettings {
   spreadStressThreshold: number;
   autoTradeEnabled: boolean;
   soundAlertsEnabled: boolean;
+  backendApiKey: string;
 }
 
 const DEFAULT_SETTINGS: UserSettings = {
@@ -29,6 +31,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   spreadStressThreshold: 0.002,
   autoTradeEnabled: false,
   soundAlertsEnabled: true,
+  backendApiKey: '',
 };
 
 interface SettingsModalProps {
@@ -36,13 +39,15 @@ interface SettingsModalProps {
   onOpenChange: (open: boolean) => void;
   settings: UserSettings;
   onSettingsChange: (settings: UserSettings) => void;
+  systemMode?: string;
 }
 
 export function SettingsModal({ 
   open, 
   onOpenChange, 
   settings, 
-  onSettingsChange 
+  onSettingsChange,
+  systemMode = 'paper',
 }: SettingsModalProps) {
   const [localSettings, setLocalSettings] = useState<UserSettings>(settings);
 
@@ -213,6 +218,29 @@ export function SettingsModal({
 
           <Separator className="bg-border" />
 
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <Shield className="w-4 h-4 text-primary" />
+              <Label className="text-sm font-semibold">Backend Operator API Key</Label>
+            </div>
+            <div className="space-y-2 pl-6">
+              <Input
+                type="password"
+                value={localSettings.backendApiKey}
+                onChange={(event) =>
+                  setLocalSettings((s) => ({ ...s, backendApiKey: event.target.value }))
+                }
+                placeholder="Optional X-API-Key for authenticated write endpoints"
+                autoComplete="off"
+              />
+              <p className="text-xs text-muted-foreground">
+                Stored only in this browser and sent as <span className="font-mono">X-API-Key</span> on backend requests when set.
+              </p>
+            </div>
+          </div>
+
+          <Separator className="bg-border" />
+
           {/* Toggles */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -232,7 +260,9 @@ export function SettingsModal({
                 <Activity className="w-4 h-4 text-muted-foreground" />
                 <div>
                   <Label className="text-sm">Auto-Trade Mode</Label>
-                  <p className="text-xs text-muted-foreground">Paper trades only</p>
+                  <p className="text-xs text-muted-foreground">
+                    Uses current backend mode ({systemMode})
+                  </p>
                 </div>
               </div>
               <Switch

@@ -7,6 +7,7 @@ The application ships as two containers:
 - **Frontend** — Vite/React build served by Nginx, port 8080 externally; proxies `/api/*` and `/ws/*` to the backend
 
 Default mode is always **paper trading** — no exchange connection, no real funds.
+Optional hybrid paper mode keeps execution paper-only while using live public Binance market data.
 
 ---
 
@@ -19,14 +20,16 @@ cp .env.fullstack.example .env
 ```
 
 Edit `.env` to set `BACKEND_API_KEY` and any other values. All defaults work for paper mode without changes.
+Keep `.env` values plain; put comments on separate lines rather than after values.
 
 ### 2. Start
 
 ```bash
+make compose-preflight
 docker compose -f docker-compose.fullstack.yml up --build
-# or
-make compose-up
 ```
+
+Docker Compose v2 is the supported full-stack runtime for this repo. If `make compose-preflight` fails, install the Docker Compose plugin before using the container path.
 
 ### 3. Access
 
@@ -41,8 +44,6 @@ make compose-up
 
 ```bash
 docker compose -f docker-compose.fullstack.yml down
-# or
-make compose-down
 ```
 
 ---
@@ -52,10 +53,8 @@ make compose-down
 ### Backend
 
 ```bash
-pip install -r backend/requirements.txt
+make backend-install
 cp backend/env/.env.example backend/env/.env
-uvicorn backend.app:app --reload --host 0.0.0.0 --port 8000
-# or
 make backend
 ```
 
@@ -69,16 +68,20 @@ make frontend
 ```
 
 Frontend connects to backend at `http://localhost:8000` (via `VITE_BACKEND_URL`).
+Use Node `22.12.0` LTS for the Vite frontend toolchain. The repo includes `.nvmrc`, and `make build` will fall back to the Docker Node 22 frontend build stage when your host Node is older.
 
 ---
 
 ## Environment variables
+
+`backend/config/config.yaml` provides the backend’s default operational settings. Environment variables still take precedence for deployment-specific overrides.
 
 ### Core
 
 | Variable | Default | Description |
 |---|---|---|
 | `TRADING_MODE` | `paper` | `paper` or `live` |
+| `PAPER_USE_LIVE_MARKET_DATA` | `false` | `true` = paper execution with live public Binance market data |
 | `NETWORK` | `testnet` | `testnet` or `mainnet` |
 | `BACKEND_API_KEY` | _(empty)_ | API key for POST endpoints; empty = open dev mode |
 | `CORS_ORIGINS` | localhost origins | Comma-separated allowed origins |
@@ -107,32 +110,94 @@ Frontend connects to backend at `http://localhost:8000` (via `VITE_BACKEND_URL`)
 | `BINANCE_API_SECRET` | Binance API secret |
 | `ALLOW_MAINNET` | Must be `true` to enable mainnet — additional safety gate |
 
----
+### Optional frontend auth / AI
+
+| Variable | Description |
+|---|---|
+| `VITE_SUPABASE_URL` | Supabase project URL for browser auth and edge-function calls |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase publishable anon key for the frontend |
+
+If both are empty, the dashboard runs in local mode without a login wall and skips Supabase edge functions.
+
+If `BACKEND_API_KEY` is configured, the frontend dashboard can still operate write endpoints. Open Settings in the UI and store the same value in the operator API key field so requests include `X-API-Key`.
+
+## Run modes
+
+### Synthetic paper mode
+
+```env
+TRADING_MODE=paper
+PAPER_USE_LIVE_MARKET_DATA=false
+NETWORK=testnet
+```
+
+### Real-time paper simulation mode
+
+```env
+TRADING_MODE=paper
+PAPER_USE_LIVE_MARKET_DATA=true
+NETWORK=testnet
+```
+
+This keeps execution on the `PaperAdapter` while enabling public Binance market data for `/price`, `/signal/latest`, `/guardian/status`, `/exchange/status`, and `WS /ws/updates`.
+
+Validate a running backend with:
+
+```bash
+make live-paper-smoke
+# or against nginx:
+.venv/bin/python scripts/live_paper_smoke.py --base-url http://localhost:8080/api
+```
+
+Validate the full compose stack end to end with:
+
+```bash
+make compose-live-paper-smoke
+```
+
+Run the canonical stabilization/release verification path with:
+
+```bash
+make release-verify
+```
+
+### Live Binance testnet mode
+
+```env
+TRADING_MODE=live
+PAPER_USE_LIVE_MARKET_DATA=false
+NETWORK=testnet
+BINANCE_API_KEY=your-testnet-key
+BINANCE_API_SECRET=your-testnet-secret
+```
 
 ## Testnet deployment
 
 1. Get free Binance testnet keys at https://testnet.binance.vision
 
 2. Install ccxt:
-   ```bash
-   pip install ccxt
+```bash
+   .venv/bin/pip install ccxt
    ```
 
 3. Set env:
    ```env
    TRADING_MODE=live
+   PAPER_USE_LIVE_MARKET_DATA=false
    NETWORK=testnet
    BINANCE_API_KEY=your-testnet-key
    BINANCE_API_SECRET=your-testnet-secret
+   VITE_SUPABASE_URL=
+   VITE_SUPABASE_PUBLISHABLE_KEY=
    ```
 
 4. Validate with the smoke test:
    ```bash
-   python scripts/testnet_smoke.py --dry-run   # connection only
-   python scripts/testnet_smoke.py              # full order test
+   make testnet-smoke-dry   # connection only
+   make testnet-smoke       # full order test
    ```
 
-5. Confirm `GET /health` returns `"adapter": "testnet"`.
+5. Confirm `GET /health` returns `"adapter": "testnet"` and `GET /exchange/status` returns `"execution_mode": "testnet"`.
 
 ---
 
@@ -163,7 +228,7 @@ Frontend connects to backend at `http://localhost:8000` (via `VITE_BACKEND_URL`)
    ```
    ⚠  MAINNET MODE ACTIVE — REAL FUNDS AT RISK  ⚠
    ```
-   and `GET /health` returns `"adapter": "mainnet"`.
+   and `GET /health` returns `"adapter": "mainnet"` with `GET /exchange/status` reporting `"execution_mode": "mainnet"`.
 
 5. Test kill switch before any trading:
    ```bash
@@ -179,6 +244,7 @@ Frontend connects to backend at `http://localhost:8000` (via `VITE_BACKEND_URL`)
 
 - [ ] `BACKEND_API_KEY` set to a strong random value
 - [ ] `backend/env/.env` excluded from git (`.gitignore` covers this)
+- [ ] Only the Supabase publishable key is exposed to the frontend; never ship a service-role key
 - [ ] `ALLOW_MAINNET` only set when deliberately going live
 - [ ] Guardian thresholds reviewed for live risk tolerance
 - [ ] `CORS_ORIGINS` restricted to your actual domain in production
@@ -195,6 +261,8 @@ curl http://localhost:8000/health
 Response includes:
 - `mode` — paper | live
 - `adapter` — paper | testnet | mainnet
+- `market_data_mode` — synthetic_paper | live_public_paper | live_execution
+- `market_data_mode` — synthetic_paper | live_public_paper | live_execution
 - `kill_switch_active` — boolean
 - `guardian_triggered` — boolean
 - `api_error_count`, `failed_order_count`

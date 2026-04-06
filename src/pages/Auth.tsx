@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { Loader2, TrendingUp, Shield } from 'lucide-react';
+import { SUPABASE_CONFIGURED } from '@/integrations/supabase/config';
 
 const authSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
@@ -25,7 +26,7 @@ const Auth = () => {
 
   // Redirect if already logged in
   useEffect(() => {
-    if (user) {
+    if (!SUPABASE_CONFIGURED || user) {
       navigate('/');
     }
   }, [user, navigate]);
@@ -108,7 +109,7 @@ const Auth = () => {
           </h1>
         </div>
         <p className="text-muted-foreground font-mono text-sm">
-          AI-Powered Paper Trading Simulator
+          Auth Gateway for the Trading Control Center
         </p>
       </div>
 
@@ -189,7 +190,7 @@ const Auth = () => {
                   Create Account
                 </CardTitle>
                 <CardDescription>
-                  Start your paper trading journey
+                  Create an account for the control center
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">

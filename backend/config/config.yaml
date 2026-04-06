@@ -25,6 +25,12 @@ exchange:
 paper:
   starting_balance_usdt: 10000.0
   slippage_range_pct: [0.01, 0.05]
+  use_live_market_data: false
+
+market_data:
+  public_exchange: binance
+  mode: synthetic_paper
+  rest_fallback_enabled: true
 
 server:
   host: 0.0.0.0

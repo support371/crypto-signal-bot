@@ -16,6 +16,8 @@ backend/env/.env
 !.env.fullstack.example
 
 # Python
+.venv/
+.python-version
 *.egg-info/
 *.egg
 dist/

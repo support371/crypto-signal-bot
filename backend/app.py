@@ -28,8 +28,9 @@ import os
 import time
 from collections import defaultdict
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple
 
+import anyio
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Security, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -37,6 +38,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security.api_key import APIKeyHeader
 from pydantic import BaseModel, Field
 
+from backend.config.runtime import get_runtime_config
 from backend.logic.audit_store import (
     append_intent,
     append_order,
@@ -51,6 +53,7 @@ from backend.logic.earnings import (
     reset_earnings,
 )
 from backend.logic.exchange_adapter import ExchangeAdapter, build_adapter
+from backend.logic.market_data import BinancePublicMarketDataService
 from backend.logic.startup_checks import run as run_startup_checks
 from backend.logic.paper_trading import (
     PaperPortfolio,
@@ -77,9 +80,23 @@ if os.path.exists(_env_path):
     load_dotenv(_env_path)
 load_dotenv()
 
-TRADING_MODE = os.getenv("TRADING_MODE", "paper")
-NETWORK = os.getenv("NETWORK", "testnet")
-BACKEND_API_KEY = os.getenv("BACKEND_API_KEY", "")
+RUNTIME_CONFIG = get_runtime_config()
+TRADING_MODE = RUNTIME_CONFIG.trading_mode
+NETWORK = RUNTIME_CONFIG.network
+BACKEND_API_KEY = RUNTIME_CONFIG.backend_api_key
+PAPER_USE_LIVE_MARKET_DATA = RUNTIME_CONFIG.paper.use_live_market_data
+LIVE_MARKET_SYMBOLS = [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "BNBUSDT",
+    "ADAUSDT",
+    "XRPUSDT",
+    "DOGEUSDT",
+    "DOTUSDT",
+    "AVAXUSDT",
+    "LINKUSDT",
+]
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -92,12 +109,20 @@ logger = logging.getLogger("backend")
 # ---------------------------------------------------------------------------
 @asynccontextmanager
 async def lifespan(application):
+    global _app_event_loop
+    _app_event_loop = asyncio.get_running_loop()
+    if _is_hybrid_live_paper_mode():
+        await _get_market_data_service().start()
     run_startup_checks(
         trading_mode=TRADING_MODE,
         network=NETWORK,
         adapter_mode=exchange_adapter.mode,
     )
-    yield
+    try:
+        yield
+    finally:
+        if market_data_service is not None:
+            await market_data_service.stop()
 
 
 app = FastAPI(title="Crypto Signal Bot — Trading Backend", version="2.2.0", lifespan=lifespan)
@@ -107,7 +132,7 @@ app = FastAPI(title="Crypto Signal Bot — Trading Backend", version="2.2.0", li
 # ---------------------------------------------------------------------------
 ALLOWED_ORIGINS = os.getenv(
     "CORS_ORIGINS",
-    "http://localhost:5173,http://localhost:8080,http://localhost:3000",
+    ",".join(RUNTIME_CONFIG.server.cors_origins),
 ).split(",")
 
 app.add_middleware(
@@ -137,7 +162,7 @@ def require_auth(api_key: Optional[str] = Security(_api_key_header)):
 # Rate limiting (simple in-memory sliding window)
 # ---------------------------------------------------------------------------
 _rate_limit_window_seconds = 60
-_rate_limit_max_requests = int(os.getenv("RATE_LIMIT_RPM", "120"))
+_rate_limit_max_requests = RUNTIME_CONFIG.rate_limit_rpm
 _rate_limit_store: Dict[str, List[float]] = defaultdict(list)
 
 
@@ -160,7 +185,9 @@ def rate_limit(request: Request):
 # ---------------------------------------------------------------------------
 # Shared state
 # ---------------------------------------------------------------------------
-paper_portfolio = PaperPortfolio()
+paper_portfolio = PaperPortfolio(
+    balances={"USDT": RUNTIME_CONFIG.paper.starting_balance_usdt}
+)
 
 # Exchange adapter — resolved once at startup based on env config.
 # PaperAdapter is always the default; BinanceCCXTAdapter only when TRADING_MODE=live
@@ -177,6 +204,8 @@ kill_switch_reason: Optional[str] = None
 api_error_count = 0
 failed_order_count = 0
 ws_clients: Set[WebSocket] = set()
+_app_event_loop: Optional[asyncio.AbstractEventLoop] = None
+market_data_service: Optional[BinancePublicMarketDataService] = None
 
 # Latest signal cache (updated on every /market-state call)
 _latest_signal: Optional[Dict[str, Any]] = None
@@ -191,9 +220,9 @@ _guardian_trigger_ts: Optional[float] = None
 _guardian_drawdown_pct: float = 0.0
 _guardian_starting_nav: float = 10000.0
 
-_GUARDIAN_MAX_API_ERRORS = int(os.getenv("GUARDIAN_MAX_API_ERRORS", "10"))
-_GUARDIAN_MAX_FAILED_ORDERS = int(os.getenv("GUARDIAN_MAX_FAILED_ORDERS", "5"))
-_GUARDIAN_MAX_DRAWDOWN_PCT = float(os.getenv("GUARDIAN_MAX_DRAWDOWN_PCT", "0.05"))
+_GUARDIAN_MAX_API_ERRORS = RUNTIME_CONFIG.guardian.max_api_errors
+_GUARDIAN_MAX_FAILED_ORDERS = RUNTIME_CONFIG.guardian.max_failed_orders
+_GUARDIAN_MAX_DRAWDOWN_PCT = RUNTIME_CONFIG.guardian.max_drawdown_pct
 
 
 def _guardian_evaluate() -> Optional[str]:
@@ -392,8 +421,84 @@ async def broadcast(message: Dict[str, Any]):
         ws_clients.discard(ws)
 
 
+def _schedule_background(
+    async_fn: Callable[..., Awaitable[Any]], *args: Any, **kwargs: Any
+) -> bool:
+    """Run async work from either an async route or a sync threadpool route."""
+    try:
+        anyio.from_thread.run(async_fn, *args, **kwargs)
+        return True
+    except RuntimeError:
+        pass
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        loop.create_task(async_fn(*args, **kwargs))
+        return True
+
+    if _app_event_loop and _app_event_loop.is_running():
+        asyncio.run_coroutine_threadsafe(async_fn(*args, **kwargs), _app_event_loop)
+        return True
+
+    return False
+
+
 def _clamp(value: float, lower: float, upper: float) -> float:
     return max(lower, min(value, upper))
+
+
+def _is_hybrid_live_paper_mode() -> bool:
+    return TRADING_MODE == "paper" and PAPER_USE_LIVE_MARKET_DATA
+
+
+def _market_data_mode_label() -> str:
+    if _is_hybrid_live_paper_mode():
+        return "live_public_paper"
+    if TRADING_MODE == "live":
+        return "live_execution"
+    return "synthetic_paper"
+
+
+def _default_market_data_status() -> Dict[str, Any]:
+    return {
+        "exchange": "binance" if (_is_hybrid_live_paper_mode() or TRADING_MODE == "live") else None,
+        "market_data_mode": _market_data_mode_label(),
+        "connected": False,
+        "connection_state": "disabled",
+        "fallback_active": False,
+        "last_update_ts": None,
+        "last_error": None,
+        "stale": True,
+        "symbols": LIVE_MARKET_SYMBOLS if _is_hybrid_live_paper_mode() else [],
+        "source": "synthetic" if TRADING_MODE == "paper" else exchange_adapter.mode,
+    }
+
+
+def _get_market_data_service() -> BinancePublicMarketDataService:
+    global market_data_service
+    if market_data_service is None:
+        market_data_service = BinancePublicMarketDataService(
+            symbols=LIVE_MARKET_SYMBOLS,
+            on_market_update=_handle_market_data_update,
+            on_status_change=_handle_market_data_status_change,
+        )
+    return market_data_service
+
+
+def _get_market_data_status() -> Dict[str, Any]:
+    if _is_hybrid_live_paper_mode():
+        return _get_market_data_service().get_status()
+    return _default_market_data_status()
+
+
+def _get_live_market_snapshot(symbol: str) -> Optional[Dict[str, Any]]:
+    if not _is_hybrid_live_paper_mode():
+        return None
+    return _get_market_data_service().get_snapshot(symbol)
 
 
 def _derive_market_features(
@@ -450,6 +555,99 @@ def _check_kill_switch():
             status_code=503,
             detail=f"Kill switch active: {kill_switch_reason}",
         )
+
+
+def _build_market_state_result(
+    *,
+    symbol: str,
+    price: float,
+    change24h: float,
+    volume24h: float,
+    market_cap: float,
+    risk_tolerance: float = 0.5,
+    spread_stress_threshold: float = 0.002,
+    volatility_sensitivity: float = 0.5,
+    position_size_fraction: float = 0.1,
+    market_data_source: str = "synthetic",
+) -> Dict[str, Any]:
+    features, microstructure = _derive_market_features(
+        change24h=change24h,
+        volume24h=volume24h,
+        market_cap=market_cap,
+        spread_stress_threshold=spread_stress_threshold,
+        volatility_sensitivity=volatility_sensitivity,
+    )
+
+    signal = build_signal(features)
+    raw_risk_score = compute_risk_score(features)
+    tolerance_adjustment = (risk_tolerance - 0.5) * 20.0
+    effective_risk_score = _clamp(raw_risk_score - tolerance_adjustment, 0.0, 100.0)
+    decision = risk_gate(
+        signal,
+        effective_risk_score,
+        base_fraction=position_size_fraction,
+    )
+
+    reasoning = decision.reason
+    if kill_switch_active:
+        reasoning = f"{reasoning}. Trading halted: {kill_switch_reason or 'kill switch active'}"
+
+    return {
+        "symbol": symbol.upper(),
+        "price": price,
+        "signal": {
+            "direction": signal.direction,
+            "confidence": int(round(signal.confidence * 100)),
+            "regime": signal.regime,
+            "horizon": signal.horizon_minutes,
+        },
+        "risk": {
+            "score": int(round(effective_risk_score)),
+            "decision": decision.intent,
+            "approved": decision.approved and not kill_switch_active,
+            "positionSize": decision.size_fraction if not kill_switch_active else 0.0,
+            "reasoning": reasoning,
+        },
+        "microstructure": microstructure,
+        "backend": {
+            "mode": TRADING_MODE,
+            "killSwitchActive": kill_switch_active,
+            "killSwitchReason": kill_switch_reason,
+            "marketDataSource": market_data_source,
+        },
+    }
+
+
+async def _handle_market_data_update(snapshot: Dict[str, Any]) -> None:
+    global _latest_signal, _latest_signal_ts
+
+    result = _build_market_state_result(
+        symbol=snapshot["symbol"],
+        price=float(snapshot["price"]),
+        change24h=float(snapshot.get("change24h", 0.0)),
+        volume24h=float(snapshot.get("volume24h", 0.0)),
+        market_cap=float(snapshot.get("marketCap", 0.0)),
+        market_data_source=str(snapshot.get("source", "binance-public")),
+    )
+    _latest_signal = result
+    _latest_signal_ts = float(snapshot.get("timestamp", time.time()))
+
+    await broadcast(
+        {
+            "type": "market_update",
+            "symbol": snapshot["symbol"],
+            "price": snapshot["price"],
+            "change24h": snapshot.get("change24h", 0.0),
+            "signal": result["signal"],
+            "risk": result["risk"],
+            "timestamp": snapshot.get("timestamp", time.time()),
+            "source": snapshot.get("source", "binance-public"),
+        }
+    )
+
+
+async def _handle_market_data_status_change(status: Dict[str, Any]) -> None:
+    await broadcast({"type": "exchange_status", **status})
 
 
 def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
@@ -538,24 +736,18 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
             timestamp=intent.updated_at,
         )
 
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.ensure_future(
-                broadcast(
-                    {
-                        "type": "order_update",
-                        "intent_id": intent.id,
-                        "status": intent.status.value,
-                        "symbol": intent.symbol,
-                        "side": intent.side.value,
-                        "fill_price": intent.fill_price,
-                    }
-                )
-            )
-            asyncio.ensure_future(_guardian_check_and_broadcast())
-    except RuntimeError:
-        pass
+    _schedule_background(
+        broadcast,
+        {
+            "type": "order_update",
+            "intent_id": intent.id,
+            "status": intent.status.value,
+            "symbol": intent.symbol,
+            "side": intent.side.value,
+            "fill_price": intent.fill_price,
+        },
+    )
+    _schedule_background(_guardian_check_and_broadcast)
 
     return IntentResponse(
         id=intent.id,
@@ -571,6 +763,7 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
 
 @app.get("/health", dependencies=[Depends(rate_limit)])
 def health():
+    market_data = _get_market_data_status()
     return {
         "kill_switch_active": kill_switch_active,
         "kill_switch_reason": kill_switch_reason,
@@ -580,6 +773,9 @@ def health():
         "mode": TRADING_MODE,
         "adapter": exchange_adapter.mode,
         "guardian_triggered": _guardian_triggered,
+        "market_data_mode": market_data["market_data_mode"],
+        "market_data_connected": market_data["connected"],
+        "market_data_source": market_data["source"],
     }
 
 
@@ -589,6 +785,8 @@ def get_config():
         "trading_mode": TRADING_MODE,
         "network": NETWORK,
         "adapter": exchange_adapter.mode,
+        "paper_use_live_market_data": PAPER_USE_LIVE_MARKET_DATA,
+        "config_path": RUNTIME_CONFIG.config_path,
         "cors_origins": ALLOWED_ORIGINS,
         "kill_switch_active": kill_switch_active,
         "auth_enabled": bool(BACKEND_API_KEY),
@@ -633,11 +831,30 @@ def get_orders(symbol: Optional[str] = Query(None)):
 
 @app.get("/price", dependencies=[Depends(rate_limit)])
 def get_price(symbol: str = Query("BTCUSDT")):
-    price = _synthetic_price(symbol.upper())
+    normalized_symbol = symbol.upper()
+    live_snapshot = _get_live_market_snapshot(normalized_symbol)
+    if live_snapshot is not None:
+        return {
+            "symbol": normalized_symbol,
+            "price": round(float(live_snapshot["price"]), 8),
+            "change24h": float(live_snapshot.get("change24h", 0.0)),
+            "volume24h": float(live_snapshot.get("volume24h", 0.0)),
+            "marketCap": float(live_snapshot.get("marketCap", 0.0)),
+            "timestamp": live_snapshot["timestamp"],
+            "source": live_snapshot.get("source", "binance-public"),
+            "market_data_mode": _market_data_mode_label(),
+        }
+
+    price = _synthetic_price(normalized_symbol)
     return {
-        "symbol": symbol.upper(),
+        "symbol": normalized_symbol,
         "price": round(price, 8),
+        "change24h": 0.0,
+        "volume24h": 0.0,
+        "marketCap": 0.0,
         "timestamp": time.time(),
+        "source": "synthetic",
+        "market_data_mode": _market_data_mode_label(),
     }
 
 
@@ -686,6 +903,18 @@ def get_guardian_status():
             "max_failed_orders": _GUARDIAN_MAX_FAILED_ORDERS,
             "max_drawdown_pct": _GUARDIAN_MAX_DRAWDOWN_PCT * 100,
         },
+        "market_data": _get_market_data_status(),
+    }
+
+
+@app.get("/exchange/status", dependencies=[Depends(rate_limit)])
+def get_exchange_status():
+    market_data = _get_market_data_status()
+    return {
+        "trading_mode": TRADING_MODE,
+        "execution_mode": exchange_adapter.mode,
+        "paper_use_live_market_data": PAPER_USE_LIVE_MARKET_DATA,
+        **market_data,
     }
 
 
@@ -695,54 +924,21 @@ def get_guardian_status():
 
 
 @app.post("/market-state")
-def market_state(req: MarketStateRequest):
+def market_state(req: MarketStateRequest, _: None = Depends(require_auth)):
     global _latest_signal, _latest_signal_ts
 
-    features, microstructure = _derive_market_features(
+    result = _build_market_state_result(
+        symbol=req.symbol,
+        price=req.price,
         change24h=req.change24h,
         volume24h=req.volume24h,
         market_cap=req.marketCap,
+        risk_tolerance=req.riskTolerance,
         spread_stress_threshold=req.spreadStressThreshold,
         volatility_sensitivity=req.volatilitySensitivity,
+        position_size_fraction=req.positionSizeFraction,
+        market_data_source="manual",
     )
-
-    signal = build_signal(features)
-    raw_risk_score = compute_risk_score(features)
-    tolerance_adjustment = (req.riskTolerance - 0.5) * 20.0
-    effective_risk_score = _clamp(raw_risk_score - tolerance_adjustment, 0.0, 100.0)
-    decision = risk_gate(
-        signal,
-        effective_risk_score,
-        base_fraction=req.positionSizeFraction,
-    )
-
-    reasoning = decision.reason
-    if kill_switch_active:
-        reasoning = f"{reasoning}. Trading halted: {kill_switch_reason or 'kill switch active'}"
-
-    result = {
-        "symbol": req.symbol.upper(),
-        "price": req.price,
-        "signal": {
-            "direction": signal.direction,
-            "confidence": int(round(signal.confidence * 100)),
-            "regime": signal.regime,
-            "horizon": signal.horizon_minutes,
-        },
-        "risk": {
-            "score": int(round(effective_risk_score)),
-            "decision": decision.intent,
-            "approved": decision.approved and not kill_switch_active,
-            "positionSize": decision.size_fraction if not kill_switch_active else 0.0,
-            "reasoning": reasoning,
-        },
-        "microstructure": microstructure,
-        "backend": {
-            "mode": TRADING_MODE,
-            "killSwitchActive": kill_switch_active,
-            "killSwitchReason": kill_switch_reason,
-        },
-    }
 
     # Cache for /signal/latest
     _latest_signal = result
@@ -781,20 +977,14 @@ def kill_switch(req: KillSwitchRequest, _: None = Depends(require_auth)):
         _guardian_trigger_ts = None
         logger.info("Kill switch deactivated")
 
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.ensure_future(
-                broadcast(
-                    {
-                        "type": "kill_switch",
-                        "active": kill_switch_active,
-                        "reason": kill_switch_reason,
-                    }
-                )
-            )
-    except RuntimeError:
-        pass
+    _schedule_background(
+        broadcast,
+        {
+            "type": "kill_switch",
+            "active": kill_switch_active,
+            "reason": kill_switch_reason,
+        },
+    )
 
     return {
         "kill_switch_active": kill_switch_active,
@@ -860,6 +1050,7 @@ async def websocket_updates(ws: WebSocket):
     ws_clients.add(ws)
     logger.info("WebSocket client connected (%d total)", len(ws_clients))
     try:
+        market_data = _get_market_data_status()
         await ws.send_json(
             {
                 "type": "health",
@@ -867,12 +1058,15 @@ async def websocket_updates(ws: WebSocket):
                 "mode": TRADING_MODE,
                 "api_error_count": api_error_count,
                 "guardian_triggered": _guardian_triggered,
+                "market_data_mode": market_data["market_data_mode"],
+                "market_data_connected": market_data["connected"],
             }
         )
         while True:
             try:
                 await asyncio.wait_for(ws.receive_text(), timeout=30.0)
             except asyncio.TimeoutError:
+                market_data = _get_market_data_status()
                 await ws.send_json(
                     {
                         "type": "health",
@@ -880,6 +1074,8 @@ async def websocket_updates(ws: WebSocket):
                         "mode": TRADING_MODE,
                         "api_error_count": api_error_count,
                         "guardian_triggered": _guardian_triggered,
+                        "market_data_mode": market_data["market_data_mode"],
+                        "market_data_connected": market_data["connected"],
                     }
                 )
     except WebSocketDisconnect:

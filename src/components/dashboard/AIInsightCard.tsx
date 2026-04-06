@@ -54,10 +54,10 @@ export function AIInsightCard({ selectedCoin, signal, riskScore }: AIInsightCard
           <div className="text-center py-6 space-y-2">
             <PlugZap className="w-8 h-8 text-muted-foreground/40 mx-auto" />
             <p className="text-sm text-muted-foreground">
-              AI insights require Supabase.
+              AI insights require Supabase auth and edge functions.
             </p>
             <p className="text-xs text-muted-foreground/60">
-              Set <span className="font-mono">VITE_SUPABASE_URL</span> to enable.
+              Set both <span className="font-mono">VITE_SUPABASE_URL</span> and <span className="font-mono">VITE_SUPABASE_PUBLISHABLE_KEY</span> to enable.
             </p>
           </div>
         ) : isLoading ? (
@@ -84,7 +84,7 @@ export function AIInsightCard({ selectedCoin, signal, riskScore }: AIInsightCard
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <span className="px-2 py-1 rounded bg-muted/50 font-mono">{selectedCoin.symbol}</span>
               <span>•</span>
-              <span>Powered by Gemini AI</span>
+              <span>Powered by edge AI</span>
             </div>
           </div>
         )}

@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { CryptoPrice } from '@/types/crypto';
 import { toast } from 'sonner';
 import { invokeEdgeFunction } from '@/lib/invokeEdgeFunction';
-import { SUPABASE_CONFIGURED } from '@/integrations/supabase/client';
+import { SUPABASE_CONFIGURED } from '@/integrations/supabase/config';
 
 interface AIInsightResponse {
   insight: string;

@@ -1,7 +1,6 @@
-version: "3.8"
-
 services:
   backend:
+    image: crypto-signal-backend:local
     build:
       context: .
       dockerfile: Dockerfile

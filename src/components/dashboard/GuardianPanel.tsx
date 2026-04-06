@@ -19,6 +19,17 @@ export interface GuardianStatus {
     max_failed_orders: number;
     max_drawdown_pct: number;
   };
+  market_data?: {
+    exchange: string | null;
+    market_data_mode: string;
+    connected: boolean;
+    connection_state: string;
+    fallback_active: boolean;
+    last_update_ts: number | null;
+    last_error: string | null;
+    stale: boolean;
+    source: string;
+  };
 }
 
 interface GuardianPanelProps {
@@ -72,6 +83,7 @@ export function GuardianPanel({ guardian, isLoading, authEnabled, onKillSwitchTo
   const maxApiErrors = guardian?.thresholds.max_api_errors ?? 10;
   const failedOrders = guardian?.failed_order_count ?? 0;
   const maxFailedOrders = guardian?.thresholds.max_failed_orders ?? 5;
+  const marketData = guardian?.market_data;
 
   const headerIcon = isHalted
     ? ShieldOff
@@ -142,6 +154,25 @@ export function GuardianPanel({ guardian, isLoading, authEnabled, onKillSwitchTo
       )}
 
       <div className="space-y-3">
+        {marketData && (
+          <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
+            <div className="flex justify-between text-xs">
+              <span className="text-muted-foreground">Market Data</span>
+              <span className={cn('font-mono', marketData.connected ? 'text-accent' : 'text-warning')}>
+                {marketData.market_data_mode === 'live_public_paper' ? 'LIVE PAPER' : 'SYNTHETIC'}
+              </span>
+            </div>
+            <div className="mt-1 flex justify-between text-[11px] font-mono text-muted-foreground">
+              <span>{marketData.source || 'synthetic'}</span>
+              <span>
+                {marketData.connection_state}
+                {marketData.fallback_active ? ' / fallback' : ''}
+                {marketData.stale ? ' / stale' : ''}
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Drawdown */}
         <div>
           <div className="flex justify-between text-xs mb-1">

@@ -10,9 +10,10 @@ A full-stack crypto trading control center — React dashboard frontend, FastAPI
 - **Risk gate** — composite risk score from spread stress, depth decay, volatility, and price shock; blocks or sizes positions accordingly
 - **Guardian service** — monitors drawdown, API errors, and failed orders; activates kill switch automatically when thresholds breach
 - **Paper trading** — full order simulation with realistic slippage, portfolio tracking, and FIFO realized P&L
+- **Hybrid live-paper mode** — paper execution and balances with live public Binance market data
 - **Earnings ledger** — per-trade realized P&L, win rate, best/worst trade, trade history
 - **Exchange adapter** — pluggable: `PaperAdapter` (default) or `BinanceCCXTAdapter` (testnet/mainnet, config-gated)
-- **WebSocket** — real-time order updates and guardian alerts
+- **WebSocket** — real-time order updates, guardian alerts, live market updates, and exchange-status updates
 - **Auth + rate limiting** — optional API key on write endpoints, sliding-window rate limiting on reads
 - **Dashboard** — live prices, signal panel, risk gauge, guardian panel, portfolio panel, earnings panel
 
@@ -23,14 +24,35 @@ A full-stack crypto trading control center — React dashboard frontend, FastAPI
 ### 1. Backend
 
 ```bash
-# Install Python deps
-pip install -r backend/requirements.txt
+# Create repo-local virtualenv + install Python deps
+make backend-install
 
 # Copy env (first time)
 cp backend/env/.env.example backend/env/.env
 
 # Start
-uvicorn backend.app:app --reload --host 0.0.0.0 --port 8000
+make backend
+```
+
+Modes:
+
+```bash
+# Synthetic paper mode
+cp backend/env/.env.example backend/env/.env
+sed -i 's/^TRADING_MODE=.*/TRADING_MODE=paper/' backend/env/.env
+sed -i 's/^PAPER_USE_LIVE_MARKET_DATA=.*/PAPER_USE_LIVE_MARKET_DATA=false/' backend/env/.env
+make backend
+
+# Real-time paper simulation mode (live Binance public data, paper execution)
+sed -i 's/^TRADING_MODE=.*/TRADING_MODE=paper/' backend/env/.env
+sed -i 's/^PAPER_USE_LIVE_MARKET_DATA=.*/PAPER_USE_LIVE_MARKET_DATA=true/' backend/env/.env
+make backend
+
+# Live Binance testnet mode
+sed -i 's/^TRADING_MODE=.*/TRADING_MODE=live/' backend/env/.env
+sed -i 's/^PAPER_USE_LIVE_MARKET_DATA=.*/PAPER_USE_LIVE_MARKET_DATA=false/' backend/env/.env
+sed -i 's/^NETWORK=.*/NETWORK=testnet/' backend/env/.env
+make backend
 ```
 
 ### 2. Frontend
@@ -45,17 +67,25 @@ npm run dev
 
 Open [http://localhost:5173](http://localhost:5173)
 
+Frontend tooling is standardized on Node `22.12.0` LTS.
+Use `nvm use` (the repo includes `.nvmrc`) or run `make build`, which falls back to the Docker Node 22 frontend build stage when your host Node is older.
+
 ### 3. Docker — full stack
 
 ```bash
 # Copy env (optional — defaults to paper mode)
 cp .env.fullstack.example .env
 
+# Check Compose support first
+make compose-preflight
+
 # Start backend + frontend via nginx
 docker compose -f docker-compose.fullstack.yml up --build
 ```
 
 Open [http://localhost:8080](http://localhost:8080)
+
+Docker Compose v2 is the supported full-stack container runtime for this repo. If `make compose-preflight` fails, install the Docker Compose plugin before using the full-stack path.
 
 ---
 
@@ -68,9 +98,14 @@ make frontend         # Start frontend dev server
 make test             # Run backend test suite
 make test-v           # Verbose test output
 make build            # Production frontend build
+make compose-preflight # Check Docker Compose v2 availability
 make compose-up       # Full-stack Docker start
 make compose-down     # Full-stack Docker stop
 make testnet-smoke    # Manual Binance testnet validation
+make live-paper-smoke # Validate hybrid live-paper mode against a running backend
+make secured-write-smoke # Validate authenticated write endpoints against a running backend
+make compose-live-paper-smoke # Start full stack and validate nginx /api + /ws live-paper flow
+make release-verify   # Canonical stabilization/release verification path
 make clean            # Remove build artifacts
 ```
 
@@ -82,7 +117,7 @@ make clean            # Remove build artifacts
 
 | Route | Description |
 |---|---|
-| `GET /health` | System health, kill switch state, adapter mode |
+| `GET /health` | System health, kill switch state, execution adapter mode |
 | `GET /config` | Current config (sanitized, no secrets) |
 | `GET /balance` | Paper portfolio balances and positions |
 | `GET /positions` | Open positions |
@@ -90,8 +125,9 @@ make clean            # Remove build artifacts
 | `GET /price?symbol=BTCUSDT` | Synthetic or live market price |
 | `GET /audit` | Persisted audit trail |
 | `GET /metrics` | Prometheus metrics |
-| `GET /signal/latest` | Latest signal from last /market-state call |
+| `GET /signal/latest` | Latest backend-owned signal snapshot from manual or live-paper updates |
 | `GET /guardian/status` | Guardian state and thresholds |
+| `GET /exchange/status` | Execution mode, market-data mode, feed status |
 | `GET /earnings/summary` | Realized P&L summary, win rate, avg/trade |
 | `GET /earnings/history` | Per-trade closed trade history |
 
@@ -101,7 +137,7 @@ make clean            # Remove build artifacts
 |---|---|
 | `POST /market-state` | Submit market data → signal + risk + microstructure |
 | `POST /intent/paper` | Submit paper trading intent |
-| `POST /intent/live` | Submit intent (routes to paper unless live mode active) |
+| `POST /intent/live` | Submit intent through the guarded live adapter path; falls back to paper when live mode is not fully configured |
 | `POST /kill-switch` | Activate or deactivate kill switch |
 | `POST /withdraw` | Withdraw from paper portfolio |
 | `POST /earnings/reset` | Reset earnings ledger |
@@ -110,16 +146,19 @@ make clean            # Remove build artifacts
 
 | Route | Description |
 |---|---|
-| `WS /ws/updates` | Real-time order updates, health pings, guardian alerts |
+| `WS /ws/updates` | Health pings, order updates, guardian alerts, `market_update`, `exchange_status` |
 
 ---
 
 ## Configuration
 
+Operational defaults now come from `backend/config/config.yaml`, with environment variables overriding those values at runtime.
+
 ### Backend (`backend/env/.env`)
 
 ```env
 TRADING_MODE=paper              # paper | live
+PAPER_USE_LIVE_MARKET_DATA=false
 NETWORK=testnet                 # testnet | mainnet
 BACKEND_API_KEY=                # Restricts POST endpoints when set
 BINANCE_API_KEY=                # Required for TRADING_MODE=live
@@ -138,7 +177,15 @@ EARNINGS_STORE_PATH=backend/data/earnings.json
 
 ```env
 VITE_BACKEND_URL=http://localhost:8000
+VITE_SUPABASE_URL=
+VITE_SUPABASE_PUBLISHABLE_KEY=
 ```
+
+Leave the Supabase values empty to run in local paper-mode without auth. Set both to enable Supabase auth and edge functions.
+
+If `BACKEND_API_KEY` is set on the backend, open the dashboard Settings panel and enter the same value in the optional operator API key field so UI write actions can send `X-API-Key` automatically.
+
+Hybrid live-paper mode is Binance-only in the current Python backend. It uses public Binance market data for `/price`, `/signal/latest`, `/guardian/status`, `/exchange/status`, and WebSocket market updates while execution stays on the paper adapter.
 
 ---
 
@@ -147,6 +194,7 @@ VITE_BACKEND_URL=http://localhost:8000
 | Layer | Behaviour |
 |---|---|
 | Default mode | Paper trading — no exchange connection, no real funds |
+| Hybrid paper mode | `TRADING_MODE=paper` + `PAPER_USE_LIVE_MARKET_DATA=true` |
 | Live mode gate | `TRADING_MODE=live` + credentials + `ccxt` installed |
 | Mainnet gate | `ALLOW_MAINNET=true` required in addition to live + mainnet config |
 | Guardian | Auto-activates kill switch on drawdown / error thresholds |
@@ -168,6 +216,7 @@ crypto-signal-bot/
 │   │   ├── paper_trading.py      # Paper portfolio + order fill simulation
 │   │   ├── earnings.py           # FIFO P&L ledger, realized earnings tracking
 │   │   ├── exchange_adapter.py   # Adapter abstraction: Paper | CCXT testnet/mainnet
+│   │   ├── market_data.py        # Binance public websocket + REST fallback for live-paper mode
 │   │   ├── startup_checks.py     # Mode validation, mainnet gate, env audit
 │   │   ├── audit_store.py        # JSON-backed audit persistence
 │   │   └── simulate.py           # Session simulator
@@ -176,12 +225,14 @@ crypto-signal-bot/
 │   ├── models_core.py            # Features, Signal, RiskDecision
 │   ├── config/config.yaml        # Risk and exchange config
 │   ├── env/.env.example          # Environment template
-│   └── tests/                    # 99-test pytest suite
+│   └── tests/                    # 118-test pytest suite
 ├── src/                          # React frontend
 │   ├── components/dashboard/     # SignalPanel, GuardianPanel, EarningsPanel, …
 │   ├── hooks/                    # useSignalEngine, useGuardianStatus, useEarnings, …
 │   └── lib/backend.ts            # Typed API client
 ├── scripts/
+│   ├── compose_live_paper_smoke.py # Full-stack compose smoke for nginx /api + /ws live-paper flow
+│   ├── live_paper_smoke.py       # Hybrid live-paper validation against a running backend
 │   └── testnet_smoke.py          # Manual Binance testnet validation script
 ├── deploy/nginx.conf             # Nginx reverse proxy + WebSocket config
 ├── Dockerfile                    # Backend image (Python 3.11-slim)
@@ -196,26 +247,33 @@ crypto-signal-bot/
 
 ```bash
 # All tests
-python -m pytest backend/tests/ -v
+make test-v
+
+# Canonical stabilization/release verification
+make release-verify
 
 # Specific suites
-python -m pytest backend/tests/test_api.py -v        # API endpoints (58 tests)
-python -m pytest backend/tests/test_live_mode.py -v  # Live mode + mainnet gate (17 tests)
-python -m pytest backend/tests/test_risk.py -v       # Risk engine (12 tests)
-python -m pytest backend/tests/test_signals.py -v    # Signal engine (11 tests)
+.venv/bin/python -m pytest backend/tests/test_api.py -v        # API endpoints
+.venv/bin/python -m pytest backend/tests/test_live_mode.py -v  # Live mode + mainnet gate
+.venv/bin/python -m pytest backend/tests/test_risk.py -v       # Risk engine
+.venv/bin/python -m pytest backend/tests/test_signals.py -v    # Signal engine
 
 # Frontend build
-npm run build
+make build
 ```
 
-**99 tests — all pass.**
+Current backend defaults verified from code:
+- `TRADING_MODE=paper`
+- `NETWORK=testnet`
+- `PAPER_USE_LIVE_MARKET_DATA=false`
+- paper execution remains the default fallback whenever live execution is not fully configured
 
 ---
 
 ## Testnet quick-start
 
 ```bash
-pip install ccxt
+.venv/bin/pip install ccxt
 # Get free testnet keys at https://testnet.binance.vision
 export TRADING_MODE=live
 export NETWORK=testnet
@@ -223,8 +281,26 @@ export BINANCE_API_KEY=your-testnet-key
 export BINANCE_API_SECRET=your-testnet-secret
 
 # Dry run (no order placed)
-python scripts/testnet_smoke.py --dry-run
+make testnet-smoke-dry
 
 # Full smoke test
-python scripts/testnet_smoke.py
+make testnet-smoke
+```
+
+## Live-paper quick-check
+
+Start the backend with `TRADING_MODE=paper` and `PAPER_USE_LIVE_MARKET_DATA=true`, then run:
+
+```bash
+make live-paper-smoke
+# or through nginx:
+.venv/bin/python scripts/live_paper_smoke.py --base-url http://localhost:8080/api
+```
+
+## Full-stack live-paper quick-check
+
+Use the compose-driven smoke command to boot the full stack and validate the public nginx routes end to end:
+
+```bash
+make compose-live-paper-smoke
 ```

@@ -11,23 +11,31 @@ import time
 import threading
 from typing import Any, Dict, List
 
+from backend.config.runtime import get_runtime_config
 
-_STORE_PATH = os.environ.get("AUDIT_STORE_PATH", "backend/data/audit.json")
 _lock = threading.Lock()
 
 
+def _store_path() -> str:
+    return os.environ.get(
+        "AUDIT_STORE_PATH",
+        get_runtime_config().persistence.audit_store_path,
+    )
+
+
 def _ensure_dir():
-    dirpath = os.path.dirname(_STORE_PATH)
+    dirpath = os.path.dirname(_store_path())
     if dirpath:
         os.makedirs(dirpath, exist_ok=True)
 
 
 def _load() -> Dict[str, List[Any]]:
     _ensure_dir()
-    if not os.path.exists(_STORE_PATH):
+    store_path = _store_path()
+    if not os.path.exists(store_path):
         return {"intents": [], "orders": [], "withdrawals": [], "risk_events": []}
     try:
-        with open(_STORE_PATH, "r") as f:
+        with open(store_path, "r") as f:
             return json.load(f)
     except (json.JSONDecodeError, IOError):
         return {"intents": [], "orders": [], "withdrawals": [], "risk_events": []}
@@ -35,7 +43,7 @@ def _load() -> Dict[str, List[Any]]:
 
 def _save(data: Dict[str, List[Any]]):
     _ensure_dir()
-    with open(_STORE_PATH, "w") as f:
+    with open(_store_path(), "w") as f:
         json.dump(data, f, indent=2, default=str)
 
 

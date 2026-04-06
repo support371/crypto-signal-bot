@@ -1,6 +1,7 @@
 import { Activity, LogOut, Settings, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
+import { SUPABASE_CONFIGURED } from '@/integrations/supabase/config';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -51,6 +52,12 @@ export function Header({
       ? currencyFormatter.format(paperBalance)
       : 'Unavailable';
 
+  const subtitle = !backendConnected
+    ? 'Control Center Offline'
+    : systemMode === 'live'
+    ? 'Execution Control Center'
+    : 'Paper Trading Control Center';
+
   return (
     <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
       <div className="container mx-auto px-4 py-4">
@@ -67,7 +74,7 @@ export function Header({
                 RISK AGENT
               </h1>
               <p className="text-xs text-muted-foreground">
-                Paper Trading Simulator
+                {subtitle}
               </p>
             </div>
           </div>
@@ -101,15 +108,17 @@ export function Header({
               <Settings className="w-4 h-4" />
             </Button>
 
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={handleSignOut}
-              className="border-border hover:border-destructive hover:bg-destructive/10"
-              title="Sign Out"
-            >
-              <LogOut className="w-4 h-4" />
-            </Button>
+            {SUPABASE_CONFIGURED && (
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handleSignOut}
+                className="border-border hover:border-destructive hover:bg-destructive/10"
+                title="Sign Out"
+              >
+                <LogOut className="w-4 h-4" />
+              </Button>
+            )}
           </div>
         </div>
       </div>

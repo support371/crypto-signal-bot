@@ -1,12 +1,12 @@
-version: "3.8"
-
 services:
   backend:
+    image: crypto-signal-backend:local
     build:
       context: .
       dockerfile: Dockerfile
     environment:
       TRADING_MODE: ${TRADING_MODE:-paper}
+      PAPER_USE_LIVE_MARKET_DATA: ${PAPER_USE_LIVE_MARKET_DATA:-false}
       NETWORK: ${NETWORK:-testnet}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
       BACKEND_API_KEY: ${BACKEND_API_KEY:-}
@@ -22,6 +22,9 @@ services:
       ALLOW_MAINNET: ${ALLOW_MAINNET:-}
     volumes:
       - audit-data:/app/backend/data
+    networks:
+      app_net:
+        ipv4_address: 172.28.0.2
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 15s
@@ -30,17 +33,32 @@ services:
       start_period: 10s
 
   frontend:
+    image: crypto-signal-frontend:local
     build:
       context: .
       dockerfile: Dockerfile.frontend
       args:
         VITE_BACKEND_URL: ${VITE_BACKEND_URL:-/api}
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+        VITE_SUPABASE_PUBLISHABLE_KEY: ${VITE_SUPABASE_PUBLISHABLE_KEY:-}
     depends_on:
       backend:
         condition: service_healthy
+    extra_hosts:
+      - "backend:172.28.0.2"
+    networks:
+      app_net:
+        ipv4_address: 172.28.0.3
     ports:
       - "8080:80"
+
+networks:
+  app_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
 
 volumes:
   audit-data:

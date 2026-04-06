@@ -11,8 +11,10 @@ import time
 import threading
 from typing import Dict, List, Optional
 
-_STORE_PATH = os.getenv("EARNINGS_STORE_PATH", "backend/data/earnings.json")
+from backend.config.runtime import get_runtime_config
+
 _lock = threading.Lock()
+_loaded_store_path: Optional[str] = None
 
 # In-memory open positions per symbol: symbol -> list of {qty, cost_basis}
 # Each BUY pushes a lot; each SELL pops lots FIFO to compute realized P&L
@@ -26,23 +28,38 @@ _closed_trades: List[Dict] = []
 # Persistence helpers
 # ---------------------------------------------------------------------------
 
+def _store_path() -> str:
+    return os.getenv(
+        "EARNINGS_STORE_PATH",
+        get_runtime_config().persistence.earnings_store_path,
+    )
+
+
 def _load() -> None:
     """Load persisted earnings data into memory (called once at import)."""
-    global _open_lots, _closed_trades
+    global _loaded_store_path, _open_lots, _closed_trades
+    store_path = _store_path()
     try:
-        with open(_STORE_PATH, "r") as f:
+        with open(store_path, "r") as f:
             data = json.load(f)
         _open_lots = data.get("open_lots", {})
         _closed_trades = data.get("closed_trades", [])
     except (FileNotFoundError, json.JSONDecodeError):
         _open_lots = {}
         _closed_trades = []
+    _loaded_store_path = store_path
+
+
+def _ensure_loaded() -> None:
+    if _loaded_store_path != _store_path():
+        _load()
 
 
 def _save() -> None:
     """Persist current earnings state to disk."""
-    os.makedirs(os.path.dirname(_STORE_PATH) or ".", exist_ok=True)
-    with open(_STORE_PATH, "w") as f:
+    store_path = _store_path()
+    os.makedirs(os.path.dirname(store_path) or ".", exist_ok=True)
+    with open(store_path, "w") as f:
         json.dump({"open_lots": _open_lots, "closed_trades": _closed_trades}, f, indent=2)
 
 
@@ -69,6 +86,7 @@ def record_fill(
     sym = symbol.upper()
 
     with _lock:
+        _ensure_loaded()
         if side.upper() == "BUY":
             if sym not in _open_lots:
                 _open_lots[sym] = []
@@ -141,6 +159,7 @@ def get_summary() -> Dict:
     best trade, worst trade, and open lot count.
     """
     with _lock:
+        _ensure_loaded()
         trades = [t for t in _closed_trades if t.get("entry_price") is not None]
         total_pnl = sum(t["realized_pnl"] for t in trades)
         wins = [t for t in trades if t["realized_pnl"] > 0]
@@ -167,6 +186,7 @@ def get_summary() -> Dict:
 def get_history(symbol: Optional[str] = None, limit: int = 100) -> List[Dict]:
     """Return closed trade records, optionally filtered by symbol, newest first."""
     with _lock:
+        _ensure_loaded()
         trades = list(_closed_trades)
 
     if symbol:
@@ -180,6 +200,7 @@ def reset_earnings() -> None:
     """Clear all earnings data (paper mode utility)."""
     global _open_lots, _closed_trades
     with _lock:
+        _ensure_loaded()
         _open_lots = {}
         _closed_trades = []
         _save()

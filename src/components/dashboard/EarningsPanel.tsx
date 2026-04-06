@@ -1,11 +1,26 @@
-import { TrendingUp, TrendingDown, DollarSign, BarChart3 } from 'lucide-react';
+import { useState } from 'react';
+import { TrendingUp, TrendingDown, DollarSign, BarChart3, RotateCcw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { EarningsSummary, TradeRecord } from '@/hooks/useEarnings';
+import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { fetchBackendJson } from '@/lib/backend';
+import { toast } from 'sonner';
 
 interface EarningsPanelProps {
   summary: EarningsSummary | null;
   trades: TradeRecord[];
   isLoading?: boolean;
+  onReset?: () => void;
 }
 
 function fmt(n: number, digits = 2) {
@@ -17,7 +32,10 @@ function fmtPnl(n: number) {
   return `${sign}$${fmt(Math.abs(n))}`;
 }
 
-export function EarningsPanel({ summary, trades, isLoading }: EarningsPanelProps) {
+export function EarningsPanel({ summary, trades, isLoading, onReset }: EarningsPanelProps) {
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
+
   if (isLoading) {
     return (
       <div className="cyber-card p-6 animate-pulse">
@@ -34,6 +52,20 @@ export function EarningsPanel({ summary, trades, isLoading }: EarningsPanelProps
   const winRate = summary?.win_rate_pct ?? 0;
   const openLots = summary?.open_lots ?? 0;
 
+  const handleReset = async () => {
+    setResetting(true);
+    try {
+      await fetchBackendJson('/earnings/reset', { method: 'POST' });
+      toast.success('Earnings ledger reset');
+      setResetOpen(false);
+      onReset?.();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to reset earnings ledger');
+    } finally {
+      setResetting(false);
+    }
+  };
+
   return (
     <div className="cyber-card p-6">
       {/* Header */}
@@ -42,11 +74,23 @@ export function EarningsPanel({ summary, trades, isLoading }: EarningsPanelProps
         <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-accent">
           Earnings
         </h3>
-        {openLots > 0 && (
-          <span className="ml-auto text-xs font-mono text-muted-foreground">
-            {openLots} open {openLots === 1 ? 'lot' : 'lots'}
-          </span>
-        )}
+        <div className="ml-auto flex items-center gap-3">
+          {openLots > 0 && (
+            <span className="text-xs font-mono text-muted-foreground">
+              {openLots} open {openLots === 1 ? 'lot' : 'lots'}
+            </span>
+          )}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-[11px] font-mono"
+            onClick={() => setResetOpen(true)}
+            disabled={resetting}
+          >
+            <RotateCcw className="w-3 h-3 mr-1" />
+            RESET
+          </Button>
+        </div>
       </div>
 
       {/* P&L headline */}
@@ -142,6 +186,23 @@ export function EarningsPanel({ summary, trades, isLoading }: EarningsPanelProps
           No closed trades yet
         </p>
       )}
+
+      <AlertDialog open={resetOpen} onOpenChange={setResetOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reset Earnings Ledger?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This clears realized P&amp;L history from the backend paper ledger. Open lots and balances remain untouched.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={resetting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleReset} disabled={resetting}>
+              {resetting ? 'Resetting...' : 'Reset Ledger'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

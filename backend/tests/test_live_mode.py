@@ -12,7 +12,10 @@ import builtins
 import os
 
 import pytest
+from fastapi.testclient import TestClient
 
+import backend.app as app_module
+from backend.app import app
 from backend.logic.exchange_adapter import PaperAdapter, build_adapter
 from backend.logic.paper_trading import PaperPortfolio, _synthetic_price
 from backend.logic.startup_checks import run as run_startup_checks
@@ -51,6 +54,11 @@ def _build(trading_mode, network="testnet", env_overrides=None):
 
 class TestAdapterRouting:
     def test_paper_mode_always_paper(self):
+        adapter = _build("paper", "testnet")
+        assert adapter.mode == "paper"
+
+    def test_paper_live_market_data_flag_still_uses_paper_adapter(self, monkeypatch):
+        monkeypatch.setenv("PAPER_USE_LIVE_MARKET_DATA", "true")
         adapter = _build("paper", "testnet")
         assert adapter.mode == "paper"
 
@@ -191,3 +199,75 @@ class TestStartupChecks:
         monkeypatch.setenv("BACKEND_API_KEY", "some-secret-key")
         # Should complete without raising
         run_startup_checks(trading_mode="paper", network="testnet", adapter_mode="paper")
+
+
+class FakeMarketDataService:
+    def __init__(self):
+        self.started = False
+        self.stopped = False
+
+    async def start(self):
+        self.started = True
+
+    async def stop(self):
+        self.stopped = True
+
+    def get_snapshot(self, symbol):
+        return None
+
+    def get_status(self):
+        return {
+            "exchange": "binance",
+            "market_data_mode": "live_public_paper",
+            "connected": True,
+            "connection_state": "streaming",
+            "fallback_active": False,
+            "last_update_ts": 1_700_000_000.0,
+            "last_error": None,
+            "stale": False,
+            "symbols": ["BTCUSDT"],
+            "source": "binance-public",
+        }
+
+
+class TestHybridPaperModeStartup:
+    def test_hybrid_live_paper_mode_starts_market_data_service_and_keeps_paper_execution(self):
+        original_mode = app_module.TRADING_MODE
+        original_network = app_module.NETWORK
+        original_live_market = app_module.PAPER_USE_LIVE_MARKET_DATA
+        original_service = app_module.market_data_service
+        original_adapter = app_module.exchange_adapter
+        original_api_key = app_module.BACKEND_API_KEY
+
+        fake_service = FakeMarketDataService()
+        app_module.TRADING_MODE = "paper"
+        app_module.NETWORK = "testnet"
+        app_module.PAPER_USE_LIVE_MARKET_DATA = True
+        app_module.BACKEND_API_KEY = ""
+        app_module.market_data_service = fake_service
+        app_module.exchange_adapter = build_adapter(
+            trading_mode="paper",
+            network="testnet",
+            portfolio=app_module.paper_portfolio,
+            synthetic_price_fn=_synthetic_price,
+        )
+
+        try:
+            with TestClient(app) as client:
+                assert fake_service.started is True
+                status = client.get("/exchange/status")
+                assert status.status_code == 200
+                data = status.json()
+                assert data["trading_mode"] == "paper"
+                assert data["execution_mode"] == "paper"
+                assert data["market_data_mode"] == "live_public_paper"
+                assert data["paper_use_live_market_data"] is True
+        finally:
+            app_module.TRADING_MODE = original_mode
+            app_module.NETWORK = original_network
+            app_module.PAPER_USE_LIVE_MARKET_DATA = original_live_market
+            app_module.market_data_service = original_service
+            app_module.exchange_adapter = original_adapter
+            app_module.BACKEND_API_KEY = original_api_key
+
+        assert fake_service.stopped is True

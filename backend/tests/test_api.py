@@ -1,5 +1,6 @@
 """Tests for API endpoints."""
 
+import asyncio
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -10,6 +11,38 @@ import backend.logic.earnings as earnings_module
 from backend.app import app
 from backend.logic.exchange_adapter import PaperAdapter, build_adapter
 from backend.logic.paper_trading import PaperPortfolio, _synthetic_price
+
+
+class FakeMarketDataService:
+    def __init__(self, snapshot=None, status=None):
+        self.snapshot = snapshot or {}
+        self.status = status or {
+            "exchange": "binance",
+            "market_data_mode": "live_public_paper",
+            "connected": True,
+            "connection_state": "streaming",
+            "fallback_active": False,
+            "last_update_ts": 1_700_000_000.0,
+            "last_error": None,
+            "stale": False,
+            "symbols": ["BTCUSDT"],
+            "source": "binance-public",
+        }
+        self.started = False
+        self.stopped = False
+
+    async def start(self):
+        self.started = True
+
+    async def stop(self):
+        self.stopped = True
+
+    def get_snapshot(self, symbol):
+        snapshot = self.snapshot.get(symbol.upper())
+        return dict(snapshot) if snapshot else None
+
+    def get_status(self):
+        return dict(self.status)
 
 
 @pytest.fixture(autouse=True)
@@ -26,6 +59,10 @@ def reset_state():
     app_module._guardian_trigger_ts = None
     app_module._guardian_drawdown_pct = 0.0
     app_module.BACKEND_API_KEY = ""
+    app_module.TRADING_MODE = "paper"
+    app_module.NETWORK = "testnet"
+    app_module.PAPER_USE_LIVE_MARKET_DATA = False
+    app_module.market_data_service = None
     app_module.paper_portfolio.balances = {"USDT": 10000.0}
     app_module.paper_portfolio.positions = []
     app_module.paper_portfolio.open_orders = []
@@ -64,6 +101,14 @@ class TestHealthEndpoint:
         assert resp.status_code == 200
         assert resp.json()["mode"] in ("paper", "live")
 
+    def test_health_exposes_market_data_fields(self, client):
+        resp = client.get("/health")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["market_data_mode"] == "synthetic_paper"
+        assert data["market_data_connected"] is False
+        assert data["market_data_source"] == "synthetic"
+
 
 class TestConfigEndpoint:
     def test_config_no_secrets(self, client):
@@ -76,6 +121,12 @@ class TestConfigEndpoint:
         # Ensure no API keys leaked
         assert "BINANCE_API_KEY" not in str(data)
         assert "BINANCE_API_SECRET" not in str(data)
+
+    def test_config_exposes_live_paper_flag(self, client):
+        app_module.PAPER_USE_LIVE_MARKET_DATA = True
+        resp = client.get("/config")
+        assert resp.status_code == 200
+        assert resp.json()["paper_use_live_market_data"] is True
 
 
 class TestBalanceEndpoint:
@@ -105,11 +156,40 @@ class TestPriceEndpoint:
         data = resp.json()
         assert data["symbol"] == "BTCUSDT"
         assert data["price"] > 0
+        assert data["source"] == "synthetic"
+        assert data["change24h"] == 0.0
+        assert data["volume24h"] == 0.0
+        assert data["marketCap"] == 0.0
 
     def test_price_with_symbol(self, client):
         resp = client.get("/price?symbol=ETHUSDT")
         assert resp.status_code == 200
         assert resp.json()["symbol"] == "ETHUSDT"
+
+    def test_price_uses_live_market_snapshot_in_hybrid_paper_mode(self, client):
+        app_module.PAPER_USE_LIVE_MARKET_DATA = True
+        app_module.market_data_service = FakeMarketDataService(
+            snapshot={
+                "BTCUSDT": {
+                    "symbol": "BTCUSDT",
+                    "price": 44123.45,
+                    "change24h": 3.1,
+                    "volume24h": 123456789.0,
+                    "marketCap": 2.4e9,
+                    "timestamp": 1_700_000_001.0,
+                    "source": "binance-public",
+                }
+            }
+        )
+        resp = client.get("/price?symbol=BTCUSDT")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["price"] == pytest.approx(44123.45)
+        assert data["change24h"] == pytest.approx(3.1)
+        assert data["volume24h"] == pytest.approx(123456789.0)
+        assert data["marketCap"] == pytest.approx(2.4e9)
+        assert data["source"] == "binance-public"
+        assert data["market_data_mode"] == "live_public_paper"
 
 
 class TestOrdersEndpoint:
@@ -153,6 +233,49 @@ class TestSignalLatest:
         assert "risk" in data
         assert "timestamp" in data
 
+    def test_signal_latest_auto_populated_from_live_market_snapshot(self, client):
+        app_module.PAPER_USE_LIVE_MARKET_DATA = True
+        asyncio.run(
+            app_module._handle_market_data_update(
+                {
+                    "symbol": "BTCUSDT",
+                    "price": 44500.0,
+                    "change24h": 2.25,
+                    "volume24h": 250000000.0,
+                    "marketCap": 5000000000.0,
+                    "timestamp": 1_700_000_123.0,
+                    "source": "binance-public",
+                }
+            )
+        )
+        resp = client.get("/signal/latest")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["available"] is True
+        assert data["symbol"] == "BTCUSDT"
+        assert data["backend"]["marketDataSource"] == "binance-public"
+
+
+class TestExchangeStatus:
+    def test_exchange_status_defaults_to_synthetic_paper(self, client):
+        resp = client.get("/exchange/status")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["trading_mode"] == "paper"
+        assert data["execution_mode"] == "paper"
+        assert data["market_data_mode"] == "synthetic_paper"
+
+    def test_exchange_status_exposes_live_paper_state(self, client):
+        app_module.PAPER_USE_LIVE_MARKET_DATA = True
+        app_module.market_data_service = FakeMarketDataService()
+        resp = client.get("/exchange/status")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["paper_use_live_market_data"] is True
+        assert data["exchange"] == "binance"
+        assert data["connected"] is True
+        assert data["market_data_mode"] == "live_public_paper"
+
 
 class TestGuardianStatus:
     def test_guardian_status_structure(self, client):
@@ -170,6 +293,13 @@ class TestGuardianStatus:
         data = client.get("/guardian/status").json()
         assert data["triggered"] is False
         assert data["kill_switch_active"] is False
+
+    def test_guardian_status_includes_market_data(self, client):
+        app_module.PAPER_USE_LIVE_MARKET_DATA = True
+        app_module.market_data_service = FakeMarketDataService()
+        data = client.get("/guardian/status").json()
+        assert "market_data" in data
+        assert data["market_data"]["market_data_mode"] == "live_public_paper"
 
 
 class TestKillSwitch:
@@ -207,6 +337,37 @@ class TestKillSwitch:
 
 
 class TestAuthEnforcement:
+    def test_market_state_open_when_no_key(self, client):
+        resp = client.post("/market-state", json={
+            "symbol": "BTCUSDT",
+            "price": 43000.0,
+            "change24h": 1.2,
+            "volume24h": 1e9,
+            "marketCap": 8e11,
+        })
+        assert resp.status_code == 200
+
+    def test_market_state_blocked_without_key_when_auth_enabled(self, client):
+        app_module.BACKEND_API_KEY = "secret"
+        resp = client.post("/market-state", json={
+            "symbol": "BTCUSDT",
+            "price": 43000.0,
+            "change24h": 1.2,
+            "volume24h": 1e9,
+            "marketCap": 8e11,
+        })
+        assert resp.status_code == 401
+
+    def test_market_state_allowed_with_valid_key(self, auth_client):
+        resp = auth_client.post("/market-state", json={
+            "symbol": "BTCUSDT",
+            "price": 43000.0,
+            "change24h": 1.2,
+            "volume24h": 1e9,
+            "marketCap": 8e11,
+        })
+        assert resp.status_code == 200
+
     def test_intent_paper_open_when_no_key(self, client):
         resp = client.post("/intent/paper", json={
             "symbol": "BTCUSDT",
@@ -601,3 +762,88 @@ class TestWebSocket:
             assert "kill_switch_active" in data
             assert "mode" in data
             assert "guardian_triggered" in data
+            assert "market_data_mode" in data
+            assert "market_data_connected" in data
+
+    def test_ws_receives_kill_switch_broadcast(self, client):
+        with client.websocket_connect("/ws/updates") as ws:
+            ws.receive_json()  # initial health snapshot
+
+            resp = client.post("/kill-switch", json={"activate": True, "reason": "ws test"})
+            assert resp.status_code == 200
+
+            data = ws.receive_json()
+            assert data["type"] == "kill_switch"
+            assert data["active"] is True
+            assert data["reason"] == "ws test"
+
+    def test_ws_receives_order_update_broadcast(self, client):
+        with client.websocket_connect("/ws/updates") as ws:
+            ws.receive_json()  # initial health snapshot
+
+            resp = client.post("/intent/paper", json={
+                "symbol": "BTCUSDT",
+                "side": "BUY",
+                "order_type": "MARKET",
+                "quantity": 0.001,
+            })
+            assert resp.status_code == 200
+
+            data = ws.receive_json()
+            assert data["type"] == "order_update"
+            assert data["symbol"] == "BTCUSDT"
+            assert data["side"] == "BUY"
+            assert data["status"] in ("FILLED", "RISK_REJECTED", "FAILED")
+
+    def test_ws_receives_market_update_broadcast(self, client):
+        with client.websocket_connect("/ws/updates") as ws:
+            ws.receive_json()  # initial health snapshot
+
+            asyncio.run(
+                app_module._handle_market_data_update(
+                    {
+                        "symbol": "BTCUSDT",
+                        "price": 45250.0,
+                        "change24h": 1.8,
+                        "volume24h": 210000000.0,
+                        "marketCap": 4800000000.0,
+                        "timestamp": 1_700_000_234.0,
+                        "source": "binance-public",
+                    }
+                )
+            )
+
+            data = ws.receive_json()
+            assert data["type"] == "market_update"
+            assert data["symbol"] == "BTCUSDT"
+            assert data["price"] == pytest.approx(45250.0)
+            assert data["source"] == "binance-public"
+            assert "signal" in data
+            assert "risk" in data
+
+    def test_ws_receives_exchange_status_broadcast(self, client):
+        with client.websocket_connect("/ws/updates") as ws:
+            ws.receive_json()  # initial health snapshot
+
+            asyncio.run(
+                app_module._handle_market_data_status_change(
+                    {
+                        "exchange": "binance",
+                        "market_data_mode": "live_public_paper",
+                        "connected": True,
+                        "connection_state": "streaming",
+                        "fallback_active": False,
+                        "last_update_ts": 1_700_000_345.0,
+                        "last_error": None,
+                        "stale": False,
+                        "symbols": ["BTCUSDT"],
+                        "source": "binance-public",
+                    }
+                )
+            )
+
+            data = ws.receive_json()
+            assert data["type"] == "exchange_status"
+            assert data["exchange"] == "binance"
+            assert data["market_data_mode"] == "live_public_paper"
+            assert data["connected"] is True

@@ -1,4 +1,5 @@
-import { supabase, SUPABASE_CONFIGURED } from '@/integrations/supabase/client';
+import { getSupabaseClient } from '@/integrations/supabase/client';
+import { SUPABASE_CONFIGURED } from '@/integrations/supabase/config';
 import { handleAuthError } from '@/lib/handleAuthError';
 
 interface InvokeOptions {
@@ -27,6 +28,7 @@ export async function invokeEdgeFunction<T = unknown>(
   }
 
   try {
+    const supabase = await getSupabaseClient();
     const { data: authData } = await supabase.auth.getSession();
     const accessToken = authData.session?.access_token;
 

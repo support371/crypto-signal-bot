@@ -7,6 +7,8 @@ export interface WsHealthMessage {
   mode: string;
   api_error_count: number;
   guardian_triggered: boolean;
+  market_data_mode: string;
+  market_data_connected: boolean;
 }
 
 export interface WsOrderUpdateMessage {
@@ -31,17 +33,57 @@ export interface WsKillSwitchMessage {
   reason: string | null;
 }
 
+export interface WsMarketUpdateMessage {
+  type: 'market_update';
+  symbol: string;
+  price: number;
+  change24h: number;
+  signal: {
+    direction: string;
+    confidence: number;
+    regime: string;
+    horizon: number;
+  };
+  risk: {
+    score: number;
+    decision: string;
+    approved: boolean;
+    positionSize: number;
+    reasoning: string;
+  };
+  timestamp: number;
+  source: string;
+}
+
+export interface WsExchangeStatusMessage {
+  type: 'exchange_status';
+  exchange: string | null;
+  market_data_mode: string;
+  connected: boolean;
+  connection_state: string;
+  fallback_active: boolean;
+  last_update_ts: number | null;
+  last_error: string | null;
+  stale: boolean;
+  symbols: string[];
+  source: string;
+}
+
 export type WsMessage =
   | WsHealthMessage
   | WsOrderUpdateMessage
   | WsGuardianAlertMessage
-  | WsKillSwitchMessage;
+  | WsKillSwitchMessage
+  | WsMarketUpdateMessage
+  | WsExchangeStatusMessage;
 
 interface UseBackendWebSocketOptions {
   onHealthUpdate?: (msg: WsHealthMessage) => void;
   onOrderUpdate?: (msg: WsOrderUpdateMessage) => void;
   onGuardianAlert?: (msg: WsGuardianAlertMessage) => void;
   onKillSwitchChange?: (msg: WsKillSwitchMessage) => void;
+  onMarketUpdate?: (msg: WsMarketUpdateMessage) => void;
+  onExchangeStatus?: (msg: WsExchangeStatusMessage) => void;
   reconnectDelayMs?: number;
 }
 
@@ -63,6 +105,8 @@ export function useBackendWebSocket(options: UseBackendWebSocketOptions = {}): W
     onOrderUpdate,
     onGuardianAlert,
     onKillSwitchChange,
+    onMarketUpdate,
+    onExchangeStatus,
     reconnectDelayMs = 5000,
   } = options;
 
@@ -117,6 +161,12 @@ export function useBackendWebSocket(options: UseBackendWebSocketOptions = {}): W
         case 'kill_switch':
           onKillSwitchChange?.(msg);
           break;
+        case 'market_update':
+          onMarketUpdate?.(msg);
+          break;
+        case 'exchange_status':
+          onExchangeStatus?.(msg);
+          break;
       }
     };
 
@@ -134,7 +184,15 @@ export function useBackendWebSocket(options: UseBackendWebSocketOptions = {}): W
       // onclose fires after onerror, which handles reconnect
       ws.close();
     };
-  }, [onHealthUpdate, onOrderUpdate, onGuardianAlert, onKillSwitchChange, reconnectDelayMs]);
+  }, [
+    onExchangeStatus,
+    onGuardianAlert,
+    onHealthUpdate,
+    onKillSwitchChange,
+    onMarketUpdate,
+    onOrderUpdate,
+    reconnectDelayMs,
+  ]);
 
   useEffect(() => {
     mountedRef.current = true;

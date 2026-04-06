@@ -1,21 +1,32 @@
 import { useState } from 'react';
-import { Wallet, TrendingUp, TrendingDown, ArrowUpDown, RefreshCw } from 'lucide-react';
+import { Wallet, TrendingUp, TrendingDown, ArrowUpDown, RefreshCw, Landmark } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { fetchBackendJson } from '@/lib/backend';
 import { toast } from 'sonner';
 import type { PortfolioState, PaperOrder } from '@/hooks/usePortfolio';
 import { Signal, RiskAssessment } from '@/types/crypto';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 interface QuickTradeProps {
   symbol: string;
   signal: Signal | null;
   risk: RiskAssessment | null;
   price: number;
+  tradingMode: string;
   onFilled: () => void;
 }
 
-function QuickTrade({ symbol, signal, risk, price, onFilled }: QuickTradeProps) {
+function QuickTrade({ symbol, signal, risk, price, tradingMode, onFilled }: QuickTradeProps) {
   const [submitting, setSubmitting] = useState(false);
 
   const canTrade = signal && risk && risk.approved && risk.positionSize > 0;
@@ -25,7 +36,8 @@ function QuickTrade({ symbol, signal, risk, price, onFilled }: QuickTradeProps) 
     setSubmitting(true);
     try {
       const qty = price > 0 ? Number(((risk.positionSize * 1000) / price).toFixed(6)) : 0.001;
-      await fetchBackendJson('/intent/paper', {
+      const executionMode = tradingMode === 'live' ? 'live' : 'paper';
+      await fetchBackendJson(`/intent/${executionMode}`, {
         method: 'POST',
         body: JSON.stringify({
           symbol: `${symbol}USDT`,
@@ -34,7 +46,7 @@ function QuickTrade({ symbol, signal, risk, price, onFilled }: QuickTradeProps) 
           quantity: Math.max(qty, 0.0001),
         }),
       });
-      toast.success(`Paper ${side} submitted for ${symbol}`);
+      toast.success(`${executionMode.toUpperCase()} ${side} submitted for ${symbol}`);
       onFilled();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Trade failed');
@@ -58,7 +70,7 @@ function QuickTrade({ symbol, signal, risk, price, onFilled }: QuickTradeProps) 
         )}
         onClick={() => handleTrade(side)}
         disabled={submitting || !canTrade}
-        title={!canTrade ? 'Signal not approved for trading' : `Execute paper ${side}`}
+        title={!canTrade ? 'Signal not approved for trading' : `Execute ${tradingMode} ${side}`}
       >
         {submitting ? (
           <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
@@ -67,7 +79,7 @@ function QuickTrade({ symbol, signal, risk, price, onFilled }: QuickTradeProps) 
         ) : (
           <TrendingDown className="w-3 h-3 mr-1" />
         )}
-        PAPER {side}
+        {tradingMode === 'live' ? 'LIVE' : 'PAPER'} {side}
       </Button>
     </div>
   );
@@ -98,6 +110,8 @@ interface PortfolioPanelProps {
   signal?: Signal | null;
   risk?: RiskAssessment | null;
   onRefetch?: () => void;
+  onActionComplete?: () => void;
+  tradingMode?: string;
 }
 
 export function PortfolioPanel({
@@ -108,7 +122,15 @@ export function PortfolioPanel({
   signal,
   risk,
   onRefetch,
+  onActionComplete,
+  tradingMode = 'paper',
 }: PortfolioPanelProps) {
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [withdrawAsset, setWithdrawAsset] = useState('USDT');
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [withdrawAddress, setWithdrawAddress] = useState('paper-vault');
+  const [withdrawing, setWithdrawing] = useState(false);
+
   if (isLoading) {
     return (
       <div className="cyber-card p-6 animate-pulse">
@@ -124,6 +146,35 @@ export function PortfolioPanel({
   );
   const recentOrders: PaperOrder[] = (portfolio?.orders ?? []).slice(-5).reverse();
 
+  const handleWithdraw = async () => {
+    const amount = Number(withdrawAmount);
+    if (!withdrawAsset.trim() || !withdrawAddress.trim() || !Number.isFinite(amount) || amount <= 0) {
+      toast.error('Enter a valid asset, amount, and destination');
+      return;
+    }
+
+    setWithdrawing(true);
+    try {
+      await fetchBackendJson('/withdraw', {
+        method: 'POST',
+        body: JSON.stringify({
+          asset: withdrawAsset.trim().toUpperCase(),
+          amount,
+          address: withdrawAddress.trim(),
+        }),
+      });
+      toast.success(`Paper withdrawal recorded for ${amount} ${withdrawAsset.trim().toUpperCase()}`);
+      setWithdrawAmount('');
+      setWithdrawAddress('paper-vault');
+      setWithdrawOpen(false);
+      onActionComplete?.();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Withdraw failed');
+    } finally {
+      setWithdrawing(false);
+    }
+  };
+
   return (
     <div className="cyber-card p-6">
       <div className="flex items-center justify-between mb-4">
@@ -134,13 +185,24 @@ export function PortfolioPanel({
           </h3>
         </div>
         {onRefetch && (
-          <button
-            className="text-muted-foreground hover:text-foreground transition-colors"
-            onClick={onRefetch}
-            title="Refresh"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-[11px] font-mono"
+              onClick={() => setWithdrawOpen(true)}
+            >
+              <Landmark className="w-3 h-3 mr-1" />
+              WITHDRAW
+            </Button>
+            <button
+              className="text-muted-foreground hover:text-foreground transition-colors"
+              onClick={onRefetch}
+              title="Refresh"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+            </button>
+          </div>
         )}
       </div>
 
@@ -201,8 +263,65 @@ export function PortfolioPanel({
         signal={signal ?? null}
         risk={risk ?? null}
         price={selectedPrice}
-        onFilled={() => onRefetch?.()}
+        tradingMode={tradingMode}
+        onFilled={() => onActionComplete?.()}
       />
+
+      <Dialog open={withdrawOpen} onOpenChange={setWithdrawOpen}>
+        <DialogContent className="sm:max-w-[420px] bg-card border-border">
+          <DialogHeader>
+            <DialogTitle>Record Paper Withdrawal</DialogTitle>
+            <DialogDescription>
+              This reduces the paper portfolio balance and writes an audit entry through the backend.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="withdraw-asset">Asset</Label>
+              <Input
+                id="withdraw-asset"
+                value={withdrawAsset}
+                onChange={(event) => setWithdrawAsset(event.target.value)}
+                placeholder="USDT"
+                autoComplete="off"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="withdraw-amount">Amount</Label>
+              <Input
+                id="withdraw-amount"
+                type="number"
+                min="0"
+                step="0.000001"
+                value={withdrawAmount}
+                onChange={(event) => setWithdrawAmount(event.target.value)}
+                placeholder="250"
+                autoComplete="off"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="withdraw-address">Destination</Label>
+              <Input
+                id="withdraw-address"
+                value={withdrawAddress}
+                onChange={(event) => setWithdrawAddress(event.target.value)}
+                placeholder="paper-vault"
+                autoComplete="off"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setWithdrawOpen(false)} disabled={withdrawing}>
+              Cancel
+            </Button>
+            <Button onClick={handleWithdraw} disabled={withdrawing}>
+              {withdrawing ? 'Submitting...' : 'Record Withdrawal'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

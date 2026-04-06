@@ -15,6 +15,8 @@ issues are logged as warnings so the app still starts in paper mode.
 import logging
 import os
 
+from backend.config.runtime import get_runtime_config
+
 logger = logging.getLogger("backend.startup")
 
 
@@ -118,9 +120,10 @@ def _check_api_key() -> None:
 
 def _check_data_dirs() -> None:
     """Ensure persistence directories exist."""
+    runtime_config = get_runtime_config()
     for path_env, default in (
-        ("AUDIT_STORE_PATH", "backend/data/audit.json"),
-        ("EARNINGS_STORE_PATH", "backend/data/earnings.json"),
+        ("AUDIT_STORE_PATH", runtime_config.persistence.audit_store_path),
+        ("EARNINGS_STORE_PATH", runtime_config.persistence.earnings_store_path),
     ):
         path = os.getenv(path_env, default)
         directory = os.path.dirname(path) or "."

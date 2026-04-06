@@ -9,12 +9,17 @@ import random
 from typing import Dict, List, Optional
 from dataclasses import dataclass, field
 
+from backend.config.runtime import get_runtime_config
 from backend.models.execution_intent import (
     ExecutionIntent,
     IntentStatus,
     Side,
     OrderType,
 )
+
+
+def _default_balances() -> Dict[str, float]:
+    return {"USDT": get_runtime_config().paper.starting_balance_usdt}
 
 
 @dataclass
@@ -28,7 +33,7 @@ class PaperPosition:
 class PaperPortfolio:
     """In-memory paper portfolio with USDT as base currency."""
 
-    balances: Dict[str, float] = field(default_factory=lambda: {"USDT": 10000.0})
+    balances: Dict[str, float] = field(default_factory=_default_balances)
     positions: List[PaperPosition] = field(default_factory=list)
     open_orders: List[ExecutionIntent] = field(default_factory=list)
     filled_orders: List[ExecutionIntent] = field(default_factory=list)

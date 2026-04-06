@@ -10,9 +10,15 @@ interface SignalEngineConfig {
 }
 
 interface MarketStateResponse {
+  symbol?: string;
   signal: Signal;
   risk: RiskAssessment;
   microstructure: MicrostructureFeatures;
+}
+
+interface LatestSignalResponse extends MarketStateResponse {
+  available: boolean;
+  timestamp?: number;
 }
 
 const DEFAULT_CONFIG: SignalEngineConfig = {
@@ -36,12 +42,22 @@ export function useSignalEngine(price: CryptoPrice | null, config: Partial<Signa
   const [signal, setSignal] = useState<Signal | null>(null);
   const [risk, setRisk] = useState<RiskAssessment | null>(null);
   const [microstructure, setMicrostructure] = useState<MicrostructureFeatures | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const expectedBackendSymbol = price ? `${price.symbol.toUpperCase()}USDT` : null;
+
+  const applySnapshot = (data: MarketStateResponse) => {
+    setSignal(data.signal);
+    setRisk(data.risk);
+    setMicrostructure(data.microstructure);
+  };
 
   useEffect(() => {
     if (!price) {
       setSignal(null);
       setRisk(null);
       setMicrostructure(null);
+      setIsLoading(false);
       return;
     }
 
@@ -49,6 +65,7 @@ export function useSignalEngine(price: CryptoPrice | null, config: Partial<Signa
 
     const fetchMarketState = async () => {
       try {
+        setIsLoading(true);
         const data = await fetchBackendJson<MarketStateResponse>('/market-state', {
           method: 'POST',
           signal: controller.signal,
@@ -65,9 +82,7 @@ export function useSignalEngine(price: CryptoPrice | null, config: Partial<Signa
           }),
         });
 
-        setSignal(data.signal);
-        setRisk(data.risk);
-        setMicrostructure(data.microstructure);
+        applySnapshot(data);
       } catch (error) {
         if (controller.signal.aborted) {
           return;
@@ -77,6 +92,10 @@ export function useSignalEngine(price: CryptoPrice | null, config: Partial<Signa
         setSignal(null);
         setRisk(null);
         setMicrostructure(null);
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+        }
       }
     };
 
@@ -96,5 +115,59 @@ export function useSignalEngine(price: CryptoPrice | null, config: Partial<Signa
     price?.volume24h,
   ]);
 
-  return { signal, risk, microstructure };
+  useEffect(() => {
+    if (!expectedBackendSymbol) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    const syncLatestSignal = async () => {
+      try {
+        const latest = await fetchBackendJson<LatestSignalResponse>('/signal/latest', {
+          signal: controller.signal,
+        });
+        if (!latest.available) {
+          return;
+        }
+        if (latest.symbol && latest.symbol !== expectedBackendSymbol) {
+          return;
+        }
+        applySnapshot(latest);
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        console.error('Failed to fetch backend latest signal', error);
+      }
+    };
+
+    syncLatestSignal();
+    const interval = window.setInterval(syncLatestSignal, 15000);
+    return () => {
+      controller.abort();
+      window.clearInterval(interval);
+    };
+  }, [expectedBackendSymbol]);
+
+  const refreshLatest = async () => {
+    if (!expectedBackendSymbol) {
+      return;
+    }
+
+    try {
+      const latest = await fetchBackendJson<LatestSignalResponse>('/signal/latest');
+      if (!latest.available) {
+        return;
+      }
+      if (latest.symbol && latest.symbol !== expectedBackendSymbol) {
+        return;
+      }
+      applySnapshot(latest);
+    } catch (error) {
+      console.error('Failed to refresh backend latest signal', error);
+    }
+  };
+
+  return { signal, risk, microstructure, isLoading, refreshLatest };
 }

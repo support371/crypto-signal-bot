@@ -3,6 +3,7 @@ npm-debug.log
 .git
 .gitignore
 .github
+.venv
 .env
 .env.*
 dist
@@ -10,5 +11,10 @@ coverage
 __pycache__
 *.pyc
 .pytest_cache
-backend/data/*.json
+.mypy_cache
+.ruff_cache
+*.log
+server.log
+backend/data/
 backend/env/.env
+crypto-risk-agent-complete-v5.zip

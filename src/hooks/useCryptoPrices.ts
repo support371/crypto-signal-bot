@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import type { MutableRefObject } from 'react';
 import { CryptoPrice } from '@/types/crypto';
 import { fetchBackendJson } from '@/lib/backend';
 
@@ -38,7 +39,12 @@ interface CoinGeckoResponse {
 interface BackendPriceResponse {
   symbol: string;
   price: number;
+  change24h?: number;
+  volume24h?: number;
+  marketCap?: number;
   timestamp?: number;
+  source?: string;
+  market_data_mode?: string;
 }
 
 async function fetchFromCoinGecko(coins: CoinConfig[]): Promise<CryptoPrice[]> {
@@ -63,7 +69,10 @@ async function fetchFromCoinGecko(coins: CoinConfig[]): Promise<CryptoPrice[]> {
   });
 }
 
-async function fetchFromBackend(coins: CoinConfig[], sessionBaselineRef: React.MutableRefObject<Map<string, number>>): Promise<CryptoPrice[]> {
+async function fetchFromBackend(
+  coins: CoinConfig[],
+  sessionBaselineRef: MutableRefObject<Map<string, number>>
+): Promise<CryptoPrice[]> {
   return Promise.all(
     coins.map(async (coin) => {
       const data = await fetchBackendJson<BackendPriceResponse>(
@@ -74,21 +83,25 @@ async function fetchFromBackend(coins: CoinConfig[], sessionBaselineRef: React.M
       }
       const baseline = sessionBaselineRef.current.get(coin.id) || data.price;
       const sessionChangePct = baseline === 0 ? 0 : ((data.price - baseline) / baseline) * 100;
+      const change24h =
+        typeof data.change24h === 'number' && Number.isFinite(data.change24h)
+          ? data.change24h
+          : sessionChangePct;
       return {
         id: coin.id,
         symbol: coin.symbol,
         name: coin.name,
         price: data.price,
-        change24h: Number(sessionChangePct.toFixed(2)),
-        volume24h: 0,
-        marketCap: 0,
+        change24h: Number(change24h.toFixed(2)),
+        volume24h: data.volume24h ?? 0,
+        marketCap: data.marketCap ?? 0,
         lastUpdated: new Date((data.timestamp || Date.now() / 1000) * 1000).toISOString(),
       } satisfies CryptoPrice;
     })
   );
 }
 
-export function useCryptoPrices(symbols?: string[]) {
+export function useCryptoPrices(symbols?: string[], preferBackend = false) {
   const sessionBaselineRef = useRef<Map<string, number>>(new Map());
 
   const requestedCoins = useMemo(() => {
@@ -100,7 +113,7 @@ export function useCryptoPrices(symbols?: string[]) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
-  const [source, setSource] = useState<'coingecko' | 'backend' | null>(null);
+  const [source, setSource] = useState<'coingecko' | 'backend' | 'backend-live' | null>(null);
 
   const fetchPrices = useCallback(async () => {
     if (requestedCoins.length === 0) {
@@ -111,16 +124,28 @@ export function useCryptoPrices(symbols?: string[]) {
 
     try {
       setError(null);
-      // Try CoinGecko first for live data
-      try {
-        const live = await fetchFromCoinGecko(requestedCoins);
-        setPrices(live);
-        setSource('coingecko');
-      } catch {
-        // Fall back to backend synthetic prices
-        const synthetic = await fetchFromBackend(requestedCoins, sessionBaselineRef);
-        setPrices(synthetic);
-        setSource('backend');
+      if (preferBackend) {
+        try {
+          const livePaper = await fetchFromBackend(requestedCoins, sessionBaselineRef);
+          setPrices(livePaper);
+          setSource('backend-live');
+        } catch {
+          const live = await fetchFromCoinGecko(requestedCoins);
+          setPrices(live);
+          setSource('coingecko');
+        }
+      } else {
+        // Try CoinGecko first for live data
+        try {
+          const live = await fetchFromCoinGecko(requestedCoins);
+          setPrices(live);
+          setSource('coingecko');
+        } catch {
+          // Fall back to backend synthetic prices
+          const synthetic = await fetchFromBackend(requestedCoins, sessionBaselineRef);
+          setPrices(synthetic);
+          setSource('backend');
+        }
       }
       setLastUpdate(new Date());
     } catch (err) {
@@ -128,7 +153,7 @@ export function useCryptoPrices(symbols?: string[]) {
     } finally {
       setIsLoading(false);
     }
-  }, [requestedCoins]);
+  }, [preferBackend, requestedCoins]);
 
   useEffect(() => {
     fetchPrices();

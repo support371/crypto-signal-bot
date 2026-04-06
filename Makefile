@@ -1,12 +1,17 @@
-PYTHON  ?= python
+PYTHON  ?= python3
 PIP     ?= pip
 NPM     ?= npm
+VENV_DIR ?= .venv
+VENV_BIN := $(VENV_DIR)/bin
+VENV_PYTHON := $(VENV_BIN)/python
+VENV_PIP := $(VENV_BIN)/pip
 
 .PHONY: help install backend-install frontend-install \
         backend frontend build \
         test test-v test-live lint \
-        compose-up compose-down compose-backend compose-backend-down \
-        testnet-smoke clean
+        docker-build-backend docker-build-frontend docker-build-stack \
+        compose-preflight compose-up compose-down compose-backend compose-backend-down \
+        testnet-smoke testnet-smoke-dry live-paper-smoke secured-write-smoke compose-live-paper-smoke release-verify clean
 
 # ── Default ───────────────────────────────────────────────────────────────────
 help:
@@ -30,9 +35,11 @@ help:
 	@echo ""
 	@echo "  Build:"
 	@echo "    make build                Build frontend for production"
+	@echo "    make docker-build-stack   Prebuild backend + frontend container images"
 	@echo ""
 	@echo "  Docker:"
-	@echo "    make compose-up           Start full stack (backend + frontend)"
+	@echo "    make compose-preflight    Check for Docker Compose v2"
+	@echo "    make compose-up           Start full stack with docker compose"
 	@echo "    make compose-down         Stop full stack"
 	@echo "    make compose-backend      Start backend only"
 	@echo "    make compose-backend-down Stop backend only"
@@ -40,6 +47,10 @@ help:
 	@echo "  Live mode:"
 	@echo "    make testnet-smoke        Run testnet smoke test (requires BINANCE_* creds)"
 	@echo "    make testnet-smoke-dry    Run testnet smoke test without placing an order"
+	@echo "    make live-paper-smoke     Validate hybrid live-paper mode against a running backend"
+	@echo "    make secured-write-smoke  Validate write-endpoint auth flow against a running backend"
+	@echo "    make compose-live-paper-smoke  Start full stack and validate nginx /api + /ws live-paper flow"
+	@echo "    make release-verify       Run the canonical stabilization/release verification path"
 	@echo ""
 	@echo "  Cleanup:"
 	@echo "    make clean                Remove build artifacts and caches"
@@ -49,54 +60,79 @@ help:
 install: backend-install frontend-install
 
 backend-install:
-	$(PIP) install -r backend/requirements.txt
+	$(PYTHON) -m venv $(VENV_DIR)
+	$(VENV_PIP) install -r backend/requirements.txt
 
 frontend-install:
 	$(NPM) install
 
 # ── Development ───────────────────────────────────────────────────────────────
 backend:
-	uvicorn backend.app:app --reload --host 0.0.0.0 --port 8000
+	$(VENV_PYTHON) -m uvicorn backend.app:app --reload --host 0.0.0.0 --port 8000
 
 frontend:
 	$(NPM) run dev -- --host 0.0.0.0 --port 8080
 
 # ── Testing ───────────────────────────────────────────────────────────────────
 test:
-	$(PYTHON) -m pytest backend/tests -q
+	$(VENV_PYTHON) -m pytest backend/tests -q
 
 test-v:
-	$(PYTHON) -m pytest backend/tests -v --tb=short
+	$(VENV_PYTHON) -m pytest backend/tests -v --tb=short
 
 test-live:
-	$(PYTHON) -m pytest backend/tests/test_live_mode.py -v --tb=short
+	$(VENV_PYTHON) -m pytest backend/tests/test_live_mode.py -v --tb=short
 
 lint:
-	@command -v ruff >/dev/null 2>&1 && ruff check backend/ || echo "ruff not installed — run: pip install ruff"
+	@$(VENV_PYTHON) -c "import ruff" >/dev/null 2>&1 && $(VENV_PYTHON) -m ruff check backend/ || echo "ruff not installed in $(VENV_DIR) — run: $(VENV_PIP) install ruff"
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 build:
-	VITE_BACKEND_URL=/api VITE_API_BASE_URL=/api $(NPM) run build
+	$(VENV_PYTHON) scripts/frontend_build.py
+
+docker-build-backend:
+	$(VENV_PYTHON) scripts/docker_build_stack.py --target backend
+
+docker-build-frontend:
+	$(VENV_PYTHON) scripts/docker_build_stack.py --target frontend
+
+docker-build-stack:
+	$(VENV_PYTHON) scripts/docker_build_stack.py
 
 # ── Docker ────────────────────────────────────────────────────────────────────
-compose-up:
-	docker compose -f docker-compose.fullstack.yml up --build
+compose-preflight:
+	$(VENV_PYTHON) scripts/compose_preflight.py
 
-compose-down:
+compose-up: compose-preflight docker-build-stack
+	docker compose -f docker-compose.fullstack.yml up --no-build -d
+
+compose-down: compose-preflight
 	docker compose -f docker-compose.fullstack.yml down
 
-compose-backend:
-	docker compose -f docker-compose.yml up --build
+compose-backend: compose-preflight docker-build-backend
+	docker compose -f docker-compose.yml up --no-build -d
 
-compose-backend-down:
+compose-backend-down: compose-preflight
 	docker compose -f docker-compose.yml down
 
 # ── Live mode ─────────────────────────────────────────────────────────────────
 testnet-smoke:
-	$(PYTHON) scripts/testnet_smoke.py
+	$(VENV_PYTHON) scripts/testnet_smoke.py
 
 testnet-smoke-dry:
-	$(PYTHON) scripts/testnet_smoke.py --dry-run
+	$(VENV_PYTHON) scripts/testnet_smoke.py --dry-run
+
+live-paper-smoke:
+	$(VENV_PYTHON) scripts/live_paper_smoke.py
+
+secured-write-smoke:
+	$(VENV_PYTHON) scripts/secured_write_smoke.py --api-key $${BACKEND_API_KEY:?set BACKEND_API_KEY first}
+
+compose-live-paper-smoke:
+	$(VENV_PYTHON) scripts/compose_live_paper_smoke.py
+
+release-verify:
+	$(VENV_PYTHON) scripts/release_verify.py
 
 # ── Cleanup ───────────────────────────────────────────────────────────────────
 clean:
