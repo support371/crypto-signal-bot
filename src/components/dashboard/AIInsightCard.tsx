@@ -18,7 +18,7 @@ export function AIInsightCard({ selectedCoin, signal, riskScore }: AIInsightCard
     if (selectedCoin && available) {
       generateInsight(selectedCoin, signal, riskScore);
     }
-  }, [selectedCoin?.id, available]);
+  }, [available, generateInsight, riskScore, selectedCoin, signal]);
 
   const handleRefresh = () => {
     if (available) generateInsight(selectedCoin ?? undefined, signal, riskScore);

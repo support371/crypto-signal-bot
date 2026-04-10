@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getBackendBaseUrl } from '@/lib/backend';
+import { getBackendWebSocketUrl } from '@/lib/backend';
 
 export interface WsHealthMessage {
   type: 'health';
@@ -94,9 +94,7 @@ interface WebSocketState {
 }
 
 function getWsUrl(): string {
-  const base = getBackendBaseUrl();
-  const wsBase = base.replace(/^http/, 'ws');
-  return `${wsBase}/ws/updates`;
+  return getBackendWebSocketUrl();
 }
 
 export function useBackendWebSocket(options: UseBackendWebSocketOptions = {}): WebSocketState {

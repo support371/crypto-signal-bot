@@ -64,6 +64,13 @@ cp backend/env/.env.example backend/env/.env
 make backend
 ```
 
+Windows PowerShell:
+
+```powershell
+.\scripts\bootstrap_backend_windows.ps1
+.\scripts\run_backend_windows.ps1
+```
+
 ### Frontend
 
 ```bash

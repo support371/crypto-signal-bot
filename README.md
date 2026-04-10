@@ -34,6 +34,19 @@ cp backend/env/.env.example backend/env/.env
 make backend
 ```
 
+Windows PowerShell quickstart:
+
+```powershell
+.\scripts\bootstrap_backend_windows.ps1
+.\scripts\run_backend_windows.ps1
+```
+
+If you plan to validate exchange-backed testnet mode on Windows, install the optional adapter dependency during bootstrap:
+
+```powershell
+.\scripts\bootstrap_backend_windows.ps1 -InstallCcxt
+```
+
 Modes:
 
 ```bash

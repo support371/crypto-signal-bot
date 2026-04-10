@@ -30,6 +30,32 @@ export function getBackendBaseUrl() {
   return trimTrailingSlash(explicitUrl || DEFAULT_BACKEND_URL);
 }
 
+export function getBackendWebSocketUrl() {
+  const explicitUrl = env.VITE_BACKEND_URL || env.VITE_BACKEND_BASE_URL;
+  const backendBaseUrl = getBackendBaseUrl();
+
+  if (!explicitUrl) {
+    return `${backendBaseUrl.replace(/^http/i, 'ws')}/ws/updates`;
+  }
+
+  if (typeof window === 'undefined') {
+    return `${backendBaseUrl.replace(/^http/i, 'ws')}/ws/updates`;
+  }
+
+  const resolved = new URL(explicitUrl, window.location.origin);
+  const normalizedPath = resolved.pathname.replace(/\/+$/, '');
+  const wsPath = normalizedPath.endsWith('/api')
+    ? `${normalizedPath.slice(0, -4) || ''}/ws/updates`
+    : `${normalizedPath}/ws/updates`;
+
+  resolved.protocol = resolved.protocol === 'https:' ? 'wss:' : 'ws:';
+  resolved.pathname = wsPath.replace(/\/{2,}/g, '/');
+  resolved.search = '';
+  resolved.hash = '';
+
+  return resolved.toString();
+}
+
 function buildBackendHeaders(initHeaders: HeadersInit | undefined, includeJsonContentType: boolean) {
   const headers = new Headers(initHeaders ?? {});
 

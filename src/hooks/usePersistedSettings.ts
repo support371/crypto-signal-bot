@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
-import { UserSettings, DEFAULT_SETTINGS } from '@/components/dashboard/SettingsModal';
+import type { UserSettings } from '@/components/dashboard/SettingsModal';
+import { DEFAULT_SETTINGS } from '@/components/dashboard/settingsDefaults';
 
 const STORAGE_KEY = 'crypto-signal-bot:settings:v1';
 

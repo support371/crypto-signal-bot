@@ -102,13 +102,15 @@ const Index = () => {
         // Silently swallow — kill switch or risk rejection; next poll will re-evaluate.
       });
   }, [
-    settings.autoTradeEnabled,
-    signal?.direction,
-    signal?.regime,
-    signal?.confidence,
-    risk?.approved,
-    selectedCoin?.id,
     health?.kill_switch_active,
+    refetchAudit,
+    refetchMetrics,
+    refetchPortfolio,
+    refetchStatus,
+    risk,
+    selectedCoin,
+    settings.autoTradeEnabled,
+    signal,
     systemMode,
   ]);
 

@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
 import { Settings, Shield, Activity, Wallet, Volume2 } from 'lucide-react';
+import { DEFAULT_SETTINGS } from '@/components/dashboard/settingsDefaults';
 
 export interface UserSettings {
   riskTolerance: number;
@@ -23,16 +24,6 @@ export interface UserSettings {
   soundAlertsEnabled: boolean;
   backendApiKey: string;
 }
-
-const DEFAULT_SETTINGS: UserSettings = {
-  riskTolerance: 0.5,
-  volatilitySensitivity: 0.5,
-  positionSizeFraction: 0.1,
-  spreadStressThreshold: 0.002,
-  autoTradeEnabled: false,
-  soundAlertsEnabled: true,
-  backendApiKey: '',
-};
 
 interface SettingsModalProps {
   open: boolean;
@@ -293,5 +284,3 @@ export function SettingsModal({
     </Dialog>
   );
 }
-
-export { DEFAULT_SETTINGS };

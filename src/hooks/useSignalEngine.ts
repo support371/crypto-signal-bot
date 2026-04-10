@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { fetchBackendJson } from '@/lib/backend';
 import { CryptoPrice, MicrostructureFeatures, RiskAssessment, Signal } from '@/types/crypto';
 
@@ -29,15 +29,7 @@ const DEFAULT_CONFIG: SignalEngineConfig = {
 };
 
 export function useSignalEngine(price: CryptoPrice | null, config: Partial<SignalEngineConfig> = {}) {
-  const mergedConfig = useMemo(
-    () => ({ ...DEFAULT_CONFIG, ...config }),
-    [
-      config.positionSizeFraction,
-      config.riskTolerance,
-      config.spreadStressThreshold,
-      config.volatilitySensitivity,
-    ]
-  );
+  const mergedConfig = { ...DEFAULT_CONFIG, ...config };
 
   const [signal, setSignal] = useState<Signal | null>(null);
   const [risk, setRisk] = useState<RiskAssessment | null>(null);
@@ -70,7 +62,7 @@ export function useSignalEngine(price: CryptoPrice | null, config: Partial<Signa
           method: 'POST',
           signal: controller.signal,
           body: JSON.stringify({
-            symbol: price.symbol.toUpperCase(),
+            symbol: expectedBackendSymbol,
             price: price.price,
             change24h: price.change24h,
             volume24h: price.volume24h,
@@ -103,16 +95,12 @@ export function useSignalEngine(price: CryptoPrice | null, config: Partial<Signa
 
     return () => controller.abort();
   }, [
+    expectedBackendSymbol,
     mergedConfig.positionSizeFraction,
     mergedConfig.riskTolerance,
     mergedConfig.spreadStressThreshold,
     mergedConfig.volatilitySensitivity,
-    price?.change24h,
-    price?.id,
-    price?.marketCap,
-    price?.price,
-    price?.symbol,
-    price?.volume24h,
+    price,
   ]);
 
   useEffect(() => {
@@ -124,9 +112,10 @@ export function useSignalEngine(price: CryptoPrice | null, config: Partial<Signa
 
     const syncLatestSignal = async () => {
       try {
-        const latest = await fetchBackendJson<LatestSignalResponse>('/signal/latest', {
-          signal: controller.signal,
-        });
+        const latest = await fetchBackendJson<LatestSignalResponse>(
+          `/signal/latest?symbol=${encodeURIComponent(expectedBackendSymbol)}`,
+          { signal: controller.signal }
+        );
         if (!latest.available) {
           return;
         }
@@ -156,7 +145,9 @@ export function useSignalEngine(price: CryptoPrice | null, config: Partial<Signa
     }
 
     try {
-      const latest = await fetchBackendJson<LatestSignalResponse>('/signal/latest');
+      const latest = await fetchBackendJson<LatestSignalResponse>(
+        `/signal/latest?symbol=${encodeURIComponent(expectedBackendSymbol)}`
+      );
       if (!latest.available) {
         return;
       }
