@@ -30,9 +30,23 @@ def parse_node_version(raw: str) -> tuple[int, int, int] | None:
         return None
 
 
+def resolve_command(name: str) -> str | None:
+    direct = shutil.which(name)
+    if direct is not None:
+        return direct
+
+    if os.name == "nt":
+        for candidate in (f"{name}.cmd", f"{name}.exe", f"{name}.bat"):
+            resolved = shutil.which(candidate)
+            if resolved is not None:
+                return resolved
+
+    return None
+
+
 def local_node_is_compatible() -> bool:
-    node = shutil.which("node")
-    npm = shutil.which("npm")
+    node = resolve_command("node")
+    npm = resolve_command("npm")
     if node is None or npm is None:
         return False
 
@@ -47,7 +61,25 @@ def local_node_is_compatible() -> bool:
     return version is not None and version >= REQUIRED_NODE
 
 
+def local_node_version() -> tuple[int, int, int] | None:
+    node = resolve_command("node")
+    if node is None:
+        return None
+
+    result = subprocess.run(
+        [node, "-v"],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return parse_node_version(result.stdout)
+
+
 def run(cmd: list[str], *, env: dict[str, str]) -> None:
+    executable = resolve_command(cmd[0])
+    if executable is not None:
+      cmd = [executable, *cmd[1:]]
     subprocess.run(cmd, cwd=REPO_ROOT, env=env, check=True)
 
 
@@ -61,7 +93,24 @@ def main() -> int:
         run(["npm", "run", "build"], env=env)
         return 0
 
-    docker = shutil.which("docker")
+    if resolve_command("npm") is not None:
+        version = local_node_version()
+        if version is not None:
+            print(
+                "[WARN] Local Node is below the documented 22.12.0 baseline "
+                f"(found {version[0]}.{version[1]}.{version[2]}). Trying local build first."
+            )
+        else:
+            print("[WARN] Unable to determine local Node version. Trying local build first.")
+
+        try:
+            run(["npm", "run", "build"], env=env)
+            print("[OK] Local frontend build succeeded without Docker.")
+            return 0
+        except subprocess.CalledProcessError:
+            print("[WARN] Local frontend build failed. Falling back to Docker if available.")
+
+    docker = resolve_command("docker")
     if docker is None:
         print("[FAIL] Local Node is below 22.12.0 and Docker is unavailable.")
         print("       Install Node 22.12.0+ or run the build on a host with Docker.")

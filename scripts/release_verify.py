@@ -6,6 +6,7 @@ Canonical stabilization/release verification runner.
 from __future__ import annotations
 
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -20,6 +21,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 BACKEND_PORT = 8010
 BACKEND_URL = f"http://127.0.0.1:{BACKEND_PORT}"
 SMOKE_API_KEY = "release-verify-key"
+PUBLIC_FEED_HOSTS = {
+    "binance": ("api.binance.com", "stream.binance.com"),
+    "bitget": ("api.bitget.com", "ws.bitget.com"),
+    "btcc": ("kapi.btloginc.com",),
+}
 
 
 def section(title: str) -> None:
@@ -30,6 +36,20 @@ def section(title: str) -> None:
 
 def run(cmd: list[str], *, env: dict[str, str] | None = None) -> None:
     subprocess.run(cmd, cwd=REPO_ROOT, env=env, check=True)
+
+
+def public_feed_reachable(exchange: str) -> bool:
+    hosts = PUBLIC_FEED_HOSTS.get(exchange, ())
+    if not hosts:
+        return False
+
+    for host in hosts:
+        try:
+            socket.getaddrinfo(host, None)
+            return True
+        except socket.gaierror:
+            continue
+    return False
 
 
 def wait_for_backend(base_url: str, timeout: float = 45.0) -> None:
@@ -64,11 +84,13 @@ def main() -> int:
         {
             "TRADING_MODE": "paper",
             "PAPER_USE_LIVE_MARKET_DATA": "true",
+            "MARKET_DATA_PUBLIC_EXCHANGE": env.get("MARKET_DATA_PUBLIC_EXCHANGE", env.get("EXCHANGE", "binance")),
             "NETWORK": "testnet",
             "BACKEND_API_KEY": SMOKE_API_KEY,
             "CORS_ORIGINS": "http://localhost:5173,http://localhost:8080",
         }
     )
+    live_paper_exchange = env["MARKET_DATA_PUBLIC_EXCHANGE"].lower()
 
     backend_proc = subprocess.Popen(
         [
@@ -89,7 +111,25 @@ def main() -> int:
 
     try:
         wait_for_backend(BACKEND_URL)
-        run([sys.executable, "scripts/live_paper_smoke.py", "--base-url", BACKEND_URL, "--timeout", "45"], env=env)
+        if public_feed_reachable(live_paper_exchange):
+            run(
+                [
+                    sys.executable,
+                    "scripts/live_paper_smoke.py",
+                    "--base-url",
+                    BACKEND_URL,
+                    "--timeout",
+                    "45",
+                    "--exchange",
+                    live_paper_exchange,
+                ],
+                env=env,
+            )
+        else:
+            print(
+                "[BLOCKED] Public market-data feed DNS is unavailable on this host; "
+                "skipping live-paper smoke."
+            )
         run(
             [
                 sys.executable,
@@ -117,7 +157,7 @@ def main() -> int:
         print("          Compose smoke skipped; repo-side compose config and docs remain validated.")
 
     section("Release verification complete")
-    print("[OK] Tests, build, direct smoke, and secured write verification passed.")
+    print("[OK] Tests, build, and secured write verification passed.")
     return 0
 
 

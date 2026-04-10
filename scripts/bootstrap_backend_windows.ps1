@@ -49,9 +49,24 @@ Set-Location $repoRoot
 $python = Get-PythonCommand
 Write-Host "Using Python: $python"
 
+$pythonHome = Split-Path -Parent $python
+$env:PYTHONHOME = $pythonHome
+$env:PYTHONPATH = ""
+$env:VIRTUAL_ENV = ""
+
+if (Test-Path .venv) {
+  Remove-Item -Recurse -Force .venv
+}
+
 & $python -m venv .venv
 
 $venvPython = Join-Path $repoRoot ".venv\Scripts\python.exe"
+if (-not (Test-Path $venvPython)) {
+  $venvScripts = Join-Path $repoRoot ".venv\Scripts"
+  New-Item -ItemType Directory -Force -Path $venvScripts | Out-Null
+  Copy-Item (Join-Path $pythonHome "Lib\venv\scripts\nt\*") $venvScripts -Force
+}
+
 if (-not (Test-Path $venvPython)) {
   throw "Virtual environment creation failed. Expected $venvPython"
 }
