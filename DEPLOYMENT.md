@@ -79,6 +79,13 @@ Windows verification sequence:
 .\.venv\Scripts\python.exe scripts\release_verify.py
 ```
 
+Windows live/testnet readiness:
+
+```powershell
+.\scripts\testnet_certify_windows.ps1 -Doctor -Exchange binance
+.\scripts\testnet_certify_windows.ps1 -InstallCcxt -Exchange binance -DryRun
+```
+
 ### Frontend
 
 ```bash
@@ -289,6 +296,14 @@ BINANCE_API_SECRET=your-testnet-secret
    ```
    Use `EXCHANGE=bitget` to run the same harness against Bitget demo/testnet credentials.
    `EXCHANGE=btcc make testnet-smoke-dry` now runs the safe workaround-clearance path for BTCC public-feed usage in hybrid paper mode.
+
+   Windows PowerShell:
+   ```powershell
+   .\scripts\testnet_certify_windows.ps1 -Doctor -Exchange binance
+   .\scripts\testnet_certify_windows.ps1 -InstallCcxt -Exchange binance -DryRun
+   .\scripts\testnet_certify_windows.ps1 -Exchange binance
+   ```
+   The `-Doctor` mode checks env readiness, `ccxt`, and exchange DNS reachability without placing orders.
 
 ### BTCC workaround deployment path
 

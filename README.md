@@ -47,6 +47,13 @@ If you plan to validate exchange-backed testnet mode on Windows, install the opt
 .\scripts\bootstrap_backend_windows.ps1 -InstallCcxt
 ```
 
+Windows testnet certification helper:
+
+```powershell
+.\scripts\testnet_certify_windows.ps1 -Doctor -Exchange binance
+.\scripts\testnet_certify_windows.ps1 -InstallCcxt -Exchange binance -DryRun
+```
+
 Windows verification path used on this host:
 
 ```powershell
@@ -354,6 +361,14 @@ make testnet-smoke-dry
 
 # Full smoke test
 make testnet-smoke
+```
+
+Windows PowerShell:
+
+```powershell
+.\scripts\testnet_certify_windows.ps1 -Doctor -Exchange binance
+.\scripts\testnet_certify_windows.ps1 -InstallCcxt -Exchange binance -DryRun
+.\scripts\testnet_certify_windows.ps1 -Exchange binance
 ```
 
 ## BTCC workaround clearance

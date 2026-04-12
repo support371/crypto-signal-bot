@@ -9,9 +9,10 @@ status, cancellation, reconciliation, and a liquidation path where supported.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
+import socket
 import sys
-import time
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -30,12 +31,17 @@ MIN_QTY_BY_EXCHANGE = {
     "bitget": 0.0001,
     "btcc": 0.0001,
 }
+EXCHANGE_HOSTS = {
+    "binance": ("testnet.binance.vision", "api.binance.com"),
+    "bitget": ("api.bitget.com",),
+    "btcc": ("api.btcc.com",),
+}
 
 
 def section(title: str) -> None:
-    print(f"\n{'─' * 50}")
+    print(f"\n{'-' * 50}")
     print(f"  {title}")
-    print(f"{'─' * 50}")
+    print(f"{'-' * 50}")
 
 
 def fail(message: str, *, exit_code: int = 1) -> None:
@@ -51,27 +57,93 @@ def exchange_choice() -> str:
     return os.getenv("EXCHANGE", "binance").strip().lower()
 
 
+def ccxt_installed() -> bool:
+    return importlib.util.find_spec("ccxt") is not None
+
+
+def resolve_host(host: str) -> tuple[bool, str]:
+    try:
+        socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
+        return True, "reachable"
+    except socket.gaierror as exc:
+        return False, f"dns_failed: {exc}"
+    except OSError as exc:
+        return False, f"socket_failed: {exc}"
+
+
 def check_env(exchange: str, dry_run: bool) -> list[str]:
     trading_mode = os.getenv("TRADING_MODE", "paper")
     network = os.getenv("NETWORK", "testnet")
-    errors = []
+    errors: list[str] = []
     if exchange == "btcc" and dry_run:
         if network != "testnet":
-            errors.append(f"NETWORK={network!r} — must be 'testnet' (never run workaround against mainnet)")
+            errors.append(f"NETWORK={network!r} must be 'testnet' (never run workaround against mainnet)")
         return errors
     if trading_mode != "live":
-        errors.append(f"TRADING_MODE={trading_mode!r} — must be 'live' for this script")
+        errors.append(f"TRADING_MODE={trading_mode!r} must be 'live' for this script")
     if network != "testnet":
-        errors.append(f"NETWORK={network!r} — must be 'testnet' (never run smoke against mainnet)")
+        errors.append(f"NETWORK={network!r} must be 'testnet' (never run smoke against mainnet)")
     for env_name in get_required_credential_envs(exchange):
         if not os.getenv(env_name, ""):
             errors.append(f"{env_name} is not set")
+    if exchange != "btcc" and not ccxt_installed():
+        errors.append("ccxt is not installed")
     if exchange == "btcc":
         errors.append(
             "BTCC authenticated demo/testnet trading is not supported by the current adapter; "
             "use this harness for Binance or Bitget and treat BTCC authenticated certification as blocked."
         )
     return errors
+
+
+def doctor(exchange: str, dry_run: bool) -> int:
+    section("Doctor / Environment summary")
+    trading_mode = os.getenv("TRADING_MODE", "paper")
+    network = os.getenv("NETWORK", "testnet")
+    print(f"  TRADING_MODE={trading_mode}")
+    print(f"  NETWORK={network}")
+    print(f"  EXCHANGE={exchange}")
+    print(f"  ccxt_installed={'yes' if ccxt_installed() else 'no'}")
+
+    section("Doctor / Credential readiness")
+    for env_name in get_required_credential_envs(exchange):
+        present = bool(os.getenv(env_name, ""))
+        print(f"  {env_name}={'set' if present else 'missing'}")
+
+    section("Doctor / Exchange reachability")
+    blocked_hosts: list[str] = []
+    for host in EXCHANGE_HOSTS.get(exchange, ()):
+        ok, detail = resolve_host(host)
+        print(f"  {host}: {'OK' if ok else 'BLOCKED'} ({detail})")
+        if not ok:
+            blocked_hosts.append(host)
+
+    errors = check_env(exchange, dry_run)
+
+    section("Doctor / Result")
+    if errors:
+        print("  Pre-flight blockers:")
+        for error in errors:
+            print(f"    - {error}")
+    else:
+        print("  [OK] Script pre-flight checks pass.")
+
+    if blocked_hosts:
+        print("  External reachability blockers:")
+        for host in blocked_hosts:
+            print(f"    - {host}")
+        print("  These are host/network blockers, not necessarily repo defects.")
+
+    print("")
+    if not errors and not blocked_hosts:
+        print("  Ready for live/testnet certification.")
+        return 0
+
+    print("  Not ready for a full exchange-backed run yet.")
+    if exchange == "btcc" and dry_run and not errors:
+        print("  BTCC dry-run remains useful only for the documented workaround-clearance path.")
+        return 0 if not blocked_hosts else 2
+    return 2
 
 
 def run_btcc_workaround_clearance() -> None:
@@ -145,7 +217,7 @@ def run_smoke(exchange: str, dry_run: bool) -> None:
     print(f"       open_orders={len(reconciliation.get('open_orders', []))}")
 
     if dry_run:
-        section("4 / Order placement, status, cancellation, liquidation — SKIPPED (--dry-run)")
+        section("4 / Order placement, status, cancellation, liquidation - SKIPPED (--dry-run)")
         print("  [SKIP] Dry-run mode stops after connectivity, ticker, balance, and reconciliation.")
         return
 
@@ -214,19 +286,27 @@ def main() -> None:
         action="store_true",
         help="Skip pre-flight checks (not recommended).",
     )
+    parser.add_argument(
+        "--doctor",
+        action="store_true",
+        help="Report readiness, dependency, credential, and DNS status without placing orders.",
+    )
     args = parser.parse_args()
 
     print("=" * 50)
-    print("  Crypto Signal Bot — Live/Testnet Smoke Test")
+    print("  Crypto Signal Bot - Live/Testnet Smoke Test")
     print("=" * 50)
     print(f"  Exchange: {args.exchange}")
+
+    if args.doctor:
+        sys.exit(doctor(args.exchange, args.dry_run))
 
     if not args.force:
         errors = check_env(args.exchange, args.dry_run)
         if errors:
             print("\n[PRE-FLIGHT FAILED] Fix these before running:\n")
             for error in errors:
-                print(f"  ✗  {error}")
+                print(f"  x  {error}")
             print("\nUse --force to bypass these checks (not recommended).\n")
             sys.exit(1)
         print("  [OK] Pre-flight checks passed")

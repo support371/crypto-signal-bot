@@ -78,6 +78,7 @@
 - `scripts/bootstrap_backend_windows.ps1` successfully creates a working repo-local `.venv` on this host ✅
 - Backend test suite passes on Windows using `.venv\Scripts\python.exe` ✅
 - `scripts/release_verify.py` passes backend tests, frontend build, and secured-write smoke on this host ✅
+- `scripts/testnet_certify_windows.ps1` provides a Windows-native path for doctor, dry-run, and full testnet certification ✅
 - Hybrid live-paper smoke is currently host-blocked because public exchange DNS resolution fails on this workstation ⚠️
 - Compose smoke is currently host-blocked because Docker Compose v2 is not installed on this workstation ⚠️
 
