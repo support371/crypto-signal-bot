@@ -9,7 +9,7 @@ dist
 backend
 docs
 scripts
-supabase
+/supabase
 Dockerfile
 Dockerfile.frontend
 docker-compose.yml
