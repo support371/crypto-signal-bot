@@ -1,26 +1,8 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
+import { AuthContext } from '@/contexts/AuthContextStore';
 import { getSupabaseClient } from '@/integrations/supabase/client';
 import { SUPABASE_CONFIGURED } from '@/integrations/supabase/config';
-
-interface AuthContextType {
-  user: User | null;
-  session: Session | null;
-  isLoading: boolean;
-  signUp: (email: string, password: string) => Promise<{ error: Error | null }>;
-  signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
-  signOut: () => Promise<void>;
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
 
 // Minimal synthetic user for local (no-Supabase) mode.
 const LOCAL_USER = { id: 'local', email: 'local@localhost' } as User;

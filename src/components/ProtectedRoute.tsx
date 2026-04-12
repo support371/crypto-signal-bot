@@ -1,5 +1,5 @@
 import { Navigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/AuthContextStore';
 import { SUPABASE_CONFIGURED } from '@/integrations/supabase/config';
 import { Loader2 } from 'lucide-react';
 

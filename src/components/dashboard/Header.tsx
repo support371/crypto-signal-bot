@@ -1,6 +1,6 @@
 import { Activity, LogOut, Settings, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/AuthContextStore';
 import { SUPABASE_CONFIGURED } from '@/integrations/supabase/config';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';

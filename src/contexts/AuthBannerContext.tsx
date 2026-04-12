@@ -1,21 +1,6 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
+import { AuthBannerContext } from '@/contexts/AuthBannerContextStore';
 import { setAuthBannerTrigger } from '@/lib/handleAuthError';
-
-interface AuthBannerContextType {
-  showBanner: boolean;
-  triggerBanner: () => void;
-  hideBanner: () => void;
-}
-
-const AuthBannerContext = createContext<AuthBannerContextType | undefined>(undefined);
-
-export const useAuthBanner = () => {
-  const context = useContext(AuthBannerContext);
-  if (!context) {
-    throw new Error('useAuthBanner must be used within AuthBannerProvider');
-  }
-  return context;
-};
 
 export const AuthBannerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [showBanner, setShowBanner] = useState(false);
