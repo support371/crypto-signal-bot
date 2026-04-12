@@ -63,10 +63,14 @@ def ccxt_installed() -> bool:
 
 def resolve_host(host: str) -> tuple[bool, str]:
     try:
-        socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
-        return True, "reachable"
+        with socket.create_connection((host, 443), timeout=5):
+            return True, "tcp_connect_ok"
     except socket.gaierror as exc:
         return False, f"dns_failed: {exc}"
+    except TimeoutError as exc:
+        return False, f"connect_timeout: {exc}"
+    except ConnectionRefusedError as exc:
+        return False, f"connect_refused: {exc}"
     except OSError as exc:
         return False, f"socket_failed: {exc}"
 
