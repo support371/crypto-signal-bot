@@ -71,6 +71,14 @@ Windows PowerShell:
 .\scripts\run_backend_windows.ps1
 ```
 
+Windows verification sequence:
+
+```powershell
+.\scripts\bootstrap_backend_windows.ps1
+.\.venv\Scripts\python.exe -m pytest backend\tests -v --tb=short
+.\.venv\Scripts\python.exe scripts\release_verify.py
+```
+
 ### Frontend
 
 ```bash
@@ -81,7 +89,7 @@ make frontend
 ```
 
 Frontend connects to backend at `http://localhost:8000` (via `VITE_BACKEND_URL`).
-Use Node `22.12.0` LTS for the Vite frontend toolchain. The repo includes `.nvmrc`, and `make build` will fall back to the Docker Node 22 frontend build stage when your host Node is older.
+Use Node `22.12.0` LTS for the Vite frontend toolchain when available. The repo includes `.nvmrc`; the canonical frontend build helper attempts a local build first and only falls back to Docker if the local build fails.
 
 ---
 
@@ -239,6 +247,10 @@ Run the canonical stabilization/release verification path with:
 ```bash
 make release-verify
 ```
+
+On the currently verified Windows host, `release_verify.py` also handles missing host dependencies safely:
+- live-paper smoke is skipped when public exchange DNS is unavailable on the machine
+- compose smoke is skipped when Docker Compose v2 is not installed
 
 ### Live exchange certification mode
 

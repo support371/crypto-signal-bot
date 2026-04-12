@@ -47,6 +47,19 @@ If you plan to validate exchange-backed testnet mode on Windows, install the opt
 .\scripts\bootstrap_backend_windows.ps1 -InstallCcxt
 ```
 
+Windows verification path used on this host:
+
+```powershell
+.\scripts\bootstrap_backend_windows.ps1
+.\.venv\Scripts\python.exe -m pytest backend\tests -v --tb=short
+.\.venv\Scripts\python.exe scripts\release_verify.py
+```
+
+Notes for this workstation:
+- The Windows backend/runtime path above is verified.
+- `scripts\release_verify.py` skips live-paper smoke when public exchange DNS is unavailable on the host.
+- `scripts\release_verify.py` skips compose smoke when Docker Compose v2 is not installed.
+
 Modes:
 
 ```bash
@@ -84,7 +97,7 @@ npm run dev
 Open [http://localhost:5173](http://localhost:5173)
 
 Frontend tooling is standardized on Node `22.12.0` LTS.
-Use `nvm use` (the repo includes `.nvmrc`) or run `make build`, which falls back to the Docker Node 22 frontend build stage when your host Node is older.
+Use `nvm use` (the repo includes `.nvmrc`) when available. The canonical frontend build helper now tries the local Node toolchain first, warns when the host is below `22.12.0`, and only falls back to Docker if the local build actually fails.
 
 ### 3. Docker — full stack
 

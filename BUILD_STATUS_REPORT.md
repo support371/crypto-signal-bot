@@ -12,7 +12,7 @@
 
 ---
 
-## Completed — as of 2026-04-05
+## Completed — as of 2026-04-12
 
 ### Backend API (24 endpoints)
 | Route | Status |
@@ -65,13 +65,21 @@
 - Hardened `.gitignore` (secrets, logs, build artifacts, data) ✅
 
 ### Test suite
-- **97 tests total — all pass**
+- **129 backend tests total — all pass**
 - `test_api.py`: health, config, balance, positions, price, orders, audit, signals, guardian,
   kill-switch, auth, rate limiting, intents, withdraw, market-state, earnings (12), adapter (11), WS
 - `test_live_mode.py`: adapter routing (7), mainnet gate (6), startup checks (4)
 - `test_risk.py`: risk score (6), risk gate (6)
 - `test_signals.py`: regime (5), signal build (6)
+- `test_runtime_config.py`: YAML defaults, env overrides, default paper balance
 - Frontend production build: ✅ passes
+
+### Windows local verification
+- `scripts/bootstrap_backend_windows.ps1` successfully creates a working repo-local `.venv` on this host ✅
+- Backend test suite passes on Windows using `.venv\Scripts\python.exe` ✅
+- `scripts/release_verify.py` passes backend tests, frontend build, and secured-write smoke on this host ✅
+- Hybrid live-paper smoke is currently host-blocked because public exchange DNS resolution fails on this workstation ⚠️
+- Compose smoke is currently host-blocked because Docker Compose v2 is not installed on this workstation ⚠️
 
 ---
 
@@ -93,6 +101,10 @@
 - Final README pass for external audience
 - Docker Hub or registry publish of images
 - Preview/staging deployment verification
+
+### Known host-specific blockers
+- Public exchange DNS access is unavailable on the current Windows workstation, so live-paper feed smoke remains blocked here.
+- Docker Compose v2 is not installed on the current Windows workstation, so compose smoke remains blocked here.
 
 ---
 
