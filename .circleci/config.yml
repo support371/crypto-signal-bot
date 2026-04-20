@@ -3,14 +3,19 @@ version: 2.1
 jobs:
   build:
     docker:
-      - image: cimg/node:16.13.2
+      - image: cimg/node:22.12.0
       - image: cimg/python:3.10.2
     steps:
       - checkout
       - run:
+          name: "Print Node and npm Versions"
+          command: |
+            node -v
+            npm -v
+      - run:
           name: "Install Frontend Dependencies"
           command: |
-            npm install
+            npm ci
       - run:
           name: "Build Frontend"
           command: |
