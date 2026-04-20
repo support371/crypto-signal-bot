@@ -1,0 +1,91 @@
+# config/mt5.example.yaml
+#
+# MT5 Integration Configuration — EXAMPLE ONLY
+# Copy to config/mt5.yaml and edit.
+# DO NOT commit real credentials.
+# All sensitive fields reference environment variables.
+
+mt5:
+  # Enable or disable MT5 as an execution venue.
+  # When false: MT5BridgeService does not start; venue_registry omits MT5.
+  enabled: true
+
+  # Execution mode: "live" submits real orders; "paper" uses MT5 paper account if available.
+  # Default: inherits from backend EXCHANGE_MODE setting.
+  mode: live
+
+  # -----------------------------------------------------------------------
+  # Credentials — all loaded from environment variables (never hardcoded here)
+  # -----------------------------------------------------------------------
+
+  # MT5 account number (integer) — from env var MT5_LOGIN
+  login_env: MT5_LOGIN
+
+  # MT5 account password — from env var MT5_PASSWORD
+  password_env: MT5_PASSWORD
+
+  # Broker server name (shown in MT5 login dialog) — from env var MT5_SERVER
+  # Example: "BrokerName-Demo", "ICMarkets-Live04"
+  server_env: MT5_SERVER
+
+  # Optional: path to MetaTrader 5 terminal executable
+  # Required if terminal is not in system PATH
+  # Example (Windows): C:\Program Files\MetaTrader 5\terminal64.exe
+  path_env: MT5_TERMINAL_PATH
+
+  # -----------------------------------------------------------------------
+  # Connection settings
+  # -----------------------------------------------------------------------
+
+  # Initial connection timeout in seconds
+  timeout_seconds: 10
+
+  # Background reconnect interval (seconds between reconnect attempts)
+  reconnect_interval_seconds: 5
+
+  # Maximum startup retry attempts before failing fatally
+  max_startup_retries: 10
+
+  # -----------------------------------------------------------------------
+  # Order settings
+  # -----------------------------------------------------------------------
+
+  # Magic number attached to all orders placed by this bot.
+  # Identifies bot-owned orders in MT5 history.
+  magic_number: 900001
+
+  # Comment prefix for all orders (visible in MT5 order history)
+  order_comment_prefix: CRA
+
+  # Maximum order retries on transient failure (price change, timeout)
+  max_order_retries: 2
+
+  # Price deviation in points (allows slippage)
+  deviation_points: 20
+
+  # -----------------------------------------------------------------------
+  # Symbol map — override defaults for your broker's naming convention
+  # -----------------------------------------------------------------------
+  # Format: internal_symbol: broker_symbol_name
+  # Defaults (applied automatically when not overridden):
+  #   BTCUSDT  -> BTCUSD
+  #   ETHUSDT  -> ETHUSD
+  #   SOLUSDT  -> SOLUSD
+  #   (etc.)
+
+  symbol_map:
+    BTCUSDT: BTCUSD
+    ETHUSDT: ETHUSD
+    SOLUSDT: SOLUSD
+    BNBUSDT: BNBUSD
+    ADAUSDT: ADAUSD
+    XRPUSDT: XRPUSD
+    DOTUSDT: DOTUSD
+    AVAXUSDT: AVAXUSD
+    DOGEUSDT: DOGEUSD
+    LINKUSDT: LINKUSD
+
+    # Broker-specific variants — uncomment and adjust:
+    # BTCUSDT: BTCUSD.raw    # for ECN/raw spread accounts
+    # ETHUSDT: ETHUSD.pro    # for pro accounts
+    # XAUUSDT: XAUUSD        # if gold is in your tracked symbols
