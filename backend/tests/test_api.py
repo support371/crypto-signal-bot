@@ -538,6 +538,55 @@ class TestIntentPaper:
         assert "notes" in data
 
 
+class TestRiskEngineIntegration:
+    def test_config_exposes_risk_engine(self, client):
+        resp = client.get("/config")
+        data = resp.json()
+        assert "risk_engine" in data
+        assert data["risk_engine"]["rules"] == [
+            "MaxPosition", "MaxDailyLoss", "Volatility", "Leverage", "Slippage"
+        ]
+        assert data["risk_engine"]["max_position_pct"] == 0.05
+        assert data["risk_engine"]["max_leverage"] == 1.0
+
+    def test_small_order_passes_risk_engine(self, client):
+        resp = client.post("/intent/paper", json={
+            "symbol": "BTCUSDT",
+            "side": "BUY",
+            "order_type": "MARKET",
+            "quantity": 0.001,
+        })
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "FILLED"
+
+    def test_oversized_order_rejected_by_risk_engine(self, client):
+        app_module.paper_portfolio.balances = {"USDT": 100.0}
+        resp = client.post("/intent/paper", json={
+            "symbol": "BTCUSDT",
+            "side": "BUY",
+            "order_type": "MARKET",
+            "quantity": 10.0,
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "RISK_REJECTED"
+        assert "MaxPosition" in data["notes"] or "Leverage" in data["notes"]
+
+    def test_risk_rejection_creates_audit_event(self, client):
+        app_module.paper_portfolio.balances = {"USDT": 100.0}
+        client.post("/intent/paper", json={
+            "symbol": "BTCUSDT",
+            "side": "BUY",
+            "order_type": "MARKET",
+            "quantity": 10.0,
+        })
+        audit = client.get("/audit").json()
+        risk_events = audit["risk_events"]
+        assert len(risk_events) > 0
+        latest = risk_events[-1]
+        assert "risk_engine" in latest
+
+
 class TestIntentLive:
     def test_live_intent_routes_paper_mode(self, client):
         resp = client.post("/intent/live", json={

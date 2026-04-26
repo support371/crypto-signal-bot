@@ -36,10 +36,17 @@ export function useAIInsights() {
       const message = err instanceof Error ? err.message : 'Failed to generate insight';
       console.error('AI insight error:', err);
 
-      if (message.includes('Rate limited')) {
-        toast.error('AI rate limited - please try again later');
-      } else if (message.includes('credits')) {
+      const lower = message.toLowerCase();
+      if (lower.includes('not authenticated') || lower.includes('401')) {
+        // Auth error — banner already triggered by invokeEdgeFunction
+      } else if (lower.includes('rate limit') || lower.includes('429')) {
+        toast.error('AI rate limited — please try again later');
+      } else if (lower.includes('credits')) {
         toast.error('AI credits exhausted');
+      } else if (lower.includes('network') || lower.includes('fetch') || lower.includes('load failed')) {
+        toast.error('Network error — could not reach AI service');
+      } else {
+        toast.error('Failed to generate AI insight. Please try again.');
       }
 
       setInsight(null);

@@ -15,11 +15,14 @@ kill_switch:
   max_daily_loss_pct: 0.05     # Halt after 5% daily loss
 
 exchange:
-  default: binance
-  binance:
-    base_url_testnet: https://testnet.binance.vision
-    base_url_mainnet: https://api.binance.com
-    recv_window: 5000
+  # Primary exchange (auto-detected from env vars)
+  # Set BITGET_API_KEY + BITGET_SECRET + BITGET_PASSPHRASE for Bitget
+  # Set BTCC_API_KEY + BTCC_SECRET for BTCC
+  bitget:
+    base_url: https://api.bitget.com
+    timeout: 10
+  btcc:
+    base_url: https://api.btcc.com
     timeout: 10
   bitget:
     base_url_testnet: https://api.bitget.com
@@ -40,6 +43,12 @@ market_data:
   public_exchange: binance
   mode: synthetic_paper
   rest_fallback_enabled: true
+
+withdrawal:
+  daily_limit_usdt: 10000.0
+  cooldown_seconds: 60
+  # Add whitelisted withdrawal addresses here
+  whitelisted_addresses: []
 
 server:
   host: 0.0.0.0

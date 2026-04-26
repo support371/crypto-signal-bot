@@ -35,6 +35,16 @@ class PersistenceConfig:
 
 
 @dataclass(frozen=True)
+class RiskConfig:
+    max_position_pct: float
+    max_daily_loss_pct: float
+    volatility_threshold: float
+    max_leverage: float
+    max_slippage_pct: float
+    risk_score_reject_threshold: float
+
+
+@dataclass(frozen=True)
 class PaperConfig:
     starting_balance_usdt: float
     use_live_market_data: bool
@@ -49,6 +59,7 @@ class RuntimeConfig:
     backend_api_key: str
     rate_limit_rpm: int
     allow_mainnet: bool
+    risk: RiskConfig
     server: ServerConfig
     guardian: GuardianConfig
     persistence: PersistenceConfig
@@ -141,6 +152,15 @@ def get_runtime_config() -> RuntimeConfig:
         max_drawdown_pct=float(_get_nested(defaults, "kill_switch", "max_daily_loss_pct", default=0.05)),
     )
 
+    risk_defaults = RiskConfig(
+        max_position_pct=float(_get_nested(defaults, "risk", "max_position_pct", default=0.05)),
+        max_daily_loss_pct=float(_get_nested(defaults, "risk", "max_daily_loss_pct", default=0.03)),
+        volatility_threshold=float(_get_nested(defaults, "risk", "volatility_threshold", default=0.08)),
+        max_leverage=float(_get_nested(defaults, "risk", "max_leverage", default=1.0)),
+        max_slippage_pct=float(_get_nested(defaults, "risk", "max_slippage_pct", default=0.005)),
+        risk_score_reject_threshold=float(_get_nested(defaults, "risk", "risk_score_reject_threshold", default=70.0)),
+    )
+
     paper_defaults = PaperConfig(
         starting_balance_usdt=float(
             _get_nested(defaults, "paper", "starting_balance_usdt", default=10000.0)
@@ -172,6 +192,7 @@ def get_runtime_config() -> RuntimeConfig:
                 ),
             )
         ),
+        risk=risk_defaults,
         backend_api_key=_env_str("BACKEND_API_KEY", ""),
         rate_limit_rpm=_env_int("RATE_LIMIT_RPM", 120),
         allow_mainnet=_env_bool("ALLOW_MAINNET", False),
