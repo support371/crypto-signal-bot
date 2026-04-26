@@ -62,6 +62,8 @@ from backend.logic.paper_trading import (
 )
 from backend.logic.risk import compute_risk_score, risk_gate
 from backend.logic.signals import build_signal
+from backend.engine.risk_rules import RiskRuleEngine
+from backend.models.risk import RiskContext
 from backend.logic.simulate import StepResult, simulate_session
 from backend.models.execution_intent import (
     ExecutionIntent,
@@ -203,6 +205,14 @@ exchange_adapter: ExchangeAdapter = build_adapter(
     portfolio=paper_portfolio,
     synthetic_price_fn=_synthetic_price,
     exchange=EXCHANGE,
+)
+
+risk_engine = RiskRuleEngine(
+    max_position_pct=RUNTIME_CONFIG.risk.max_position_pct,
+    max_daily_loss_pct=RUNTIME_CONFIG.risk.max_daily_loss_pct,
+    volatility_threshold=RUNTIME_CONFIG.risk.volatility_threshold,
+    max_leverage=RUNTIME_CONFIG.risk.max_leverage,
+    max_slippage_pct=RUNTIME_CONFIG.risk.max_slippage_pct,
 )
 
 kill_switch_active = False
@@ -587,6 +597,16 @@ def _derive_market_features(
     return features, microstructure
 
 
+def _get_symbol_volatility(symbol: str) -> float:
+    """Return recent volatility for a symbol from live feed cache, or a default."""
+    cached = _latest_signal_by_symbol.get(symbol)
+    if cached and "microstructure" in cached:
+        vol = cached["microstructure"].get("volSpike")
+        if vol and isinstance(vol, (int, float)):
+            return float(vol)
+    return 0.02
+
+
 def _check_kill_switch():
     if kill_switch_active:
         raise HTTPException(
@@ -706,25 +726,37 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
         mode=mode,
     )
 
-    feats = Features(
-        spread_pct=0.02,
-        imbalance=0.1 if req.side == Side.BUY else -0.1,
-        mid_vel=0.001,
-        depth_decay=0.0,
-        vol_spike=False,
-        short_reversal=False,
+    # Build risk context from current portfolio state
+    current_price = req.price or _synthetic_price(intent.symbol)
+    account_balance = paper_portfolio.get_balance("USDT")
+    position_value = sum(
+        float(pos["free"]) * _synthetic_price(pos["asset"] + "USDT")
+        for pos in paper_portfolio.get_positions()
+        if pos["asset"] != "USDT"
     )
-    risk_score = compute_risk_score(feats)
+    daily_pnl = _guardian_drawdown_pct * _guardian_starting_nav * -1.0
 
-    if risk_score >= 70.0:
+    risk_ctx = RiskContext(
+        symbol=intent.symbol,
+        side=intent.side.value,
+        quantity=intent.quantity,
+        price=current_price,
+        current_position_value=position_value,
+        daily_pnl=daily_pnl,
+        account_balance=account_balance,
+        volatility_24h=_get_symbol_volatility(intent.symbol),
+    )
+    engine_result = risk_engine.evaluate(risk_ctx)
+
+    if not engine_result.approved:
         intent.status = IntentStatus.RISK_REJECTED
-        intent.notes = f"Risk score too high: {risk_score:.1f}"
+        intent.notes = engine_result.reason
         if _prometheus_available:
             risk_blocks_total.inc()
         append_risk_event(
             {
                 "intent_id": intent.id,
-                "risk_score": risk_score,
+                "risk_engine": engine_result.to_dict(),
                 "reason": intent.notes,
             }
         )
@@ -734,6 +766,10 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
             status=intent.status.value,
             notes=intent.notes,
         )
+
+    # Apply size reduction from risk engine
+    if engine_result.size_multiplier < 1.0:
+        intent.quantity = round(intent.quantity * engine_result.size_multiplier, 8)
 
     intent.status = IntentStatus.RISK_APPROVED
 
@@ -839,6 +875,14 @@ def get_config():
         "kill_switch_active": kill_switch_active,
         "auth_enabled": bool(BACKEND_API_KEY),
         "rate_limit_rpm": _rate_limit_max_requests,
+        "risk_engine": {
+            "rules": [r.name for r in risk_engine.rules],
+            "max_position_pct": RUNTIME_CONFIG.risk.max_position_pct,
+            "max_daily_loss_pct": RUNTIME_CONFIG.risk.max_daily_loss_pct,
+            "volatility_threshold": RUNTIME_CONFIG.risk.volatility_threshold,
+            "max_leverage": RUNTIME_CONFIG.risk.max_leverage,
+            "max_slippage_pct": RUNTIME_CONFIG.risk.max_slippage_pct,
+        },
     }
 
 
