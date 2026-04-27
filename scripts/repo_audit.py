@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import re
+import subprocess
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -39,11 +40,26 @@ REQUIRED_FULLSTACK_COMPOSE_SERVICES = {"backend", "frontend"}
 
 
 def iter_files(root: Path):
-    for path in root.rglob("*"):
-        if any(part in IGNORE_DIRS for part in path.parts):
-            continue
-        if path.is_file():
-            yield path
+    try:
+        output = subprocess.check_output(
+            ["git", "ls-files", "-z"],
+            cwd=str(root),
+            text=True,
+        )
+        for name in output.split("\0"):
+            if not name:
+                continue
+            path = root / name
+            if any(part in IGNORE_DIRS for part in path.parts):
+                continue
+            if path.is_file():
+                yield path
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        for path in root.rglob("*"):
+            if any(part in IGNORE_DIRS for part in path.parts):
+                continue
+            if path.is_file():
+                yield path
 
 
 def frontend_roots() -> list[Path]:
@@ -65,7 +81,10 @@ def build_backend_import_graph() -> dict[str, set[str]]:
 
     graph: dict[str, set[str]] = {module: set() for module in modules}
     for module, path in modules.items():
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except (SyntaxError, UnicodeDecodeError):
+            continue
         package = module.split(".")
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
@@ -124,7 +143,10 @@ def check_frontend_relative_imports() -> list[str]:
     problems: list[str] = []
     for root in frontend_roots():
         for path in list(root.rglob("*.ts")) + list(root.rglob("*.tsx")):
-            text = path.read_text(encoding="utf-8")
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, OSError):
+                continue
             for target in IMPORT_RE.findall(text):
                 if target.startswith("@/"):
                     aliased = root / target[2:]
