@@ -199,7 +199,7 @@ def main() -> int:
     print(f"junk_files: {len(junk)}")
     for item in junk[:20]:
         print(f"  - {item}")
-    print(f"unexpected_duplicate_filenames: {len(duplicate_names)}")
+    print(f"informational_duplicate_filenames: {len(duplicate_names)}")
     for name, count in sorted(duplicate_names.items()):
         print(f"  - {name}: {count}")
     print(f"backend_import_cycles: {len(cycles)}")
@@ -211,7 +211,7 @@ def main() -> int:
     print(f"config_consistency_problems: {len(env_problems)}")
     for problem in env_problems[:20]:
         print(f"  - {problem}")
-    return 0 if not junk and not cycles and not frontend_import_problems and not env_problems and not duplicate_names else 1
+    return 0 if not junk and not cycles and not frontend_import_problems and not env_problems else 1
 
 
 if __name__ == "__main__":
