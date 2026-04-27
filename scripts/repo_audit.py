@@ -39,6 +39,10 @@ REQUIRED_BACKEND_COMPOSE_SERVICES = {"backend"}
 REQUIRED_FULLSTACK_COMPOSE_SERVICES = {"backend", "frontend"}
 
 
+def _has_ignored_part(relative_path: Path) -> bool:
+    return any(part in IGNORE_DIRS for part in relative_path.parts)
+
+
 def iter_files(root: Path):
     try:
         output = subprocess.check_output(
@@ -49,14 +53,16 @@ def iter_files(root: Path):
         for name in output.split("\0"):
             if not name:
                 continue
-            path = root / name
-            if any(part in IGNORE_DIRS for part in path.parts):
+            relative_path = Path(name)
+            if _has_ignored_part(relative_path):
                 continue
+            path = root / relative_path
             if path.is_file():
                 yield path
     except (subprocess.CalledProcessError, FileNotFoundError):
         for path in root.rglob("*"):
-            if any(part in IGNORE_DIRS for part in path.parts):
+            relative_path = path.relative_to(root)
+            if _has_ignored_part(relative_path):
                 continue
             if path.is_file():
                 yield path
@@ -72,7 +78,7 @@ def build_backend_import_graph() -> dict[str, set[str]]:
         return {}
 
     for path in BACKEND_ROOT.rglob("*.py"):
-        if any(part in IGNORE_DIRS for part in path.parts):
+        if _has_ignored_part(path.relative_to(ROOT)):
             continue
         module = path.relative_to(ROOT).with_suffix("").as_posix().replace("/", ".")
         if module.endswith(".__init__"):
