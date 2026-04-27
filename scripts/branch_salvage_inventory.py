@@ -13,6 +13,8 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT_DIR = ROOT / "manifests" / "branch_salvage"
 IGNORE_SUFFIXES = {".pyc", ".pyo", ".zip", ".tar", ".gz", ".log", ".sqlite", ".sqlite3", ".db"}
 IGNORE_PARTS = {".git", "node_modules", "dist", "build", "__pycache__", ".pytest_cache", ".venv", "venv"}
+SECRET_SUFFIXES = {".env", ".pem", ".key", ".p12", ".pfx"}
+TEST_LIKE_SEGMENTS = {"test", "tests", "integration_tests", "integration-tests", "testcases", "test_cases"}
 PROMOTABLE_KEYWORDS = {
     "adapter",
     "exchange",
@@ -70,15 +72,31 @@ def is_ignored_path(path: str) -> bool:
     return any(part in IGNORE_PARTS for part in parts) or Path(path).suffix.lower() in IGNORE_SUFFIXES
 
 
+def is_secret_like_path(path: str) -> bool:
+    candidate = Path(path)
+    name = candidate.name.lower()
+    suffix = candidate.suffix.lower()
+    return (
+        suffix in SECRET_SUFFIXES
+        or name == ".env"
+        or name.startswith(".env.")
+        or any(part.lower() in {"secrets", "secret", "credentials", "credential"} for part in candidate.parts)
+    )
+
+
+def is_test_like_path(path: str) -> bool:
+    lowered = path.lower()
+    segments = [segment.lower() for segment in Path(path).parts]
+    return any(segment in TEST_LIKE_SEGMENTS for segment in segments) or "/test" in lowered or lowered.startswith("test")
+
+
 def classify_path(path: str) -> str:
     lowered = path.lower()
     suffix = Path(path).suffix.lower()
-    if is_ignored_path(path):
-        return "DO_NOT_PROMOTE"
-    if suffix in {".env", ".pem", ".key", ".p12", ".pfx"}:
+    if is_ignored_path(path) or is_secret_like_path(path):
         return "DO_NOT_PROMOTE"
     if any(keyword in lowered for keyword in PROMOTABLE_KEYWORDS):
-        if "/test" in lowered or lowered.startswith("test") or suffix in {".yml", ".yaml", ".toml"}:
+        if is_test_like_path(path) or suffix in {".yml", ".yaml", ".toml"}:
             return "REFERENCE_OR_PORT"
         return "PORT_CANDIDATE"
     if suffix in {".md", ".txt"}:
@@ -125,8 +143,28 @@ def write_csv(path: Path, rows: list[dict[str, object]], fieldnames: list[str]) 
         writer.writerows(rows)
 
 
-def build_inventory(remote: str, output_dir: Path) -> int:
-    run_git(["fetch", "--all", "--tags", "--prune"])
+def display_output_dir(output_dir: Path) -> str:
+    try:
+        return str(output_dir.resolve().relative_to(ROOT))
+    except ValueError:
+        return str(output_dir.resolve())
+
+
+def fetch_refs(remote: str, *, fetch_all: bool = False, prune: bool = False) -> None:
+    fetch_args = ["fetch"]
+    if fetch_all:
+        fetch_args.append("--all")
+    else:
+        fetch_args.append(remote)
+    fetch_args.append("--tags")
+    if prune:
+        fetch_args.append("--prune")
+    run_git(fetch_args)
+
+
+def build_inventory(remote: str, output_dir: Path, *, fetch_all: bool = False, prune: bool = False) -> int:
+    resolved_output_dir = output_dir if output_dir.is_absolute() else ROOT / output_dir
+    fetch_refs(remote, fetch_all=fetch_all, prune=prune)
     branches = list_remote_branches(remote)
     all_files: list[BranchFile] = []
     for branch in branches:
@@ -134,7 +172,7 @@ def build_inventory(remote: str, output_dir: Path) -> int:
 
     inventory_rows = [row.__dict__ for row in all_files]
     write_csv(
-        output_dir / "branch_file_inventory.csv",
+        resolved_output_dir / "branch_file_inventory.csv",
         inventory_rows,
         ["branch", "commit", "path", "blob_sha", "size", "extension", "classification"],
     )
@@ -145,7 +183,7 @@ def build_inventory(remote: str, output_dir: Path) -> int:
         for path, count in sorted(path_counts.items())
         if count > 1
     ]
-    write_csv(output_dir / "duplicate_paths.csv", duplicate_path_rows, ["path", "occurrences"])
+    write_csv(resolved_output_dir / "duplicate_paths.csv", duplicate_path_rows, ["path", "occurrences"])
 
     blob_to_locations: dict[str, list[str]] = defaultdict(list)
     for row in all_files:
@@ -156,13 +194,13 @@ def build_inventory(remote: str, output_dir: Path) -> int:
         for blob, locations in sorted(blob_to_locations.items())
         if len(locations) > 1
     ]
-    write_csv(output_dir / "duplicate_blobs.csv", duplicate_blob_rows, ["blob_sha", "occurrences", "locations"])
+    write_csv(resolved_output_dir / "duplicate_blobs.csv", duplicate_blob_rows, ["blob_sha", "occurrences", "locations"])
 
     promotable_rows = [
         row.__dict__ for row in all_files if row.classification in {"PORT_CANDIDATE", "REFERENCE_OR_PORT"}
     ]
     write_csv(
-        output_dir / "promotable_candidates.csv",
+        resolved_output_dir / "promotable_candidates.csv",
         promotable_rows,
         ["branch", "commit", "path", "blob_sha", "size", "extension", "classification"],
     )
@@ -173,9 +211,11 @@ def build_inventory(remote: str, output_dir: Path) -> int:
         "promotable_candidates": len(promotable_rows),
         "duplicate_paths": len(duplicate_path_rows),
         "duplicate_blobs": len(duplicate_blob_rows),
-        "output_dir": str(output_dir.relative_to(ROOT)),
+        "output_dir": display_output_dir(resolved_output_dir),
+        "fetch_all": fetch_all,
+        "prune": prune,
     }
-    (output_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    (resolved_output_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(summary, indent=2))
     return 0
 
@@ -184,8 +224,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Inventory remote branches for salvage candidates without modifying source files.")
     parser.add_argument("--remote", default="origin", help="Remote prefix to scan, default: origin")
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR), help="Directory for generated CSV/JSON manifests")
+    parser.add_argument("--fetch-all", action="store_true", help="Fetch all remotes instead of only the selected remote")
+    parser.add_argument("--prune", action="store_true", help="Prune remote-tracking refs during fetch")
     args = parser.parse_args()
-    return build_inventory(args.remote, Path(args.output_dir))
+    return build_inventory(args.remote, Path(args.output_dir), fetch_all=args.fetch_all, prune=args.prune)
 
 
 if __name__ == "__main__":
