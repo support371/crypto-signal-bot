@@ -31,9 +31,12 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
-    UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase
+
+
+def unix_timestamp() -> int:
+    return int(time.time())
 
 
 class Base(DeclarativeBase):
@@ -58,8 +61,8 @@ class OrderRecord(Base):
     venue = Column(String(32), nullable=False)
     exchange_order_id = Column(String(128), nullable=True)
     reject_reason = Column(Text, nullable=True)
-    created_at = Column(BigInteger, default=lambda: int(time.time()), index=True)
-    updated_at = Column(BigInteger, default=lambda: int(time.time()))
+    created_at = Column(BigInteger, default=unix_timestamp, index=True)
+    updated_at = Column(BigInteger, default=unix_timestamp, onupdate=unix_timestamp)
 
     __table_args__ = (
         Index("ix_orders_symbol_created", "symbol", "created_at"),
@@ -80,7 +83,7 @@ class FillRecord(Base):
     fill_price = Column(Float, nullable=False)
     mode = Column(String(8), nullable=False)
     venue = Column(String(32), nullable=False)
-    filled_at = Column(BigInteger, default=lambda: int(time.time()), index=True)
+    filled_at = Column(BigInteger, default=unix_timestamp, index=True)
 
     __table_args__ = (
         Index("ix_fills_symbol_filled_at", "symbol", "filled_at"),
@@ -99,7 +102,7 @@ class PositionRecord(Base):
     cost_basis = Column(Float, nullable=False)
     mode = Column(String(8), nullable=False)
     order_id = Column(String(64), nullable=False)
-    opened_at = Column(BigInteger, default=lambda: int(time.time()))
+    opened_at = Column(BigInteger, default=unix_timestamp)
     closed_at = Column(BigInteger, nullable=True)
     is_open = Column(Boolean, default=True, index=True)
 
@@ -114,7 +117,7 @@ class BalanceRecord(Base):
     amount = Column(Float, nullable=False)
     mode = Column(String(8), nullable=False)
     source = Column(String(32), nullable=False)
-    recorded_at = Column(BigInteger, default=lambda: int(time.time()), index=True)
+    recorded_at = Column(BigInteger, default=unix_timestamp, index=True)
 
 
 class GuardianEventRecord(Base):
@@ -130,7 +133,7 @@ class GuardianEventRecord(Base):
     kill_switch_now = Column(Boolean, nullable=True)
     drawdown_pct = Column(Float, nullable=True)
     api_error_count = Column(Integer, nullable=True)
-    created_at = Column(BigInteger, default=lambda: int(time.time()), index=True)
+    created_at = Column(BigInteger, default=unix_timestamp, index=True)
 
 
 class RiskEventRecord(Base):
@@ -146,7 +149,7 @@ class RiskEventRecord(Base):
     decision = Column(String(32), nullable=False)
     approved = Column(Boolean, nullable=False)
     reason = Column(Text, nullable=True)
-    timestamp = Column(BigInteger, default=lambda: int(time.time()), index=True)
+    timestamp = Column(BigInteger, default=unix_timestamp, index=True)
 
 
 class AuditLogRecord(Base):
@@ -165,7 +168,7 @@ class AuditLogRecord(Base):
     order_id = Column(String(64), nullable=True)
     mode = Column(String(8), nullable=True)
     extra_json = Column(Text, nullable=True)
-    timestamp = Column(BigInteger, default=lambda: int(time.time()), index=True)
+    timestamp = Column(BigInteger, default=unix_timestamp, index=True)
 
     __table_args__ = (
         Index("ix_audit_event_ts", "event_type", "timestamp"),
@@ -186,7 +189,7 @@ class ReconciliationReport(Base):
     trade_count = Column(Integer, default=0)
     discrepancy_detected = Column(Boolean, default=False)
     discrepancy_detail = Column(Text, nullable=True)
-    created_at = Column(BigInteger, default=lambda: int(time.time()), index=True)
+    created_at = Column(BigInteger, default=unix_timestamp, index=True)
 
 
 class ServiceHeartbeat(Base):
@@ -198,11 +201,7 @@ class ServiceHeartbeat(Base):
     last_beat_at = Column(BigInteger, nullable=False)
     status = Column(String(32), default="alive")
     detail = Column(Text, nullable=True)
-    updated_at = Column(BigInteger, default=lambda: int(time.time()))
-
-    __table_args__ = (
-        UniqueConstraint("service_name", name="uq_heartbeat_service"),
-    )
+    updated_at = Column(BigInteger, default=unix_timestamp, onupdate=unix_timestamp)
 
 
 __all__ = [
