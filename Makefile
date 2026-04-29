@@ -8,7 +8,7 @@ VENV_PIP := $(VENV_BIN)/pip
 
 .PHONY: help install backend-install frontend-install \
         backend frontend build \
-        test test-v test-live lint repo-audit \
+        test test-v test-live lint repo-audit branch-salvage \
         docker-build-backend docker-build-frontend docker-build-stack \
         compose-preflight compose-up compose-down compose-backend compose-backend-down \
         synthetic-paper-smoke testnet-smoke testnet-smoke-dry live-paper-smoke secured-write-smoke compose-live-paper-smoke release-verify clean
@@ -32,6 +32,7 @@ help:
 	@echo "    make test-live            Run live-mode routing tests only"
 	@echo "    make lint                 Run ruff linter on backend"
 	@echo "    make repo-audit           Run structural repo audit checks"
+	@echo "    make branch-salvage       Inventory remote branches for salvage candidates"
 	@echo ""
 	@echo "  Build:"
 	@echo "    make build                Build frontend for production"
@@ -86,6 +87,9 @@ lint:
 
 repo-audit:
 	$(VENV_PYTHON) scripts/repo_audit.py
+
+branch-salvage:
+	$(VENV_PYTHON) scripts/branch_salvage_inventory.py --remote $${REMOTE:-origin}
 
 build:
 	$(VENV_PYTHON) scripts/frontend_build.py
