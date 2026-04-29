@@ -15,11 +15,8 @@ Migration: add these to 0002_broker_tables.py (Alembic)
 from __future__ import annotations
 import time
 from sqlalchemy import Boolean, Column, Float, Integer, BigInteger, String, Text
-from sqlalchemy.orm import DeclarativeBase
 
-
-class Base(DeclarativeBase):
-    pass
+from backend.db.models import Base
 
 
 class BrokerOrderRecord(Base):

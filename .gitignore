@@ -51,7 +51,14 @@ Thumbs.db
 
 # Logs
 *.log
-server.log
+
+# Binary archives — never commit
+*.zip
+*.tar.gz
+*.rar
+
+# Patch files
+*.patch
 
 # ccxt credential cache
 .ccxt/
