@@ -9,6 +9,7 @@ import { AuthBannerProvider } from "@/contexts/AuthBannerContext";
 import { AuthBanner } from "@/components/AuthBanner";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Loader2 } from "lucide-react";
+import { Analytics } from "@vercel/analytics/react";
 
 const Index = lazy(() => import("./pages/Index"));
 const Auth = lazy(() => import("./pages/Auth"));
@@ -52,6 +53,7 @@ const App = () => (
           </AuthBannerProvider>
         </AuthProvider>
       </BrowserRouter>
+      <Analytics />
     </TooltipProvider>
   </QueryClientProvider>
 );
