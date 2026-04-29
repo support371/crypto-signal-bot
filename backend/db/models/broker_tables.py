@@ -16,11 +16,9 @@ one registry.
 
 from __future__ import annotations
 
-import time
+from sqlalchemy import BigInteger, Boolean, Column, Float, Integer, String, Text, UniqueConstraint
 
-from sqlalchemy import BigInteger, Boolean, Column, Float, Integer, String, Text
-
-from backend.db.models import Base
+from backend.db.models import Base, unix_timestamp
 
 
 class BrokerOrderRecord(Base):
@@ -43,8 +41,12 @@ class BrokerOrderRecord(Base):
     comment = Column(Text, nullable=True)
     magic_number = Column(Integer, default=0)
     reason = Column(Text, nullable=True)
-    created_at = Column(BigInteger, default=lambda: int(time.time()), index=True)
-    updated_at = Column(BigInteger, default=lambda: int(time.time()))
+    created_at = Column(BigInteger, default=unix_timestamp, index=True)
+    updated_at = Column(BigInteger, default=unix_timestamp, onupdate=unix_timestamp)
+
+    __table_args__ = (
+        UniqueConstraint("venue", "client_order_id", name="uq_broker_orders_venue_client_order"),
+    )
 
 
 class BrokerPositionRecord(Base):
@@ -67,7 +69,7 @@ class BrokerPositionRecord(Base):
     magic_number = Column(Integer, default=0)
     is_open = Column(Boolean, default=True, index=True)
     opened_at = Column(BigInteger, nullable=False)
-    updated_at = Column(BigInteger, default=lambda: int(time.time()))
+    updated_at = Column(BigInteger, default=unix_timestamp, onupdate=unix_timestamp)
     closed_at = Column(BigInteger, nullable=True)
 
 
@@ -86,7 +88,7 @@ class BrokerFillRecord(Base):
     price = Column(Float, nullable=False)
     fee = Column(Float, default=0.0)
     realized_pnl = Column(Float, default=0.0)
-    timestamp = Column(BigInteger, default=lambda: int(time.time()), index=True)
+    timestamp = Column(BigInteger, default=unix_timestamp, index=True)
 
 
 class BrokerHealthRecord(Base):
@@ -100,7 +102,7 @@ class BrokerHealthRecord(Base):
     order_path_ok = Column(Boolean, default=False)
     latency_ms = Column(Float, nullable=True)
     last_error = Column(Text, nullable=True)
-    timestamp = Column(BigInteger, default=lambda: int(time.time()), index=True)
+    timestamp = Column(BigInteger, default=unix_timestamp, index=True)
 
 
 class BrokerSessionRecord(Base):
@@ -115,4 +117,4 @@ class BrokerSessionRecord(Base):
     terminal_initialized = Column(Boolean, default=False)
     last_error_code = Column(Integer, nullable=True)
     last_error_message = Column(Text, nullable=True)
-    last_seen_at = Column(BigInteger, default=lambda: int(time.time()), index=True)
+    last_seen_at = Column(BigInteger, default=unix_timestamp, onupdate=unix_timestamp, index=True)
