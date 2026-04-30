@@ -1,0 +1,43 @@
+name: release-check
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  release-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm install
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Run focused backend tests
+        run: python -m pytest backend/tests/test_event_log_store.py backend/tests/test_audit_store_event_log.py backend/tests/test_event_log_router.py -q
+
+      - name: Run repo audit
+        run: python scripts/repo_audit.py
+
+      - name: Run local event-log check
+        run: python scripts/event_log_check.py
