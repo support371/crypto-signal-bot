@@ -1,4 +1,4 @@
-const env = import.meta.env as Record<string, string | undefined>;
+const env = import.meta.env;
 
 const LOCAL_BACKEND_URL = 'http://localhost:8000';
 
@@ -9,7 +9,7 @@ export type FrontendEnvValidation = {
   warnings: string[];
 };
 
-const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
+export const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
 
 export function getConfiguredBackendUrl() {
   const explicitUrl = env.VITE_BACKEND_URL || env.VITE_BACKEND_BASE_URL;
@@ -18,7 +18,7 @@ export function getConfiguredBackendUrl() {
 
 export function validateFrontendEnv(): FrontendEnvValidation {
   const backendUrl = getConfiguredBackendUrl();
-  const isProductionBuild = Boolean(env.PROD);
+  const isProductionBuild = env.PROD;
   const isLocalBackend = /^http:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i.test(backendUrl);
   const warnings: string[] = [];
 
