@@ -11,9 +11,8 @@ RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r /app/backend/requirements.txt
 
 COPY backend /app/backend
-COPY config.yaml /app/config.yaml
 
-RUN mkdir -p /tmp/crypto-signal-bot
+RUN mkdir -p /tmp/crypto-signal-bot /app/backend/data
 
 EXPOSE 10000
 
