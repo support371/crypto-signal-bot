@@ -28,13 +28,21 @@ ALLOWLIST_PATHS = {
 SKIP_VALUE_SCAN_SUFFIXES = {".md", ".rst"}
 
 
+def normalized_path(path: Path) -> str:
+    return path.as_posix()
+
+
 def git_ls_files() -> list[Path]:
     output = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT)
     return [Path(item.decode()) for item in output.split(b"\0") if item]
 
 
+def is_allowlisted_path(path: Path) -> bool:
+    return normalized_path(path) in ALLOWLIST_PATHS
+
+
 def is_secret_like_path(path: Path) -> bool:
-    normalized = path.as_posix()
+    normalized = normalized_path(path)
     if normalized in ALLOWLIST_PATHS:
         return False
     return any(pattern.search(normalized) for pattern in SECRET_PATH_PATTERNS)
@@ -63,20 +71,20 @@ def scan_secret_values(path: Path) -> list[str]:
         for pattern in SECRET_VALUE_PATTERNS:
             match = pattern.search(stripped)
             if match and not is_placeholder_value(match.group(match.lastindex or 0)):
-                findings.append(f"{path}:{line_number}")
+                findings.append(f"{normalized_path(path)}:{line_number}")
                 break
     return findings
 
 
 def main() -> int:
     files = git_ls_files()
-    tracked_junk = sorted(str(path) for path in files if path.suffix.lower() in TRACKED_JUNK_SUFFIXES)
-    secret_paths = sorted(str(path) for path in files if is_secret_like_path(path))
+    tracked_junk = sorted(normalized_path(path) for path in files if path.suffix.lower() in TRACKED_JUNK_SUFFIXES)
+    secret_paths = sorted(normalized_path(path) for path in files if is_secret_like_path(path))
     secret_value_hits: list[str] = []
     for path in files:
         if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2"}:
             continue
-        if str(path) in ALLOWLIST_PATHS:
+        if is_allowlisted_path(path):
             continue
         secret_value_hits.extend(scan_secret_values(path))
 
