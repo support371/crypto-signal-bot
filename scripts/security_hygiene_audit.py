@@ -13,8 +13,11 @@ SECRET_PATH_PATTERNS = (
     re.compile(r"\.(pem|key|p12|pfx)$", re.I),
 )
 SECRET_VALUE_PATTERNS = (
-    re.compile(r"(?i)(api[_-]?key|api[_-]?secret|secret|token|password)\s*=\s*['\"]?[^\s'\"]{16,}"),
-    re.compile(r"(?i)(binance|bitget|btcc|supabase).{0,32}(key|secret|token)"),
+    re.compile(r"(?i)(api[_-]?key|api[_-]?secret|secret|token|password)\s*=\s*['\"]?([^\s'\"]{16,})"),
+    re.compile(r"(?i)(binance|bitget|btcc|supabase).{0,32}(key|secret|token)\s*=\s*['\"]?([^\s'\"]{16,})"),
+)
+PLACEHOLDER_VALUE_RE = re.compile(
+    r"(?i)^(your-|example|placeholder|changeme|change-me|replace-me|todo|dummy|sample|testnet|localhost|https://your-)"
 )
 MAX_BYTES_TO_SCAN = 512_000
 ALLOWLIST_PATHS = {
@@ -22,6 +25,7 @@ ALLOWLIST_PATHS = {
     ".env.fullstack.example",
     "backend/env/.env.example",
 }
+SKIP_VALUE_SCAN_SUFFIXES = {".md", ".rst"}
 
 
 def git_ls_files() -> list[Path]:
@@ -36,7 +40,14 @@ def is_secret_like_path(path: Path) -> bool:
     return any(pattern.search(normalized) for pattern in SECRET_PATH_PATTERNS)
 
 
+def is_placeholder_value(value: str) -> bool:
+    normalized = value.strip().strip('"\'')
+    return not normalized or bool(PLACEHOLDER_VALUE_RE.search(normalized))
+
+
 def scan_secret_values(path: Path) -> list[str]:
+    if path.suffix.lower() in SKIP_VALUE_SCAN_SUFFIXES:
+        return []
     full_path = ROOT / path
     if not full_path.is_file() or full_path.stat().st_size > MAX_BYTES_TO_SCAN:
         return []
@@ -50,7 +61,8 @@ def scan_secret_values(path: Path) -> list[str]:
         if not stripped or stripped.startswith("#"):
             continue
         for pattern in SECRET_VALUE_PATTERNS:
-            if pattern.search(stripped):
+            match = pattern.search(stripped)
+            if match and not is_placeholder_value(match.group(match.lastindex or 0)):
                 findings.append(f"{path}:{line_number}")
                 break
     return findings
