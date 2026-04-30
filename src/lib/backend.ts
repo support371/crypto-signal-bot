@@ -1,8 +1,5 @@
 import { getStoredBackendApiKey } from '@/lib/backendAuth';
-
-const env = import.meta.env as Record<string, string | undefined>;
-
-const DEFAULT_BACKEND_URL = 'http://localhost:8000';
+import { getConfiguredBackendUrl } from '@/lib/env';
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
 
@@ -26,23 +23,17 @@ async function readErrorMessage(response: Response) {
 }
 
 export function getBackendBaseUrl() {
-  const explicitUrl = env.VITE_BACKEND_URL || env.VITE_BACKEND_BASE_URL;
-  return trimTrailingSlash(explicitUrl || DEFAULT_BACKEND_URL);
+  return getConfiguredBackendUrl();
 }
 
 export function getBackendWebSocketUrl() {
-  const explicitUrl = env.VITE_BACKEND_URL || env.VITE_BACKEND_BASE_URL;
   const backendBaseUrl = getBackendBaseUrl();
-
-  if (!explicitUrl) {
-    return `${backendBaseUrl.replace(/^http/i, 'ws')}/ws/updates`;
-  }
 
   if (typeof window === 'undefined') {
     return `${backendBaseUrl.replace(/^http/i, 'ws')}/ws/updates`;
   }
 
-  const resolved = new URL(explicitUrl, window.location.origin);
+  const resolved = new URL(backendBaseUrl, window.location.origin);
   const normalizedPath = resolved.pathname.replace(/\/+$/, '');
   const wsPath = normalizedPath.endsWith('/api')
     ? `${normalizedPath.slice(0, -4) || ''}/ws/updates`
@@ -96,3 +87,5 @@ export async function fetchBackendText(path: string, init: RequestInit = {}): Pr
 
   return response.text();
 }
+
+export { trimTrailingSlash };
