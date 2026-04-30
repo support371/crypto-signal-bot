@@ -8,7 +8,7 @@ VENV_PIP := $(VENV_BIN)/pip
 
 .PHONY: help install backend-install frontend-install \
         backend frontend build \
-        test test-v test-live lint repo-audit branch-salvage \
+        test test-v test-live lint repo-audit branch-salvage release-check \
         docker-build-backend docker-build-frontend docker-build-stack \
         compose-preflight compose-up compose-down compose-backend compose-backend-down \
         synthetic-paper-smoke testnet-smoke testnet-smoke-dry live-paper-smoke secured-write-smoke compose-live-paper-smoke release-verify clean
@@ -33,6 +33,7 @@ help:
 	@echo "    make lint                 Run ruff linter on backend"
 	@echo "    make repo-audit           Run structural repo audit checks"
 	@echo "    make branch-salvage       Inventory remote branches for salvage candidates"
+	@echo "    make release-check        Run local release validation without CircleCI"
 	@echo ""
 	@echo "  Build:"
 	@echo "    make build                Build frontend for production"
@@ -90,6 +91,9 @@ repo-audit:
 
 branch-salvage:
 	$(VENV_PYTHON) scripts/branch_salvage_inventory.py --remote $${REMOTE:-origin}
+
+release-check:
+	$(VENV_PYTHON) scripts/local_release_check.py
 
 build:
 	$(VENV_PYTHON) scripts/frontend_build.py
