@@ -1,17 +1,20 @@
 FROM python:3.11-slim
 
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PORT=10000
+
 WORKDIR /app
 
-# Install dependencies
-COPY backend/requirements.txt backend/requirements.txt
-RUN pip install --no-cache-dir -r backend/requirements.txt
+COPY backend/requirements.txt /app/backend/requirements.txt
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r /app/backend/requirements.txt
 
-# Copy application code
-COPY backend/ backend/
+COPY backend /app/backend
+COPY config.yaml /app/config.yaml
 
-# Create data directory for audit persistence
-RUN mkdir -p backend/data
+RUN mkdir -p /tmp/crypto-signal-bot /app/backend/data
 
-EXPOSE 8000
+EXPOSE 10000
 
-CMD ["uvicorn", "backend.app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "uvicorn backend.app:app --host 0.0.0.0 --port ${PORT:-10000}"]
