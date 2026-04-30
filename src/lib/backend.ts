@@ -1,7 +1,5 @@
 import { getStoredBackendApiKey } from '@/lib/backendAuth';
-import { getConfiguredBackendUrl } from '@/lib/env';
-
-const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
+import { getConfiguredBackendUrl, trimTrailingSlash } from '@/lib/env';
 
 async function readErrorMessage(response: Response) {
   const fallback = `Backend request failed (${response.status})`;
@@ -34,7 +32,7 @@ export function getBackendWebSocketUrl() {
   }
 
   const resolved = new URL(backendBaseUrl, window.location.origin);
-  const normalizedPath = resolved.pathname.replace(/\/+$/, '');
+  const normalizedPath = trimTrailingSlash(resolved.pathname);
   const wsPath = normalizedPath.endsWith('/api')
     ? `${normalizedPath.slice(0, -4) || ''}/ws/updates`
     : `${normalizedPath}/ws/updates`;
@@ -87,5 +85,3 @@ export async function fetchBackendText(path: string, init: RequestInit = {}): Pr
 
   return response.text();
 }
-
-export { trimTrailingSlash };
