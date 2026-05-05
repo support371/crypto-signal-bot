@@ -14,6 +14,9 @@ import { Analytics } from "@vercel/analytics/react";
 const Index = lazy(() => import("./pages/Index"));
 const Auth = lazy(() => import("./pages/Auth"));
 const NotFound = lazy(() => import("./pages/NotFound"));
+const PublicHome = lazy(() => import("./pages/PublicHome"));
+const IntegrationsStatus = lazy(() => import("./pages/IntegrationsStatus"));
+const Waitlist = lazy(() => import("./pages/Waitlist"));
 
 const queryClient = new QueryClient();
 
@@ -38,6 +41,9 @@ const App = () => (
             <Suspense fallback={<RouteLoadingShell />}>
               <Routes>
                 <Route path="/auth" element={<Auth />} />
+                <Route path="/public" element={<PublicHome />} />
+                <Route path="/integrations" element={<IntegrationsStatus />} />
+                <Route path="/waitlist" element={<Waitlist />} />
                 <Route
                   path="/"
                   element={

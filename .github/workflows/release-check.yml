@@ -23,6 +23,9 @@ jobs:
         run: npm install
 
       - name: Build frontend
+        env:
+          VITE_BACKEND_URL: /api
+          VITE_API_BASE_URL: /api
         run: npm run build
 
       - name: Set up Python
@@ -34,7 +37,7 @@ jobs:
         run: pip install -r backend/requirements.txt
 
       - name: Run focused backend tests
-        run: python -m pytest backend/tests/test_event_log_store.py backend/tests/test_audit_store_event_log.py backend/tests/test_event_log_router.py -q
+        run: python -m pytest backend/tests/test_event_log_store.py backend/tests/test_audit_store_event_log.py backend/tests/test_event_log_router.py tests/test_provider_registry.py tests/test_integrations_endpoint.py tests/test_waitlist_endpoint.py -q
 
       - name: Run repo audit
         run: python scripts/repo_audit.py
