@@ -1,0 +1,23 @@
+{
+  "Coingecko": {
+    "name": "Coingecko",
+    "category": "data",
+    "markets": ["crypto"],
+    "status": "unknown",
+    "last_update_ts": null
+  },
+  "Yahoo Finance": {
+    "name": "Yahoo Finance",
+    "category": "news",
+    "markets": ["stocks", "crypto", "forex"],
+    "status": "unknown",
+    "last_update_ts": null
+  },
+  "Forex.com": {
+    "name": "Forex.com",
+    "category": "exchange",
+    "markets": ["forex"],
+    "status": "unknown",
+    "last_update_ts": null
+  }
+}
