@@ -1,24 +1,16 @@
-"""
-Provider registry for external integrations.
-
-This module defines a small JSON-backed registry for third-party providers
-such as exchanges, market-data vendors, news sources, and education resources.
-It is intentionally lightweight and can be replaced with a durable database
-model as the platform scales.
-"""
-
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Optional
 
+logger = logging.getLogger(__name__)
+
 
 class ProviderCategory(str, Enum):
-    """Supported provider categories."""
-
     EXCHANGE = "exchange"
     NEWS = "news"
     EDUCATION = "education"
@@ -27,8 +19,6 @@ class ProviderCategory(str, Enum):
 
 @dataclass
 class Provider:
-    """Provider registry entry."""
-
     name: str
     category: ProviderCategory
     markets: List[str]
@@ -40,8 +30,6 @@ class Provider:
 
 
 class ProviderRegistry:
-    """Registry for providers backed by a JSON file."""
-
     def __init__(self, file_path: Path) -> None:
         self._file_path = file_path
         self._providers: Dict[str, Provider] = {}
@@ -54,20 +42,38 @@ class ProviderRegistry:
         try:
             raw = json.loads(self._file_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
+            logger.warning("Failed to decode provider registry JSON from %s", self._file_path)
             raw = {}
 
+        if not isinstance(raw, dict):
+            logger.warning("Provider registry root must be an object: %s", self._file_path)
+            return
+
         for name, data in raw.items():
+            if not isinstance(data, dict):
+                logger.warning("Skipping provider %r: expected object", name)
+                continue
+
+            category_raw = data.get("category", ProviderCategory.DATA.value)
+            try:
+                category = ProviderCategory(category_raw)
+            except ValueError:
+                logger.warning("Unknown provider category %r for %r; defaulting to data", category_raw, name)
+                category = ProviderCategory.DATA
+
             try:
                 provider_name = str(data.get("name") or name)
+                markets_raw = data.get("markets", [])
+                markets = list(markets_raw) if isinstance(markets_raw, list) else []
                 self._providers[provider_name] = Provider(
                     name=provider_name,
-                    category=ProviderCategory(data.get("category", "data")),
-                    markets=list(data.get("markets", [])),
+                    category=category,
+                    markets=markets,
                     status=str(data.get("status", "unknown")),
                     last_update_ts=data.get("last_update_ts"),
                 )
-            except Exception:
-                continue
+            except (TypeError, ValueError) as exc:
+                logger.warning("Failed to load provider %r: %s", name, exc)
 
     def _persist(self) -> None:
         self._file_path.parent.mkdir(parents=True, exist_ok=True)
