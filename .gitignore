@@ -28,6 +28,7 @@ coverage.xml
 
 node_modules/
 .vite/
+bun.lockb
 
 dist/
 
@@ -42,7 +43,14 @@ docker-compose.override.yml
 Thumbs.db
 
 *.log
-server.log
+
+# Binary archives — never commit
+*.zip
+*.tar.gz
+*.rar
+
+# Patch files
+*.patch
 
 *.zip
 *.tar

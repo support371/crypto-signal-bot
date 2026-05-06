@@ -15,10 +15,10 @@ one registry.
 """
 
 from __future__ import annotations
+import time
+from sqlalchemy import Boolean, Column, Float, Integer, BigInteger, String, Text
 
-from sqlalchemy import BigInteger, Boolean, Column, Float, Integer, String, Text, UniqueConstraint
-
-from backend.db.models import Base, unix_timestamp
+from backend.db.models import Base
 
 
 class BrokerOrderRecord(Base):

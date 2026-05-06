@@ -535,6 +535,11 @@ class TestGuardianMT5Failures:
         g._api_error_count    = 0
         g._kill_switch_active = False
 
+        mock_cfg = MagicMock()
+        mock_cfg.max_api_errors = 10
+        mock_cfg.max_failed_orders = 5
+        mock_cfg.max_drawdown_pct = 0.05
+
         with (
             patch("backend.engine.coordinator.is_kill_switch_active",
                   new=AsyncMock(return_value=False)),
@@ -544,6 +549,8 @@ class TestGuardianMT5Failures:
                   new=AsyncMock(return_value=[])),  # no adapters → ExecutionFailed
             patch("backend.engine.coordinator._publish_order_update", new=AsyncMock()),
             patch("backend.engine.coordinator._append_audit_entry", new=AsyncMock()),
+            patch("backend.services.guardian_bot.service.get_risk_config",
+                  return_value=mock_cfg),
         ):
             with pytest.raises(ExecutionFailed):
                 await execute_intent(ExecutionIntent(

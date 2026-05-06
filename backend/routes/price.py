@@ -38,7 +38,6 @@ from backend.services.market_data.service import (
     get_price_batch,
     get_ohlcv,
     get_exchange_status,
-    TRACKED_SYMBOLS,
 )
 
 router = APIRouter(tags=["market-data"])
