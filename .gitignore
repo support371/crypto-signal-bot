@@ -32,6 +32,7 @@ coverage.xml
 # Node / frontend
 node_modules/
 .vite/
+bun.lockb
 
 # Frontend production build output
 dist/

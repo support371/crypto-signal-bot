@@ -4,7 +4,7 @@ jobs:
   build:
     docker:
       - image: cimg/node:22.12.0
-      - image: cimg/python:3.10.2
+      - image: cimg/python:3.11
     steps:
       - checkout
       - run:
@@ -18,6 +18,8 @@ jobs:
             npm ci
       - run:
           name: "Build Frontend"
+          environment:
+            VITE_BACKEND_URL: /api
           command: |
             npm run build
       - run:
@@ -25,9 +27,9 @@ jobs:
           command: |
             pip install -r backend/requirements.txt
       - run:
-          name: "Placeholder for Deployment"
+          name: "Run Backend Tests"
           command: |
-            echo "Deployment step would go here"
+            python -m pytest backend/tests/ -v --tb=short
 
 workflows:
   version: 2
