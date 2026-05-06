@@ -38,6 +38,9 @@ jobs:
       - name: Verify backend imports
         run: python -m py_compile backend/app.py
 
+      - name: Run repo audit
+        run: python scripts/repo_audit.py
+
       - name: Run all backend tests
         run: python -m pytest backend/tests/ -v --tb=short
 
@@ -59,7 +62,7 @@ jobs:
           cache: 'npm'
 
       - name: Install frontend dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build frontend
         env:

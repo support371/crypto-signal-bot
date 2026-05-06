@@ -8,12 +8,11 @@ VENV_PIP := $(VENV_BIN)/pip
 
 .PHONY: help install backend-install frontend-install \
         backend frontend build \
-        test test-v test-live lint \
+        test test-v test-live lint repo-audit branch-salvage release-check \
         docker-build-backend docker-build-frontend docker-build-stack \
         compose-preflight compose-up compose-down compose-backend compose-backend-down \
         synthetic-paper-smoke testnet-smoke testnet-smoke-dry live-paper-smoke secured-write-smoke compose-live-paper-smoke release-verify clean
 
-# ── Default ───────────────────────────────────────────────────────────────────
 help:
 	@echo ""
 	@echo "Crypto Signal Bot — available targets"
@@ -32,6 +31,9 @@ help:
 	@echo "    make test-v               Run all backend tests (verbose)"
 	@echo "    make test-live            Run live-mode routing tests only"
 	@echo "    make lint                 Run ruff linter on backend"
+	@echo "    make repo-audit           Run structural repo audit checks"
+	@echo "    make branch-salvage       Inventory remote branches for salvage candidates"
+	@echo "    make release-check        Run local release validation without CircleCI"
 	@echo ""
 	@echo "  Build:"
 	@echo "    make build                Build frontend for production"
@@ -57,7 +59,6 @@ help:
 	@echo "    make clean                Remove build artifacts and caches"
 	@echo ""
 
-# ── Setup ─────────────────────────────────────────────────────────────────────
 install: backend-install frontend-install
 
 backend-install:
@@ -67,14 +68,12 @@ backend-install:
 frontend-install:
 	$(NPM) install
 
-# ── Development ───────────────────────────────────────────────────────────────
 backend:
 	$(VENV_PYTHON) -m uvicorn backend.app:app --reload --host 0.0.0.0 --port 8000
 
 frontend:
 	$(NPM) run dev -- --host 0.0.0.0 --port 8080
 
-# ── Testing ───────────────────────────────────────────────────────────────────
 test:
 	$(VENV_PYTHON) -m pytest backend/tests -q
 
@@ -87,7 +86,15 @@ test-live:
 lint:
 	@$(VENV_PYTHON) -c "import ruff" >/dev/null 2>&1 && $(VENV_PYTHON) -m ruff check backend/ || echo "ruff not installed in $(VENV_DIR) — run: $(VENV_PIP) install ruff"
 
-# ── Build ─────────────────────────────────────────────────────────────────────
+repo-audit:
+	$(VENV_PYTHON) scripts/repo_audit.py
+
+branch-salvage:
+	$(VENV_PYTHON) scripts/branch_salvage_inventory.py --remote $${REMOTE:-origin}
+
+release-check:
+	$(VENV_PYTHON) scripts/local_release_check.py
+
 build:
 	$(VENV_PYTHON) scripts/frontend_build.py
 
@@ -100,7 +107,6 @@ docker-build-frontend:
 docker-build-stack:
 	$(VENV_PYTHON) scripts/docker_build_stack.py
 
-# ── Docker ────────────────────────────────────────────────────────────────────
 compose-preflight:
 	$(VENV_PYTHON) scripts/compose_preflight.py
 
@@ -116,7 +122,6 @@ compose-backend: compose-preflight docker-build-backend
 compose-backend-down: compose-preflight
 	docker compose -f docker-compose.yml down
 
-# ── Live mode ─────────────────────────────────────────────────────────────────
 synthetic-paper-smoke:
 	$(VENV_PYTHON) scripts/synthetic_paper_smoke.py
 
@@ -138,7 +143,6 @@ compose-live-paper-smoke:
 release-verify:
 	$(VENV_PYTHON) scripts/release_verify.py
 
-# ── Cleanup ───────────────────────────────────────────────────────────────────
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true

@@ -32,6 +32,7 @@ export function getBackendBaseUrl() {
     );
   }
   return trimTrailingSlash(explicitUrl);
+  return getConfiguredBackendUrl();
 }
 
 export function getBackendWebSocketUrl() {
@@ -42,7 +43,7 @@ export function getBackendWebSocketUrl() {
   }
 
   const resolved = new URL(backendBaseUrl, window.location.origin);
-  const normalizedPath = resolved.pathname.replace(/\/+$/, '');
+  const normalizedPath = trimTrailingSlash(resolved.pathname);
   const wsPath = normalizedPath.endsWith('/api')
     ? `${normalizedPath.slice(0, -4) || ''}/ws/updates`
     : `${normalizedPath}/ws/updates`;

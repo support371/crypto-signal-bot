@@ -8,10 +8,11 @@ jobs:
     steps:
       - checkout
       - run:
-          name: "Print Node and npm Versions"
+          name: "Print Runtime Versions"
           command: |
             node -v
             npm -v
+            if command -v python3 >/dev/null 2>&1; then python3 --version; else echo "python3 not installed yet"; fi
       - run:
           name: "Install Frontend Dependencies"
           command: |
@@ -21,11 +22,27 @@ jobs:
           environment:
             VITE_BACKEND_URL: /api
           command: |
-            npm run build
+            VITE_BACKEND_URL=/api VITE_API_BASE_URL=/api npm run build
+      - run:
+          name: "Install Python Tooling"
+          command: |
+            if ! command -v python3 >/dev/null 2>&1 || ! python3 -m pip --version >/dev/null 2>&1; then
+              sudo apt-get update
+              sudo apt-get install -y python3 python3-pip python3-venv
+            fi
+            python3 -m pip install --upgrade pip
       - run:
           name: "Install Backend Dependencies"
           command: |
-            pip install -r backend/requirements.txt
+            python3 -m pip install -r backend/requirements.txt
+      - run:
+          name: "Run Backend Tests"
+          command: |
+            python3 -m pytest backend/tests tests/test_provider_registry.py tests/test_integrations_endpoint.py tests/test_waitlist_endpoint.py -q
+      - run:
+          name: "Run Repo Audit"
+          command: |
+            python3 scripts/repo_audit.py
       - run:
           name: "Run Backend Tests"
           command: |

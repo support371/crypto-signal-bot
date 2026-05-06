@@ -21,11 +21,16 @@ Design:
 from __future__ import annotations
 
 import time
-from typing import Optional
 
 from sqlalchemy import (
-    BigInteger, Boolean, Column, Float, Index, Integer,
-    String, Text, UniqueConstraint,
+    BigInteger,
+    Boolean,
+    Column,
+    Float,
+    Index,
+    Integer,
+    String,
+    Text,
 )
 from sqlalchemy.orm import DeclarativeBase
 
@@ -57,6 +62,26 @@ class OrderRecord(Base):
     reject_reason   = Column(Text, nullable=True)
     created_at      = Column(BigInteger, default=lambda: int(time.time()), index=True)
     updated_at      = Column(BigInteger, default=lambda: int(time.time()))
+class OrderRecord(Base):
+    """Every order submitted to an exchange adapter."""
+
+    __tablename__ = "orders"
+
+    id = Column(String(64), primary_key=True)
+    symbol = Column(String(20), nullable=False, index=True)
+    side = Column(String(8), nullable=False)
+    order_type = Column(String(16), nullable=False)
+    quantity = Column(Float, nullable=False)
+    price = Column(Float, nullable=True)
+    fill_price = Column(Float, nullable=True)
+    filled_qty = Column(Float, default=0.0)
+    status = Column(String(32), nullable=False, index=True)
+    mode = Column(String(8), nullable=False)
+    venue = Column(String(32), nullable=False)
+    exchange_order_id = Column(String(128), nullable=True)
+    reject_reason = Column(Text, nullable=True)
+    created_at = Column(BigInteger, default=unix_timestamp, index=True)
+    updated_at = Column(BigInteger, default=unix_timestamp, onupdate=unix_timestamp)
 
     __table_args__ = (
         Index("ix_orders_symbol_created", "symbol", "created_at"),
@@ -87,101 +112,85 @@ class FillRecord(Base):
     )
 
 
-# ---------------------------------------------------------------------------
-# Positions (open lots)
-# ---------------------------------------------------------------------------
-
 class PositionRecord(Base):
     """Open position lots — FIFO entries."""
+
     __tablename__ = "positions"
 
-    id          = Column(Integer, primary_key=True, autoincrement=True)
-    symbol      = Column(String(20), nullable=False, index=True)
-    side        = Column(String(8), nullable=False)     # BUY (long lot) | SELL (short lot)
-    quantity    = Column(Float, nullable=False)
-    cost_basis  = Column(Float, nullable=False)         # price per unit
-    mode        = Column(String(8), nullable=False)
-    order_id    = Column(String(64), nullable=False)
-    opened_at   = Column(BigInteger, default=lambda: int(time.time()))
-    closed_at   = Column(BigInteger, nullable=True)     # None = open
-    is_open     = Column(Boolean, default=True, index=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    symbol = Column(String(20), nullable=False, index=True)
+    side = Column(String(8), nullable=False)
+    quantity = Column(Float, nullable=False)
+    cost_basis = Column(Float, nullable=False)
+    mode = Column(String(8), nullable=False)
+    order_id = Column(String(64), nullable=False)
+    opened_at = Column(BigInteger, default=unix_timestamp)
+    closed_at = Column(BigInteger, nullable=True)
+    is_open = Column(Boolean, default=True, index=True)
 
-
-# ---------------------------------------------------------------------------
-# Balances
-# ---------------------------------------------------------------------------
 
 class BalanceRecord(Base):
     """Balance snapshots — append-only time series."""
+
     __tablename__ = "balances"
 
-    id          = Column(Integer, primary_key=True, autoincrement=True)
-    asset       = Column(String(20), nullable=False, index=True)
-    amount      = Column(Float, nullable=False)
-    mode        = Column(String(8), nullable=False)
-    source      = Column(String(32), nullable=False)    # "fill" | "withdrawal" | "reset"
-    recorded_at = Column(BigInteger, default=lambda: int(time.time()), index=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    asset = Column(String(20), nullable=False, index=True)
+    amount = Column(Float, nullable=False)
+    mode = Column(String(8), nullable=False)
+    source = Column(String(32), nullable=False)
+    recorded_at = Column(BigInteger, default=unix_timestamp, index=True)
 
-
-# ---------------------------------------------------------------------------
-# Guardian events
-# ---------------------------------------------------------------------------
 
 class GuardianEventRecord(Base):
     """All guardian triggers and state changes — append-only."""
+
     __tablename__ = "guardian_events"
 
-    id              = Column(Integer, primary_key=True, autoincrement=True)
-    event_type      = Column(String(64), nullable=False, index=True)
-    # kill_switch_activated | kill_switch_deactivated | threshold_triggered | heartbeat_lost
-    source          = Column(String(32), nullable=False)    # guardian_auto | operator_api | system
-    reason          = Column(Text, nullable=True)
-    kill_switch_was = Column(Boolean, nullable=True)        # state BEFORE event
-    kill_switch_now = Column(Boolean, nullable=True)        # state AFTER event
-    drawdown_pct    = Column(Float, nullable=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_type = Column(String(64), nullable=False, index=True)
+    source = Column(String(32), nullable=False)
+    reason = Column(Text, nullable=True)
+    kill_switch_was = Column(Boolean, nullable=True)
+    kill_switch_now = Column(Boolean, nullable=True)
+    drawdown_pct = Column(Float, nullable=True)
     api_error_count = Column(Integer, nullable=True)
-    created_at      = Column(BigInteger, default=lambda: int(time.time()), index=True)
+    created_at = Column(BigInteger, default=unix_timestamp, index=True)
 
-
-# ---------------------------------------------------------------------------
-# Risk events
-# ---------------------------------------------------------------------------
 
 class RiskEventRecord(Base):
     """Risk gate denials and approvals — append-only."""
+
     __tablename__ = "risk_events"
 
-    id          = Column(Integer, primary_key=True, autoincrement=True)
-    intent_id   = Column(String(64), nullable=True)
-    symbol      = Column(String(20), nullable=False)
-    side        = Column(String(8), nullable=False)
-    risk_score  = Column(Float, nullable=True)
-    decision    = Column(String(32), nullable=False)    # ENTER_LONG | HOLD | EXIT | RISK_REJECTED
-    approved    = Column(Boolean, nullable=False)
-    reason      = Column(Text, nullable=True)
-    timestamp   = Column(BigInteger, default=lambda: int(time.time()), index=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    intent_id = Column(String(64), nullable=True)
+    symbol = Column(String(20), nullable=False)
+    side = Column(String(8), nullable=False)
+    risk_score = Column(Float, nullable=True)
+    decision = Column(String(32), nullable=False)
+    approved = Column(Boolean, nullable=False)
+    reason = Column(Text, nullable=True)
+    timestamp = Column(BigInteger, default=unix_timestamp, index=True)
 
-
-# ---------------------------------------------------------------------------
-# Audit log — strictly append-only (no UPDATE, no DELETE)
-# ---------------------------------------------------------------------------
 
 class AuditLogRecord(Base):
     """Immutable audit trail for all system events."""
+
     __tablename__ = "audit_log"
 
-    id          = Column(Integer, primary_key=True, autoincrement=True)
-    event_type  = Column(String(64), nullable=False, index=True)
-    actor       = Column(String(32), nullable=False)    # operator | guardian | system | engine
-    symbol      = Column(String(20), nullable=True)
-    side        = Column(String(8), nullable=True)
-    quantity    = Column(Float, nullable=True)
-    price       = Column(Float, nullable=True)
-    reason      = Column(Text, nullable=True)
-    order_id    = Column(String(64), nullable=True)
-    mode        = Column(String(8), nullable=True)
-    extra_json  = Column(Text, nullable=True)           # JSON-encoded extra fields
-    timestamp   = Column(BigInteger, default=lambda: int(time.time()), index=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_type = Column(String(64), nullable=False, index=True)
+    actor = Column(String(32), nullable=False)
+    symbol = Column(String(20), nullable=True)
+    side = Column(String(8), nullable=True)
+    quantity = Column(Float, nullable=True)
+    price = Column(Float, nullable=True)
+    reason = Column(Text, nullable=True)
+    order_id = Column(String(64), nullable=True)
+    mode = Column(String(8), nullable=True)
+    extra_json = Column(Text, nullable=True)
+    timestamp = Column(BigInteger, default=unix_timestamp, index=True)
 
     __table_args__ = (
         Index("ix_audit_event_ts", "event_type", "timestamp"),
@@ -214,14 +223,44 @@ class ReconciliationReport(Base):
 
 class ServiceHeartbeat(Base):
     """Latest heartbeat per service — one row per service name."""
+class ReconciliationReport(Base):
+    """Periodic reconciliation snapshots."""
+
+    __tablename__ = "reconciliation_reports"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    mode = Column(String(8), nullable=False)
+    usdt_balance = Column(Float, nullable=False)
+    total_realized_pnl = Column(Float, nullable=False)
+    total_unrealized_pnl = Column(Float, nullable=True)
+    open_lots_count = Column(Integer, default=0)
+    trade_count = Column(Integer, default=0)
+    discrepancy_detected = Column(Boolean, default=False)
+    discrepancy_detail = Column(Text, nullable=True)
+    created_at = Column(BigInteger, default=unix_timestamp, index=True)
+
+
+class ServiceHeartbeat(Base):
+    """Latest heartbeat per service — one row per service name."""
+
     __tablename__ = "service_heartbeats"
 
     service_name = Column(String(64), primary_key=True)
     last_beat_at = Column(BigInteger, nullable=False)
-    status       = Column(String(32), default="alive")  # alive | degraded | dead
-    detail       = Column(Text, nullable=True)
-    updated_at   = Column(BigInteger, default=lambda: int(time.time()))
+    status = Column(String(32), default="alive")
+    detail = Column(Text, nullable=True)
+    updated_at = Column(BigInteger, default=unix_timestamp, onupdate=unix_timestamp)
 
-    __table_args__ = (
-        UniqueConstraint("service_name", name="uq_heartbeat_service"),
-    )
+
+__all__ = [
+    "Base",
+    "OrderRecord",
+    "FillRecord",
+    "PositionRecord",
+    "BalanceRecord",
+    "GuardianEventRecord",
+    "RiskEventRecord",
+    "AuditLogRecord",
+    "ReconciliationReport",
+    "ServiceHeartbeat",
+]
