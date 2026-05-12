@@ -11,12 +11,14 @@ Inputs:
   - Exchange health (from MarketDataService.get_exchange_status())
   - API error counter (incremented by execution engine)
   - Failed order counter (incremented by execution engine)
+  - Reconciliation drift (OMS/open-order state mismatch vs execution venue)
 
 Outputs:
   - Kill switch activation (writes to Redis: KILL_SWITCH:active = 1)
   - GuardianStatus (for GET /guardian/status)
   - WebSocket guardian_alert events
   - Engine auto-halt on heartbeat loss
+  - Engine auto-halt on persistent reconciliation drift
 
 Protected files: backend/logic/risk.py used for threshold defaults only
   (read via config loader, not imported directly here).
@@ -31,8 +33,8 @@ import asyncio
 import json
 import logging
 import time
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
+from typing import Iterable, Optional
 
 from backend.config.loader import get_redis_config, get_risk_config
 
@@ -50,6 +52,7 @@ class GuardianThresholds:
     max_api_errors:      int
     max_failed_orders:   int
     heartbeat_timeout_s: int = 90  # seconds before engine is auto-halted
+    reconciliation_drift_tolerance_cycles: int = 3
 
 
 @dataclass
@@ -67,6 +70,9 @@ class GuardianStatus:
     last_heartbeat_at:    Optional[int]
     heartbeat_healthy:    bool
     computed_at:          int
+    reconciliation_drift_count: int = 0
+    reconciliation_drift_active: bool = False
+    reconciliation_drift_reason: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -83,6 +89,8 @@ _api_error_count:     int = 0
 _failed_order_count:  int = 0
 _last_heartbeat_at:   Optional[int] = None
 _kill_switch_at:      Optional[int] = None
+_reconciliation_drift_count: int = 0
+_reconciliation_drift_reason: Optional[str] = None
 
 _loop_task:     Optional[asyncio.Task] = None
 _loop_running:  bool = False
@@ -262,6 +270,54 @@ def reset_counters() -> None:
     _failed_order_count = 0
 
 
+def _normalize_open_order_ids(order_ids: Iterable[str]) -> set[str]:
+    """Normalize order identifiers before reconciliation comparison."""
+    return {str(order_id).strip() for order_id in order_ids if str(order_id).strip()}
+
+
+async def on_reconciliation_check(
+    *,
+    local_open_order_ids: Iterable[str],
+    venue_open_order_ids: Iterable[str],
+    tolerance_cycles: int = 3,
+) -> bool:
+    """
+    Called by OMS/reconciliation code after comparing local and venue state.
+
+    Returns True when the states match or the mismatch is still inside tolerance.
+    Activates the kill switch only when the same class of drift persists for the
+    configured number of consecutive cycles.
+    """
+    global _reconciliation_drift_count, _reconciliation_drift_reason
+
+    local_ids = _normalize_open_order_ids(local_open_order_ids)
+    venue_ids = _normalize_open_order_ids(venue_open_order_ids)
+
+    missing_on_venue = sorted(local_ids - venue_ids)
+    unknown_on_venue = sorted(venue_ids - local_ids)
+
+    if not missing_on_venue and not unknown_on_venue:
+        _reconciliation_drift_count = 0
+        _reconciliation_drift_reason = None
+        return True
+
+    _reconciliation_drift_count += 1
+    _reconciliation_drift_reason = (
+        "Reconciliation drift detected: "
+        f"missing_on_venue={missing_on_venue}; unknown_on_venue={unknown_on_venue}"
+    )
+
+    if _reconciliation_drift_count >= tolerance_cycles and not _kill_switch_active:
+        await activate_kill_switch(
+            f"Persistent reconciliation drift after {_reconciliation_drift_count} cycles: "
+            f"missing_on_venue={missing_on_venue}; unknown_on_venue={unknown_on_venue}",
+            source="guardian_reconciliation",
+        )
+        return False
+
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Heartbeat monitor — auto-halt on heartbeat loss
 # ---------------------------------------------------------------------------
@@ -342,6 +398,9 @@ async def get_guardian_status() -> GuardianStatus:
         last_heartbeat_at=_last_heartbeat_at,
         heartbeat_healthy=heartbeat_ok,
         computed_at=int(time.time()),
+        reconciliation_drift_count=_reconciliation_drift_count,
+        reconciliation_drift_active=_reconciliation_drift_count > 0,
+        reconciliation_drift_reason=_reconciliation_drift_reason,
     )
 
 
