@@ -12,6 +12,8 @@ Inputs:
   - API error counter (incremented by execution engine)
   - Failed order counter (incremented by execution engine)
   - Reconciliation drift (OMS/open-order state mismatch vs execution venue)
+  - Strategy-level kill switches
+  - Venue-level kill switches
 
 Outputs:
   - Kill switch activation (writes to Redis: KILL_SWITCH:active = 1)
@@ -19,9 +21,7 @@ Outputs:
   - WebSocket guardian_alert events
   - Engine auto-halt on heartbeat loss
   - Engine auto-halt on persistent reconciliation drift
-
-Protected files: backend/logic/risk.py used for threshold defaults only
-  (read via config loader, not imported directly here).
+  - Scoped strategy/venue execution blocks
 
 RULE 5: Risk always overrides strategy.
 RULE 8: Guardian is not cosmetic.
@@ -41,66 +41,61 @@ from backend.config.loader import get_redis_config, get_risk_config
 log = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Guardian state types
-# ---------------------------------------------------------------------------
-
 @dataclass
 class GuardianThresholds:
-    max_drawdown_pct:    float
-    max_daily_loss_pct:  float
-    max_api_errors:      int
-    max_failed_orders:   int
-    heartbeat_timeout_s: int = 90  # seconds before engine is auto-halted
+    max_drawdown_pct: float
+    max_daily_loss_pct: float
+    max_api_errors: int
+    max_failed_orders: int
+    heartbeat_timeout_s: int = 90
     reconciliation_drift_tolerance_cycles: int = 3
 
 
 @dataclass
 class GuardianStatus:
-    kill_switch_active:   bool
-    triggered:            bool
-    kill_switch_reason:   Optional[str]
-    trigger_reason:       Optional[str]
-    drawdown_pct:         float
-    daily_loss_pct:       float
-    api_error_count:      int
-    failed_order_count:   int
-    thresholds:           GuardianThresholds
-    market_data:          Optional[dict]
-    last_heartbeat_at:    Optional[int]
-    heartbeat_healthy:    bool
-    computed_at:          int
+    kill_switch_active: bool
+    triggered: bool
+    kill_switch_reason: Optional[str]
+    trigger_reason: Optional[str]
+    drawdown_pct: float
+    daily_loss_pct: float
+    api_error_count: int
+    failed_order_count: int
+    thresholds: GuardianThresholds
+    market_data: Optional[dict]
+    last_heartbeat_at: Optional[int]
+    heartbeat_healthy: bool
+    computed_at: int
     reconciliation_drift_count: int = 0
     reconciliation_drift_active: bool = False
     reconciliation_drift_reason: Optional[str] = None
+    strategy_kill_switches: tuple[str, ...] = ()
+    venue_kill_switches: tuple[str, ...] = ()
 
 
-# ---------------------------------------------------------------------------
-# In-process state
-# ---------------------------------------------------------------------------
+class TradingScopeHaltedError(Exception):
+    """Raised when a scoped strategy or venue kill switch blocks execution."""
 
-_kill_switch_active:  bool = False
-_kill_switch_reason:  Optional[str] = None
-_triggered:           bool = False
-_trigger_reason:      Optional[str] = None
-_drawdown_pct:        float = 0.0
-_daily_loss_pct:      float = 0.0
-_api_error_count:     int = 0
-_failed_order_count:  int = 0
-_last_heartbeat_at:   Optional[int] = None
-_kill_switch_at:      Optional[int] = None
+
+_kill_switch_active: bool = False
+_kill_switch_reason: Optional[str] = None
+_triggered: bool = False
+_trigger_reason: Optional[str] = None
+_drawdown_pct: float = 0.0
+_daily_loss_pct: float = 0.0
+_api_error_count: int = 0
+_failed_order_count: int = 0
+_last_heartbeat_at: Optional[int] = None
+_kill_switch_at: Optional[int] = None
 _reconciliation_drift_count: int = 0
 _reconciliation_drift_reason: Optional[str] = None
+_strategy_kill_switches: set[str] = set()
+_venue_kill_switches: set[str] = set()
 
-_loop_task:     Optional[asyncio.Task] = None
-_loop_running:  bool = False
-
-
-# ---------------------------------------------------------------------------
-# Redis helpers
-# ---------------------------------------------------------------------------
-
+_loop_task: Optional[asyncio.Task] = None
+_loop_running: bool = False
 _redis_client = None
+
 
 async def _get_redis():
     global _redis_client
@@ -124,7 +119,6 @@ async def _set_kill_switch_redis(active: bool, reason: str) -> None:
             await r.set("KILL_SWITCH:ts", str(int(time.time())))
         except Exception as exc:
             log.error("Failed to write kill switch to Redis: %s", exc)
-            # Do NOT swallow — this is a critical write
             raise
 
 
@@ -132,75 +126,35 @@ async def _publish_guardian_event(event_type: str, reason: str, **extra) -> None
     r = await _get_redis()
     if r:
         try:
-            payload = {
-                "type":   event_type,
-                "reason": reason,
-                "ts":     int(time.time()),
-                **extra,
-            }
+            payload = {"type": event_type, "reason": reason, "ts": int(time.time()), **extra}
             await r.publish("guardian_updates", json.dumps(payload))
         except Exception as exc:
             log.warning("Failed to publish guardian event: %s", exc)
 
 
-# ---------------------------------------------------------------------------
-# Kill switch operations (runtime state change — not cosmetic)
-# ---------------------------------------------------------------------------
-
 async def activate_kill_switch(reason: str, source: str = "guardian") -> None:
-    """
-    Activate the kill switch.
-    Writes to Redis (authoritative), updates in-process state,
-    publishes WebSocket event, appends audit log entry.
-    """
     global _kill_switch_active, _kill_switch_reason, _triggered, _trigger_reason, _kill_switch_at
-
     log.warning("[guardian] KILL SWITCH ACTIVATED: %s (source=%s)", reason, source)
-
     _kill_switch_active = True
     _kill_switch_reason = reason
-    _triggered          = True
-    _trigger_reason     = reason
-    _kill_switch_at     = int(time.time())
-
-    # Write to Redis — this is read by execution engine before every order
+    _triggered = True
+    _trigger_reason = reason
+    _kill_switch_at = int(time.time())
     await _set_kill_switch_redis(True, reason)
-
-    # Publish WebSocket event
-    await _publish_guardian_event(
-        "kill_switch",
-        reason=reason,
-        active=True,
-        source=source,
-    )
-
-    # Publish guardian alert
-    await _publish_guardian_event(
-        "guardian_alert",
-        reason=f"Kill switch activated: {reason}",
-        source=source,
-    )
+    await _publish_guardian_event("kill_switch", reason=reason, active=True, source=source)
+    await _publish_guardian_event("guardian_alert", reason=f"Kill switch activated: {reason}", source=source)
 
 
 async def deactivate_kill_switch(reason: str = "Manual operator reset") -> None:
-    """Deactivate the kill switch. Operator-controlled only."""
     global _kill_switch_active, _kill_switch_reason
-
     log.info("[guardian] Kill switch deactivated: %s", reason)
-
     _kill_switch_active = False
     _kill_switch_reason = None
-
     await _set_kill_switch_redis(False, "")
     await _publish_guardian_event("kill_switch", reason=reason, active=False)
 
 
 async def is_kill_switch_active() -> bool:
-    """
-    Check kill switch state. Redis is authoritative.
-    Falls back to in-process state if Redis is unreachable.
-    Fail safe: returns True (halted) on error.
-    """
     try:
         r = await _get_redis()
         if r:
@@ -208,15 +162,57 @@ async def is_kill_switch_active() -> bool:
             return val == "1"
     except Exception:
         pass
-    return _kill_switch_active  # fallback to in-process
+    return _kill_switch_active
 
 
-# ---------------------------------------------------------------------------
-# Input event handlers — called by execution engine and other services
-# ---------------------------------------------------------------------------
+def _normalize_scope_id(scope_id: str) -> str:
+    normalized = str(scope_id).strip().lower()
+    if not normalized:
+        raise ValueError("scope id must be non-empty")
+    return normalized
+
+
+async def kill_strategy(strategy_id: str, reason: str = "operator strategy halt") -> None:
+    normalized = _normalize_scope_id(strategy_id)
+    _strategy_kill_switches.add(normalized)
+    await _publish_guardian_event("strategy_kill_switch", reason=reason, strategy_id=normalized, active=True)
+
+
+async def revive_strategy(strategy_id: str, reason: str = "operator strategy reset") -> None:
+    normalized = _normalize_scope_id(strategy_id)
+    _strategy_kill_switches.discard(normalized)
+    await _publish_guardian_event("strategy_kill_switch", reason=reason, strategy_id=normalized, active=False)
+
+
+async def kill_venue(venue_id: str, reason: str = "operator venue halt") -> None:
+    normalized = _normalize_scope_id(venue_id)
+    _venue_kill_switches.add(normalized)
+    await _publish_guardian_event("venue_kill_switch", reason=reason, venue_id=normalized, active=True)
+
+
+async def revive_venue(venue_id: str, reason: str = "operator venue reset") -> None:
+    normalized = _normalize_scope_id(venue_id)
+    _venue_kill_switches.discard(normalized)
+    await _publish_guardian_event("venue_kill_switch", reason=reason, venue_id=normalized, active=False)
+
+
+def is_strategy_killed(strategy_id: str) -> bool:
+    return _normalize_scope_id(strategy_id) in _strategy_kill_switches
+
+
+def is_venue_killed(venue_id: str) -> bool:
+    return _normalize_scope_id(venue_id) in _venue_kill_switches
+
+
+def assert_scope_allowed(strategy_id: str | None = None, venue_id: str | None = None) -> bool:
+    if strategy_id and is_strategy_killed(strategy_id):
+        raise TradingScopeHaltedError(f"Strategy '{_normalize_scope_id(strategy_id)}' is kill-switched.")
+    if venue_id and is_venue_killed(venue_id):
+        raise TradingScopeHaltedError(f"Venue '{_normalize_scope_id(venue_id)}' is kill-switched.")
+    return True
+
 
 async def on_api_error() -> None:
-    """Called by execution engine on each API transport failure."""
     global _api_error_count
     _api_error_count += 1
     cfg = get_risk_config()
@@ -228,7 +224,6 @@ async def on_api_error() -> None:
 
 
 async def on_failed_order() -> None:
-    """Called by execution engine on each order rejection/failure."""
     global _failed_order_count
     _failed_order_count += 1
     cfg = get_risk_config()
@@ -240,7 +235,6 @@ async def on_failed_order() -> None:
 
 
 async def update_drawdown(drawdown_pct: float) -> None:
-    """Called by reconciliation/P&L service on each balance update."""
     global _drawdown_pct
     _drawdown_pct = drawdown_pct
     cfg = get_risk_config()
@@ -252,26 +246,22 @@ async def update_drawdown(drawdown_pct: float) -> None:
 
 
 async def update_daily_loss(daily_loss_pct: float) -> None:
-    """Called by earnings ledger on each P&L update."""
     global _daily_loss_pct
     _daily_loss_pct = daily_loss_pct
 
 
 def record_heartbeat() -> None:
-    """Called by the execution engine on each successful operation."""
     global _last_heartbeat_at
     _last_heartbeat_at = int(time.time())
 
 
 def reset_counters() -> None:
-    """Reset error counters after successful recovery."""
     global _api_error_count, _failed_order_count
-    _api_error_count    = 0
+    _api_error_count = 0
     _failed_order_count = 0
 
 
 def _normalize_open_order_ids(order_ids: Iterable[str]) -> set[str]:
-    """Normalize order identifiers before reconciliation comparison."""
     return {str(order_id).strip() for order_id in order_ids if str(order_id).strip()}
 
 
@@ -281,32 +271,20 @@ async def on_reconciliation_check(
     venue_open_order_ids: Iterable[str],
     tolerance_cycles: int = 3,
 ) -> bool:
-    """
-    Called by OMS/reconciliation code after comparing local and venue state.
-
-    Returns True when the states match or the mismatch is still inside tolerance.
-    Activates the kill switch only when the same class of drift persists for the
-    configured number of consecutive cycles.
-    """
     global _reconciliation_drift_count, _reconciliation_drift_reason
-
     local_ids = _normalize_open_order_ids(local_open_order_ids)
     venue_ids = _normalize_open_order_ids(venue_open_order_ids)
-
     missing_on_venue = sorted(local_ids - venue_ids)
     unknown_on_venue = sorted(venue_ids - local_ids)
-
     if not missing_on_venue and not unknown_on_venue:
         _reconciliation_drift_count = 0
         _reconciliation_drift_reason = None
         return True
-
     _reconciliation_drift_count += 1
     _reconciliation_drift_reason = (
         "Reconciliation drift detected: "
         f"missing_on_venue={missing_on_venue}; unknown_on_venue={unknown_on_venue}"
     )
-
     if _reconciliation_drift_count >= tolerance_cycles and not _kill_switch_active:
         await activate_kill_switch(
             f"Persistent reconciliation drift after {_reconciliation_drift_count} cycles: "
@@ -314,22 +292,12 @@ async def on_reconciliation_check(
             source="guardian_reconciliation",
         )
         return False
-
     return True
 
 
-# ---------------------------------------------------------------------------
-# Heartbeat monitor — auto-halt on heartbeat loss
-# ---------------------------------------------------------------------------
-
 async def _check_heartbeat(thresholds: GuardianThresholds) -> None:
-    """
-    If the execution engine hasn't sent a heartbeat within the timeout,
-    activate the kill switch automatically.
-    This prevents zombie/silent execution state.
-    """
     if _last_heartbeat_at is None:
-        return  # No heartbeat yet — engine may not have started
+        return
     age = int(time.time()) - _last_heartbeat_at
     if age > thresholds.heartbeat_timeout_s and not _kill_switch_active:
         await activate_kill_switch(
@@ -338,44 +306,35 @@ async def _check_heartbeat(thresholds: GuardianThresholds) -> None:
         )
 
 
-# ---------------------------------------------------------------------------
-# Exchange health monitor
-# ---------------------------------------------------------------------------
-
 async def _check_exchange_health() -> dict:
-    """Check exchange connectivity and return market data status dict."""
     try:
         from backend.services.market_data.service import get_exchange_status
         status = await get_exchange_status()
         return {
-            "connected":         status.connected,
-            "market_data_mode":  status.market_data_mode,
-            "connection_state":  status.connection_state,
-            "fallback_active":   False,
-            "stale":             status.stale,
-            "source":            status.source,
+            "connected": status.connected,
+            "market_data_mode": status.market_data_mode,
+            "connection_state": status.connection_state,
+            "fallback_active": False,
+            "stale": status.stale,
+            "source": status.source,
         }
     except Exception as exc:
         return {
-            "connected":         False,
-            "market_data_mode":  "unavailable",
-            "connection_state":  "offline",
-            "fallback_active":   False,
-            "stale":             True,
-            "source":            None,
-            "error":             str(exc),
+            "connected": False,
+            "market_data_mode": "unavailable",
+            "connection_state": "offline",
+            "fallback_active": False,
+            "stale": True,
+            "source": None,
+            "error": str(exc),
         }
 
-
-# ---------------------------------------------------------------------------
-# Status accessor
-# ---------------------------------------------------------------------------
 
 async def get_guardian_status() -> GuardianStatus:
     cfg = get_risk_config()
     thresholds = GuardianThresholds(
         max_drawdown_pct=cfg.max_drawdown_pct,
-        max_daily_loss_pct=10.0,  # TODO: expose in RiskConfig
+        max_daily_loss_pct=10.0,
         max_api_errors=cfg.max_api_errors,
         max_failed_orders=cfg.max_failed_orders,
     )
@@ -401,12 +360,10 @@ async def get_guardian_status() -> GuardianStatus:
         reconciliation_drift_count=_reconciliation_drift_count,
         reconciliation_drift_active=_reconciliation_drift_count > 0,
         reconciliation_drift_reason=_reconciliation_drift_reason,
+        strategy_kill_switches=tuple(sorted(_strategy_kill_switches)),
+        venue_kill_switches=tuple(sorted(_venue_kill_switches)),
     )
 
-
-# ---------------------------------------------------------------------------
-# Guardian loop
-# ---------------------------------------------------------------------------
 
 _GUARDIAN_INTERVAL_SECONDS = 10
 
@@ -414,7 +371,6 @@ async def _guardian_loop() -> None:
     global _loop_running
     _loop_running = True
     log.info("[guardian] Loop started.")
-
     while _loop_running:
         try:
             cfg = get_risk_config()
@@ -427,9 +383,7 @@ async def _guardian_loop() -> None:
             await _check_heartbeat(thresholds)
         except Exception as exc:
             log.error("[guardian] Loop error: %s", exc)
-
         await asyncio.sleep(_GUARDIAN_INTERVAL_SECONDS)
-
     _loop_running = False
     log.info("[guardian] Loop stopped.")
 
