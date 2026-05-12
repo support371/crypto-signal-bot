@@ -1,8 +1,5 @@
 import { getStoredBackendApiKey } from '@/lib/backendAuth';
-
-const env = import.meta.env as Record<string, string | undefined>;
-
-const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
+import { getConfiguredBackendUrl, trimTrailingSlash } from '@/lib/env';
 
 async function readErrorMessage(response: Response) {
   const fallback = `Backend request failed (${response.status})`;
@@ -24,14 +21,6 @@ async function readErrorMessage(response: Response) {
 }
 
 export function getBackendBaseUrl() {
-  const explicitUrl = env.VITE_BACKEND_URL || env.VITE_BACKEND_BASE_URL;
-  if (!explicitUrl || !explicitUrl.trim()) {
-    throw new Error(
-      'VITE_BACKEND_URL is not set. ' +
-      'Add it to your Vercel environment variables or .env file, then redeploy.'
-    );
-  }
-  return trimTrailingSlash(explicitUrl);
   return getConfiguredBackendUrl();
 }
 
