@@ -51,6 +51,8 @@ class ExecutionIntent(BaseModel):
     fill_price: Optional[float] = None
     fill_quantity: Optional[float] = None
     mode: str = "paper"
+    strategy_id: Optional[str] = None
+    venue_id: Optional[str] = None
 
 
 class IntentRequest(BaseModel):
@@ -60,6 +62,8 @@ class IntentRequest(BaseModel):
     quantity: float = 0.001
     price: Optional[float] = None
     time_in_force: TimeInForce = TimeInForce.GTC
+    strategy_id: Optional[str] = None
+    venue_id: Optional[str] = None
 
 
 class IntentResponse(BaseModel):
