@@ -73,6 +73,7 @@ from backend.models.execution_intent import (
     Side,
 )
 from backend.models_core import Features
+from backend.services.guardian_bot.service import TradingScopeHaltedError, assert_scope_allowed
 
 # ---------------------------------------------------------------------------
 # Load .env
@@ -134,9 +135,6 @@ async def lifespan(application):
 
 app = FastAPI(title="Crypto Signal Bot — Trading Backend", version="2.2.0", lifespan=lifespan)
 
-# ---------------------------------------------------------------------------
-# CORS
-# ---------------------------------------------------------------------------
 ALLOWED_ORIGINS = os.getenv(
     "CORS_ORIGINS",
     ",".join(RUNTIME_CONFIG.server.cors_origins),
@@ -150,36 +148,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------------------------------------------------------------------------
-# Auth
-# ---------------------------------------------------------------------------
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
 def require_auth(api_key: Optional[str] = Security(_api_key_header)):
-    """Require API key on POST endpoints when BACKEND_API_KEY is configured."""
     if not BACKEND_API_KEY:
-        # No key configured — open (development mode)
         return
     if api_key != BACKEND_API_KEY:
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
-# ---------------------------------------------------------------------------
-# Rate limiting (simple in-memory sliding window)
-# ---------------------------------------------------------------------------
 _rate_limit_window_seconds = 60
 _rate_limit_max_requests = RUNTIME_CONFIG.rate_limit_rpm
 _rate_limit_store: Dict[str, List[float]] = defaultdict(list)
 
 
 def rate_limit(request: Request):
-    """Allow up to RATE_LIMIT_RPM requests per minute per IP on GET endpoints."""
     client_ip = request.client.host if request.client else "unknown"
     now = time.time()
     window_start = now - _rate_limit_window_seconds
     timestamps = _rate_limit_store[client_ip]
-    # Prune old entries
     _rate_limit_store[client_ip] = [t for t in timestamps if t > window_start]
     if len(_rate_limit_store[client_ip]) >= _rate_limit_max_requests:
         raise HTTPException(
@@ -189,16 +177,10 @@ def rate_limit(request: Request):
     _rate_limit_store[client_ip].append(now)
 
 
-# ---------------------------------------------------------------------------
-# Shared state
-# ---------------------------------------------------------------------------
 paper_portfolio = PaperPortfolio(
     balances={"USDT": RUNTIME_CONFIG.paper.starting_balance_usdt}
 )
 
-# Exchange adapter — resolved once at startup based on env config.
-# PaperAdapter is always the default; BinanceCCXTAdapter only when TRADING_MODE=live
-# and credentials + ccxt are present.
 exchange_adapter: ExchangeAdapter = build_adapter(
     trading_mode=TRADING_MODE,
     network=NETWORK,
@@ -223,15 +205,11 @@ ws_clients: Set[WebSocket] = set()
 _app_event_loop: Optional[asyncio.AbstractEventLoop] = None
 market_data_service: Optional[BasePublicMarketDataService] = None
 
-# Latest signal cache (updated on every /market-state call or live feed update)
 _latest_signal_by_symbol: Dict[str, Dict[str, Any]] = {}
 _latest_signal_ts_by_symbol: Dict[str, float] = {}
 _latest_signal_symbol: Optional[str] = None
 _latest_signal_ts: Optional[float] = None
 
-# ---------------------------------------------------------------------------
-# Guardian state
-# ---------------------------------------------------------------------------
 _guardian_triggered = False
 _guardian_trigger_reason: Optional[str] = None
 _guardian_trigger_ts: Optional[float] = None
@@ -244,18 +222,11 @@ _GUARDIAN_MAX_DRAWDOWN_PCT = RUNTIME_CONFIG.guardian.max_drawdown_pct
 
 
 def _guardian_evaluate() -> Optional[str]:
-    """Evaluate guardian conditions. Returns trigger reason or None."""
     global _guardian_drawdown_pct
-
-    # API errors threshold
     if api_error_count >= _GUARDIAN_MAX_API_ERRORS:
         return f"API error threshold reached ({api_error_count} errors)"
-
-    # Failed order threshold
     if failed_order_count >= _GUARDIAN_MAX_FAILED_ORDERS:
         return f"Failed order threshold reached ({failed_order_count} failures)"
-
-    # Drawdown check
     current_usdt = paper_portfolio.get_balance("USDT")
     if _guardian_starting_nav > 0:
         _guardian_drawdown_pct = max(
@@ -266,18 +237,14 @@ def _guardian_evaluate() -> Optional[str]:
                 f"Drawdown limit breached ({_guardian_drawdown_pct*100:.1f}% >= "
                 f"{_GUARDIAN_MAX_DRAWDOWN_PCT*100:.1f}%)"
             )
-
     return None
 
 
 async def _guardian_check_and_broadcast():
-    """Check guardian conditions; activate kill switch and broadcast if triggered."""
     global kill_switch_active, kill_switch_reason
     global _guardian_triggered, _guardian_trigger_reason, _guardian_trigger_ts
-
     if kill_switch_active:
-        return  # Already halted
-
+        return
     reason = _guardian_evaluate()
     if reason:
         kill_switch_active = True
@@ -296,9 +263,6 @@ async def _guardian_check_and_broadcast():
         )
 
 
-# ---------------------------------------------------------------------------
-# Prometheus-style counters (lightweight, no dependency needed at import time)
-# ---------------------------------------------------------------------------
 try:
     from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, generate_latest
 
@@ -311,10 +275,6 @@ try:
     _prometheus_available = True
 except ImportError:
     _prometheus_available = False
-
-# ---------------------------------------------------------------------------
-# Pydantic request/response models
-# ---------------------------------------------------------------------------
 
 
 class FeaturesIn(BaseModel):
@@ -374,11 +334,6 @@ class KillSwitchRequest(BaseModel):
     reason: Optional[str] = None
 
 
-# ---------------------------------------------------------------------------
-# Exception handlers
-# ---------------------------------------------------------------------------
-
-
 class ExchangeAPIError(Exception):
     def __init__(self, message: str, status_code: int = 502):
         self.message = message
@@ -423,11 +378,6 @@ async def general_error_handler(request, exc: Exception):
     )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 async def broadcast(message: Dict[str, Any]):
     dead: List[WebSocket] = []
     for ws in ws_clients:
@@ -442,26 +392,21 @@ async def broadcast(message: Dict[str, Any]):
 def _schedule_background(
     async_fn: Callable[..., Awaitable[Any]], *args: Any, **kwargs: Any
 ) -> bool:
-    """Run async work from either an async route or a sync threadpool route."""
     try:
         anyio.from_thread.run(async_fn, *args, **kwargs)
         return True
     except RuntimeError:
         pass
-
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
         loop = None
-
     if loop and loop.is_running():
         loop.create_task(async_fn(*args, **kwargs))
         return True
-
     if _app_event_loop and _app_event_loop.is_running():
         asyncio.run_coroutine_threadsafe(async_fn(*args, **kwargs), _app_event_loop)
         return True
-
     return False
 
 
@@ -560,7 +505,6 @@ def _derive_market_features(
     change_ratio = change24h / 100.0
     hourly_velocity = change_ratio / 24.0
     liquidity_ratio = (volume24h / market_cap) if market_cap > 0 else 0.0
-
     spread_floor = max(0.0005, spread_stress_threshold * 0.35)
     spread_ceiling = max(spread_floor, spread_stress_threshold * 2.5)
     liquidity_stress = max(0.0, 0.03 - liquidity_ratio) * 0.12
@@ -569,15 +513,12 @@ def _derive_market_features(
         spread_floor,
         max(spread_ceiling, 0.08),
     )
-
     imbalance = _clamp(change24h / 8.0, -1.0, 1.0)
     depth_decay_internal = _clamp((liquidity_ratio - 0.05) * 4.0, -1.0, 1.0)
-
     sensitivity = max(0.5, volatility_sensitivity)
     vol_threshold = max(0.03, 0.05 * sensitivity)
     vol_spike = abs(change_ratio) >= vol_threshold
     short_reversal = abs(change24h) <= 1.5 and liquidity_ratio >= 0.02
-
     features = Features(
         spread_pct=spread_pct,
         imbalance=imbalance,
@@ -586,7 +527,6 @@ def _derive_market_features(
         vol_spike=vol_spike,
         short_reversal=short_reversal,
     )
-
     microstructure = {
         "spreadPercentage": round(spread_pct, 6),
         "orderBookImbalance": round(imbalance, 4),
@@ -598,7 +538,6 @@ def _derive_market_features(
 
 
 def _get_symbol_volatility(symbol: str) -> float:
-    """Return recent volatility for a symbol from live feed cache, or a default."""
     cached = _latest_signal_by_symbol.get(symbol)
     if cached and "microstructure" in cached:
         vol = cached["microstructure"].get("volSpike")
@@ -635,21 +574,14 @@ def _build_market_state_result(
         spread_stress_threshold=spread_stress_threshold,
         volatility_sensitivity=volatility_sensitivity,
     )
-
     signal = build_signal(features)
     raw_risk_score = compute_risk_score(features)
     tolerance_adjustment = (risk_tolerance - 0.5) * 20.0
     effective_risk_score = _clamp(raw_risk_score - tolerance_adjustment, 0.0, 100.0)
-    decision = risk_gate(
-        signal,
-        effective_risk_score,
-        base_fraction=position_size_fraction,
-    )
-
+    decision = risk_gate(signal, effective_risk_score, base_fraction=position_size_fraction)
     reasoning = decision.reason
     if kill_switch_active:
         reasoning = f"{reasoning}. Trading halted: {kill_switch_reason or 'kill switch active'}"
-
     return {
         "symbol": symbol.upper(),
         "price": price,
@@ -678,7 +610,6 @@ def _build_market_state_result(
 
 async def _handle_market_data_update(snapshot: Dict[str, Any]) -> None:
     global _latest_signal_symbol, _latest_signal_ts
-
     result = _build_market_state_result(
         symbol=snapshot["symbol"],
         price=float(snapshot["price"]),
@@ -693,7 +624,6 @@ async def _handle_market_data_update(snapshot: Dict[str, Any]) -> None:
     _latest_signal_ts_by_symbol[symbol] = timestamp
     _latest_signal_symbol = symbol
     _latest_signal_ts = timestamp
-
     await broadcast(
         {
             "type": "market_update",
@@ -715,7 +645,6 @@ async def _handle_market_data_status_change(status: Dict[str, Any]) -> None:
 
 def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
     global failed_order_count
-
     intent = ExecutionIntent(
         symbol=req.symbol.upper(),
         side=req.side,
@@ -724,9 +653,29 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
         price=req.price,
         time_in_force=req.time_in_force,
         mode=mode,
+        strategy_id=req.strategy_id,
+        venue_id=req.venue_id or EXCHANGE,
     )
 
-    # Build risk context from current portfolio state
+    try:
+        assert_scope_allowed(strategy_id=intent.strategy_id, venue_id=intent.venue_id)
+    except TradingScopeHaltedError as exc:
+        intent.status = IntentStatus.RISK_REJECTED
+        intent.notes = str(exc)
+        if _prometheus_available:
+            risk_blocks_total.inc()
+        append_risk_event(
+            {
+                "intent_id": intent.id,
+                "reason": intent.notes,
+                "strategy_id": intent.strategy_id,
+                "venue_id": intent.venue_id,
+                "source": "guardian_scope",
+            }
+        )
+        append_intent(intent.model_dump())
+        return IntentResponse(id=intent.id, status=intent.status.value, notes=intent.notes)
+
     current_price = req.price or _synthetic_price(intent.symbol)
     account_balance = paper_portfolio.get_balance("USDT")
     position_value = sum(
@@ -742,6 +691,7 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
         quantity=intent.quantity,
         price=current_price,
         current_position_value=position_value,
+        current_total_exposure=position_value,
         daily_pnl=daily_pnl,
         account_balance=account_balance,
         volatility_24h=_get_symbol_volatility(intent.symbol),
@@ -761,19 +711,13 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
             }
         )
         append_intent(intent.model_dump())
-        return IntentResponse(
-            id=intent.id,
-            status=intent.status.value,
-            notes=intent.notes,
-        )
+        return IntentResponse(id=intent.id, status=intent.status.value, notes=intent.notes)
 
-    # Apply size reduction from risk engine
     if engine_result.size_multiplier < 1.0:
         intent.quantity = round(intent.quantity * engine_result.size_multiplier, 8)
 
     intent.status = IntentStatus.RISK_APPROVED
 
-    # Dispatch to exchange adapter (paper by default; CCXT testnet/mainnet if configured)
     try:
         result = exchange_adapter.place_order(
             symbol=intent.symbol,
@@ -827,17 +771,7 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
         },
     )
     _schedule_background(_guardian_check_and_broadcast)
-
-    return IntentResponse(
-        id=intent.id,
-        status=intent.status.value,
-        notes=intent.notes,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Endpoints — GET (rate-limited)
-# ---------------------------------------------------------------------------
+    return IntentResponse(id=intent.id, status=intent.status.value, notes=intent.notes)
 
 
 @app.get("/health", dependencies=[Depends(rate_limit)])
@@ -888,10 +822,7 @@ def get_config():
 
 @app.get("/balance", dependencies=[Depends(rate_limit)])
 def get_balance():
-    return {
-        "balances": paper_portfolio.get_all_balances(),
-        "positions": paper_portfolio.get_positions(),
-    }
+    return {"balances": paper_portfolio.get_all_balances(), "positions": paper_portfolio.get_positions()}
 
 
 @app.get("/positions", dependencies=[Depends(rate_limit)])
@@ -988,7 +919,6 @@ def get_price(symbol: str = Query("BTCUSDT")):
             "exchange": exchange_adapter.exchange,
             "market_data_mode": _market_data_mode_label(),
         }
-
     price = _synthetic_price(normalized_symbol)
     return {
         "symbol": normalized_symbol,
@@ -1011,10 +941,7 @@ def get_audit_trail():
 @app.get("/metrics")
 def get_metrics():
     if _prometheus_available:
-        return JSONResponse(
-            content=generate_latest().decode("utf-8"),
-            media_type=CONTENT_TYPE_LATEST,
-        )
+        return JSONResponse(content=generate_latest().decode("utf-8"), media_type=CONTENT_TYPE_LATEST)
     return {"message": "prometheus_client not installed"}
 
 
@@ -1024,44 +951,15 @@ def get_signal_latest(symbol: Optional[str] = Query(None)):
         normalized_symbol = symbol.upper()
         signal = _latest_signal_by_symbol.get(normalized_symbol)
         if signal is None:
-            return {
-                "available": False,
-                "message": f"No signal cached yet for {normalized_symbol}.",
-                "symbol": normalized_symbol,
-            }
-        return {
-            "available": True,
-            "timestamp": _latest_signal_ts_by_symbol.get(normalized_symbol),
-            **signal,
-        }
-
+            return {"available": False, "message": f"No signal cached yet for {normalized_symbol}.", "symbol": normalized_symbol}
+        return {"available": True, "timestamp": _latest_signal_ts_by_symbol.get(normalized_symbol), **signal}
     if not _latest_signal_by_symbol:
-        return {
-            "available": False,
-            "message": "No signal computed yet. POST to /market-state first.",
-        }
-
-    if len(_latest_signal_by_symbol) > 1 and _latest_signal_symbol is None:
-        return {
-            "available": False,
-            "message": "Multiple symbols available; request /signal/latest?symbol=...",
-            "symbols": sorted(_latest_signal_by_symbol.keys()),
-        }
-
+        return {"available": False, "message": "No signal computed yet. POST to /market-state first."}
     if len(_latest_signal_by_symbol) > 1:
-        return {
-            "available": False,
-            "message": "Multiple symbols available; request /signal/latest?symbol=...",
-            "symbols": sorted(_latest_signal_by_symbol.keys()),
-        }
-
+        return {"available": False, "message": "Multiple symbols available; request /signal/latest?symbol=...", "symbols": sorted(_latest_signal_by_symbol.keys())}
     symbol_only = next(iter(_latest_signal_by_symbol.keys()))
     signal = _latest_signal_by_symbol[symbol_only]
-    return {
-        "available": True,
-        "timestamp": _latest_signal_ts_by_symbol.get(symbol_only),
-        **signal,
-    }
+    return {"available": True, "timestamp": _latest_signal_ts_by_symbol.get(symbol_only), **signal}
 
 
 @app.get("/guardian/status", dependencies=[Depends(rate_limit)])
@@ -1096,15 +994,9 @@ def get_exchange_status():
     }
 
 
-# ---------------------------------------------------------------------------
-# Endpoints — POST (authenticated)
-# ---------------------------------------------------------------------------
-
-
 @app.post("/market-state")
 def market_state(req: MarketStateRequest, _: None = Depends(require_auth)):
     global _latest_signal_symbol, _latest_signal_ts
-
     result = _build_market_state_result(
         symbol=req.symbol,
         price=req.price,
@@ -1117,14 +1009,12 @@ def market_state(req: MarketStateRequest, _: None = Depends(require_auth)):
         position_size_fraction=req.positionSizeFraction,
         market_data_source="manual",
     )
-
     normalized_symbol = req.symbol.upper()
     timestamp = time.time()
     _latest_signal_by_symbol[normalized_symbol] = result
     _latest_signal_ts_by_symbol[normalized_symbol] = timestamp
     _latest_signal_symbol = normalized_symbol
     _latest_signal_ts = timestamp
-
     return result
 
 
@@ -1144,7 +1034,6 @@ def intent_paper(req: IntentRequest, _: None = Depends(require_auth)):
 def kill_switch(req: KillSwitchRequest, _: None = Depends(require_auth)):
     global kill_switch_active, kill_switch_reason
     global _guardian_triggered, _guardian_trigger_reason, _guardian_trigger_ts
-
     kill_switch_active = req.activate
     if req.activate:
         kill_switch_reason = req.reason or "Manual activation"
@@ -1157,72 +1046,35 @@ def kill_switch(req: KillSwitchRequest, _: None = Depends(require_auth)):
         _guardian_trigger_reason = None
         _guardian_trigger_ts = None
         logger.info("Kill switch deactivated")
-
-    _schedule_background(
-        broadcast,
-        {
-            "type": "kill_switch",
-            "active": kill_switch_active,
-            "reason": kill_switch_reason,
-        },
-    )
-
-    return {
-        "kill_switch_active": kill_switch_active,
-        "kill_switch_reason": kill_switch_reason,
-    }
+    _schedule_background(broadcast, {"type": "kill_switch", "active": kill_switch_active, "reason": kill_switch_reason})
+    return {"kill_switch_active": kill_switch_active, "kill_switch_reason": kill_switch_reason}
 
 
 @app.post("/withdraw")
 def withdraw(req: WithdrawRequest, _: None = Depends(require_auth)):
     balance = paper_portfolio.get_balance(req.asset)
     if balance < req.amount:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Insufficient {req.asset} balance: {balance:.2f} < {req.amount:.2f}",
-        )
+        raise HTTPException(status_code=400, detail=f"Insufficient {req.asset} balance: {balance:.2f} < {req.amount:.2f}")
     paper_portfolio.balances[req.asset] = balance - req.amount
-
-    withdrawal_data = {
-        "asset": req.asset,
-        "amount": req.amount,
-        "address": req.address,
-        "timestamp": time.time(),
-    }
+    withdrawal_data = {"asset": req.asset, "amount": req.amount, "address": req.address, "timestamp": time.time()}
     append_withdrawal(withdrawal_data)
     return {"status": "ok", "withdrawal": withdrawal_data}
 
 
-# ---------------------------------------------------------------------------
-# Endpoints — Earnings
-# ---------------------------------------------------------------------------
-
-
 @app.get("/earnings/summary", dependencies=[Depends(rate_limit)])
 def get_earnings_summary():
-    """Aggregate realized P&L summary for the paper portfolio."""
     return earnings_get_summary()
 
 
 @app.get("/earnings/history", dependencies=[Depends(rate_limit)])
-def get_earnings_history(
-    symbol: Optional[str] = Query(None),
-    limit: int = Query(100, ge=1, le=500),
-):
-    """Closed trade history with per-trade realized P&L, newest first."""
+def get_earnings_history(symbol: Optional[str] = Query(None), limit: int = Query(100, ge=1, le=500)):
     return {"trades": earnings_get_history(symbol=symbol, limit=limit)}
 
 
 @app.post("/earnings/reset")
 def reset_earnings_ledger(_: None = Depends(require_auth)):
-    """Reset the earnings ledger (paper mode utility, requires auth when key set)."""
     reset_earnings()
     return {"status": "ok", "message": "Earnings ledger cleared"}
-
-
-# ---------------------------------------------------------------------------
-# WebSocket
-# ---------------------------------------------------------------------------
 
 
 @app.websocket("/ws/updates")
@@ -1266,11 +1118,6 @@ async def websocket_updates(ws: WebSocket):
         logger.info("WebSocket client disconnected (%d remaining)", len(ws_clients))
 
 
-# ---------------------------------------------------------------------------
-# Legacy endpoints (preserved from v1)
-# ---------------------------------------------------------------------------
-
-
 @app.post("/analyze-features", response_model=AnalyzeResponse)
 def analyze_features(payload: FeaturesIn) -> AnalyzeResponse:
     feats = Features(
@@ -1284,7 +1131,6 @@ def analyze_features(payload: FeaturesIn) -> AnalyzeResponse:
     signal = build_signal(feats)
     risk_score = compute_risk_score(feats)
     decision = risk_gate(signal, risk_score)
-
     return AnalyzeResponse(
         signal={
             "direction": signal.direction,
@@ -1307,7 +1153,6 @@ def analyze_features(payload: FeaturesIn) -> AnalyzeResponse:
 @app.post("/simulate-session", response_model=SimulateResponse)
 def simulate_session_api(req: SimulateRequest) -> SimulateResponse:
     internal_steps: List[StepResult] = simulate_session(req.steps, req.start_price)
-
     steps_out: List[SimStepOut] = []
     for s in internal_steps:
         steps_out.append(
@@ -1330,5 +1175,4 @@ def simulate_session_api(req: SimulateRequest) -> SimulateResponse:
                 },
             )
         )
-
     return SimulateResponse(symbol=req.symbol, steps=steps_out)
