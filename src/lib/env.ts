@@ -15,7 +15,10 @@ export type FrontendEnvValidation = {
 export const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
 
 export function getConfiguredBackendUrl() {
-  const explicitUrl = env.VITE_BACKEND_URL || env.VITE_BACKEND_BASE_URL;
+  const explicitUrl =
+    env.VITE_BACKEND_URL ||
+    env.VITE_BACKEND_BASE_URL ||
+    env.VITE_CRYPTOCORE_API_BASE;
   return trimTrailingSlash(explicitUrl || LOCAL_BACKEND_URL);
 }
 
@@ -33,12 +36,12 @@ export function validateFrontendEnv(): FrontendEnvValidation {
   const missingRequired: string[] = [];
 
   if (isProductionBuild && isLocalBackend) {
-    missingRequired.push('VITE_BACKEND_URL');
-    warnings.push('VITE_BACKEND_URL is unset or points to localhost in a production build. Set it to the HTTPS backend origin.');
+    missingRequired.push('VITE_BACKEND_URL or VITE_CRYPTOCORE_API_BASE');
+    warnings.push('Backend URL is unset or points to localhost in a production build. Set VITE_BACKEND_URL or VITE_CRYPTOCORE_API_BASE to the HTTPS backend origin.');
   }
 
   if (isProductionBuild && backendUrl.startsWith('http://') && !isLocalBackend) {
-    warnings.push('VITE_BACKEND_URL uses plain HTTP in production. Use HTTPS before release.');
+    warnings.push('Backend URL uses plain HTTP in production. Use HTTPS before release.');
   }
 
   if (hasSupabaseUrl !== hasSupabaseKey) {
