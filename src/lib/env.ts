@@ -20,14 +20,18 @@ export function getConfiguredBackendUrl() {
 }
 
 export function getSupabasePublishableKey() {
-  return env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || '';
+  return env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+}
+
+export function getSupabaseUrl() {
+  return env.VITE_SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || '';
 }
 
 export function validateFrontendEnv(): FrontendEnvValidation {
   const backendUrl = getConfiguredBackendUrl();
   const isProductionBuild = env.PROD;
   const isLocalBackend = /^http:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i.test(backendUrl);
-  const hasSupabaseUrl = Boolean(env.VITE_SUPABASE_URL);
+  const hasSupabaseUrl = Boolean(getSupabaseUrl());
   const hasSupabaseKey = Boolean(getSupabasePublishableKey());
   const warnings: string[] = [];
   const missingRequired: string[] = [];
