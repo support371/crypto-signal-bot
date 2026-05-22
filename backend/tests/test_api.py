@@ -544,7 +544,7 @@ class TestRiskEngineIntegration:
         data = resp.json()
         assert "risk_engine" in data
         assert data["risk_engine"]["rules"] == [
-            "MaxPosition", "MaxDailyLoss", "Volatility", "Leverage", "Slippage"
+            "MaxPosition", "PortfolioExposure", "MaxDailyLoss", "Volatility", "Leverage", "Slippage"
         ]
         assert data["risk_engine"]["max_position_pct"] == 0.05
         assert data["risk_engine"]["max_leverage"] == 1.0

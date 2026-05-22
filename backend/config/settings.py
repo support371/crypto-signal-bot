@@ -159,7 +159,7 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
 
     database_url: str = Field(
-        ...,
+        default="sqlite:///./crypto_bot.db",
         description=(
             "PostgreSQL connection URL (production) or SQLite URL (staging). "
             "Example: postgresql+asyncpg://user:pass@host/dbname"
