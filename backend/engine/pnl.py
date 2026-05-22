@@ -26,6 +26,8 @@ from dataclasses import dataclass, field
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
+from backend.services.market_data.service import get_price
+
 log = logging.getLogger(__name__)
 
 PRECISION = Decimal("0.00000001")   # 8 decimal places (standard crypto)

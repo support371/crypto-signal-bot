@@ -217,7 +217,11 @@ class TestGuardianTrigger:
             await g.update_drawdown(6.5)
 
         assert g._kill_switch_active is True
-        mock_redis_write.assert_called_with(True, pytest.approx(mock_cfg.max_drawdown_pct, abs=10))
+        # The expected argument is now the reason string, not the threshold value.
+        # Check that it's called with True and some reason string.
+        args, _ = mock_redis_write.call_args
+        assert args[0] is True
+        assert "Drawdown" in args[1]
         g._kill_switch_active = False  # cleanup
 
 

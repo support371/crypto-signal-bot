@@ -29,6 +29,8 @@ import time
 from dataclasses import dataclass
 from typing import Optional
 
+from backend.config.loader import get_exchange_config
+
 log = logging.getLogger(__name__)
 
 _loop_task: Optional[asyncio.Task] = None

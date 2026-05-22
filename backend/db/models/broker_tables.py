@@ -15,14 +15,9 @@ one registry.
 """
 
 from __future__ import annotations
-import time
 from sqlalchemy import Boolean, Column, Float, Integer, BigInteger, String, Text, UniqueConstraint
 
-from backend.db.models import Base
-
-
-def unix_timestamp() -> int:
-    return int(time.time())
+from backend.db.models import Base, unix_timestamp
 
 
 class BrokerOrderRecord(Base):

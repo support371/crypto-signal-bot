@@ -14,10 +14,11 @@ def _patched_fastapi_init(self, *args, **kwargs):
 
     from backend.routes.compatibility import compatibility_router
     from backend.routes.integrations import integrations_router
+    from backend.routes.kill_switch import router as kill_switch_router
     from backend.routes.waitlist import waitlist_router
 
     existing_paths = {getattr(route, "path", None) for route in self.routes}
-    for router in (compatibility_router, integrations_router, waitlist_router):
+    for router in (compatibility_router, integrations_router, waitlist_router, kill_switch_router):
         router_paths = {getattr(route, "path", None) for route in router.routes}
         if not router_paths.issubset(existing_paths):
             self.include_router(router)

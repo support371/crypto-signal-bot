@@ -148,6 +148,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Phase 4 — Include public and compatibility routers
+from backend.routes.compatibility import compatibility_router
+from backend.routes.integrations import integrations_router
+from backend.routes.kill_switch import router as kill_switch_router
+from backend.routes.waitlist import waitlist_router
+
+# Track already registered paths to avoid duplicates
+_registered_paths = {getattr(route, "path", None) for route in app.routes}
+for _router in (compatibility_router, integrations_router, waitlist_router, kill_switch_router):
+    _router_paths = {getattr(route, "path", None) for route in _router.routes}
+    if not _router_paths.issubset(_registered_paths):
+        app.include_router(_router)
+        _registered_paths.update(_router_paths)
+
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
@@ -775,14 +789,23 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
 
 
 @app.get("/health", dependencies=[Depends(rate_limit)])
-def health():
+async def health():
+    from backend.services.guardian_bot.service import is_kill_switch_active as guardian_is_active
+    from backend.services.guardian_bot.service import get_guardian_status as guardian_get_status
+
+    current_kill_switch_active = kill_switch_active or await guardian_is_active()
+    current_kill_switch_reason = kill_switch_reason
+    if not current_kill_switch_reason and await guardian_is_active():
+        status = await guardian_get_status()
+        current_kill_switch_reason = status.kill_switch_reason
+
     market_data = _get_market_data_status()
     return {
-        "kill_switch_active": kill_switch_active,
-        "kill_switch_reason": kill_switch_reason,
+        "kill_switch_active": current_kill_switch_active,
+        "kill_switch_reason": current_kill_switch_reason,
         "api_error_count": api_error_count,
         "failed_order_count": failed_order_count,
-        "halted": kill_switch_active,
+        "halted": current_kill_switch_active,
         "mode": TRADING_MODE,
         "adapter": exchange_adapter.mode,
         "exchange": market_data["exchange"],
@@ -1047,6 +1070,8 @@ def kill_switch(req: KillSwitchRequest, _: None = Depends(require_auth)):
         _guardian_trigger_ts = None
         logger.info("Kill switch deactivated")
     _schedule_background(broadcast, {"type": "kill_switch", "active": kill_switch_active, "reason": kill_switch_reason})
+    if _app_event_loop and _app_event_loop.is_running():
+        _app_event_loop.create_task(broadcast({"type": "kill_switch", "active": kill_switch_active, "reason": kill_switch_reason}))
     return {"kill_switch_active": kill_switch_active, "kill_switch_reason": kill_switch_reason}
 
 
