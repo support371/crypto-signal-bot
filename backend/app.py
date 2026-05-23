@@ -126,6 +126,7 @@ async def lifespan(application):
         adapter_mode=exchange_adapter.mode,
         exchange=EXCHANGE,
     )
+    logger.info("Startup auth config: BACKEND_API_KEY configured=%s", bool(BACKEND_API_KEY))
     try:
         yield
     finally:
@@ -135,10 +136,14 @@ async def lifespan(application):
 
 app = FastAPI(title="Crypto Signal Bot — Trading Backend", version="2.2.0", lifespan=lifespan)
 
-ALLOWED_ORIGINS = os.getenv(
-    "CORS_ORIGINS",
-    ",".join(RUNTIME_CONFIG.server.cors_origins),
-).split(",")
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ORIGINS",
+        ",".join(RUNTIME_CONFIG.server.cors_origins),
+    ).split(",")
+    if origin.strip()
+]
 
 app.add_middleware(
     CORSMiddleware,

@@ -43,6 +43,17 @@ async def render_health() -> dict:
     }
 
 
+async def render_ready() -> dict:
+    """Deployment diagnostics that confirm critical env wiring without exposing secrets."""
+    return {
+        "status": "ok",
+        "service": "crypto-signal-bot-backend",
+        "runtime": "render",
+        "backend_api_key_configured": bool(os.getenv("BACKEND_API_KEY")),
+        "cors_origins_configured": bool(os.getenv("CORS_ORIGINS", "").strip()),
+    }
+
+
 async def render_root() -> dict:
     """Root route for manual browser checks and platform probes."""
     return {
@@ -53,7 +64,7 @@ async def render_root() -> dict:
     }
 
 
-for _path in ("/", "/health", "/healthz", "/api/health"):
+for _path in ("/", "/health", "/healthz", "/api/health", "/ready"):
     _remove_route(_path, {"GET"})
 
 app.add_api_route(
@@ -71,3 +82,11 @@ for _path in ("/health", "/healthz", "/api/health"):
         tags=["health"],
         summary="Hosted runtime liveness health check",
     )
+
+app.add_api_route(
+    "/ready",
+    render_ready,
+    methods=["GET"],
+    tags=["health"],
+    summary="Hosted runtime deployment readiness diagnostics",
+)
