@@ -58,3 +58,6 @@ server:
     - http://localhost:8080
     - http://localhost:3000
     - https://crypto-signal-bot-indol.vercel.app
+    - https://*.base44.app
+    - https://app.base44.com
+    - https://*.onrender.com

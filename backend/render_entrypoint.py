@@ -1,10 +1,9 @@
 """Render-specific ASGI entrypoint.
 
 This module imports the canonical FastAPI app and replaces only public liveness
-routes used by hosted deployment platforms. The routes intentionally avoid
-exchange, market-data, database, and mutable kill-switch checks so platform
-health checks answer whether the process is alive, not whether downstream
-services are ready.
+routes used by hosted deployment platforms. It also normalizes hosted CORS so
+Vercel and Base44 frontends can coexist without exposing credentials on broad
+origin matches.
 """
 
 from __future__ import annotations
@@ -13,9 +12,18 @@ import os
 import time
 from typing import Iterable
 
+from fastapi.middleware.cors import CORSMiddleware
+
+import backend.app as backend_app_module
 from backend.app import app
 
 _STARTED_AT = time.time()
+_BASE44_AND_RENDER_ORIGINS = (
+    "https://*.base44.app",
+    "https://app.base44.com",
+    "https://*.onrender.com",
+)
+_CORS_WILDCARD_REGEX = r"^https://[A-Za-z0-9-]+\.base44\.app$|^https://[A-Za-z0-9-]+\.onrender\.com$"
 
 
 def _remove_route(path: str, methods: Iterable[str]) -> None:
@@ -29,6 +37,43 @@ def _remove_route(path: str, methods: Iterable[str]) -> None:
             continue
         retained_routes.append(route)
     app.router.routes = retained_routes
+
+
+def _merged_cors_origins() -> list[str]:
+    """Return config/env CORS origins plus required hosted frontend origins."""
+    configured = list(getattr(backend_app_module, "ALLOWED_ORIGINS", []) or [])
+    if not configured:
+        configured = list(backend_app_module.RUNTIME_CONFIG.server.cors_origins)
+
+    merged: list[str] = []
+    for origin in [*configured, *_BASE44_AND_RENDER_ORIGINS]:
+        normalized = origin.strip()
+        if normalized and normalized not in merged:
+            merged.append(normalized)
+    return merged
+
+
+def _replace_cors_middleware() -> None:
+    """Replace app-level CORS with config-driven, credential-free hosted CORS."""
+    cors_origins = _merged_cors_origins()
+    exact_origins = [origin for origin in cors_origins if "*" not in origin]
+
+    app.user_middleware = [
+        middleware
+        for middleware in app.user_middleware
+        if getattr(middleware, "cls", None) is not CORSMiddleware
+    ]
+    app.middleware_stack = None
+    backend_app_module.ALLOWED_ORIGINS = cors_origins
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=exact_origins,
+        allow_origin_regex=_CORS_WILDCARD_REGEX,
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 async def render_health() -> dict:
@@ -50,7 +95,7 @@ async def render_ready() -> dict:
         "service": "crypto-signal-bot-backend",
         "runtime": "render",
         "backend_api_key_configured": bool(os.getenv("BACKEND_API_KEY")),
-        "cors_origins_configured": bool(os.getenv("CORS_ORIGINS", "").strip()),
+        "cors_origins_configured": bool(backend_app_module.ALLOWED_ORIGINS),
     }
 
 
@@ -63,6 +108,8 @@ async def render_root() -> dict:
         "docs": "/docs",
     }
 
+
+_replace_cors_middleware()
 
 for _path in ("/", "/health", "/healthz", "/api/health", "/ready"):
     _remove_route(_path, {"GET"})
