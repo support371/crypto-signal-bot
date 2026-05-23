@@ -1,9 +1,10 @@
 """Render-specific ASGI entrypoint.
 
-This module imports the canonical FastAPI app and replaces only the public
-liveness route used by Render. The route intentionally avoids exchange,
-market-data, database, and mutable kill-switch checks so platform health checks
-answer whether the process is alive, not whether downstream services are ready.
+This module imports the canonical FastAPI app and replaces only public liveness
+routes used by hosted deployment platforms. The routes intentionally avoid
+exchange, market-data, database, and mutable kill-switch checks so platform
+health checks answer whether the process is alive, not whether downstream
+services are ready.
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ def _remove_route(path: str, methods: Iterable[str]) -> None:
 
 
 async def render_health() -> dict:
-    """Small Render liveness response used by the deployment health check."""
+    """Small hosted-runtime liveness response used by deployment health checks."""
     return {
         "status": "ok",
         "service": "crypto-signal-bot-backend",
@@ -42,11 +43,31 @@ async def render_health() -> dict:
     }
 
 
-_remove_route("/health", {"GET"})
+async def render_root() -> dict:
+    """Root route for manual browser checks and platform probes."""
+    return {
+        "service": "crypto-signal-bot-backend",
+        "status": "ok",
+        "health": "/health",
+        "docs": "/docs",
+    }
+
+
+for _path in ("/", "/health", "/healthz", "/api/health"):
+    _remove_route(_path, {"GET"})
+
 app.add_api_route(
-    "/health",
-    render_health,
+    "/",
+    render_root,
     methods=["GET"],
     tags=["health"],
-    summary="Render liveness health check",
+    summary="Service root",
 )
+for _path in ("/health", "/healthz", "/api/health"):
+    app.add_api_route(
+        _path,
+        render_health,
+        methods=["GET"],
+        tags=["health"],
+        summary="Hosted runtime liveness health check",
+    )
