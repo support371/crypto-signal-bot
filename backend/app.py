@@ -124,6 +124,7 @@ async def lifespan(application):
         adapter_mode=exchange_adapter.mode,
         exchange=EXCHANGE,
     )
+    logger.info("Startup auth config: BACKEND_API_KEY configured=%s", bool(BACKEND_API_KEY))
     try:
         yield
     finally:

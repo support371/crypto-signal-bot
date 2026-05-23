@@ -12,12 +12,13 @@ import json
 import os
 import time
 import threading
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from backend.config.runtime import get_runtime_config
 from backend.db.event_log import EventLogStore
 
 _lock = threading.Lock()
+_cache: Optional[Dict[str, List[Any]]] = None
 
 
 def _store_path() -> str:
@@ -56,21 +57,32 @@ def _ensure_dir():
 
 
 def _load() -> Dict[str, List[Any]]:
+    global _cache
+    if _cache is not None:
+        return _cache
+
     _ensure_dir()
     store_path = _store_path()
     if not os.path.exists(store_path):
-        return {"intents": [], "orders": [], "withdrawals": [], "risk_events": []}
+        _cache = {"intents": [], "orders": [], "withdrawals": [], "risk_events": []}
+        return _cache
     try:
         with open(store_path, "r") as f:
-            return json.load(f)
+            _cache = json.load(f)
+            return _cache
     except (json.JSONDecodeError, IOError):
-        return {"intents": [], "orders": [], "withdrawals": [], "risk_events": []}
+        _cache = {"intents": [], "orders": [], "withdrawals": [], "risk_events": []}
+        return _cache
 
 
 def _save(data: Dict[str, List[Any]]):
+    global _cache
+    _cache = data
     _ensure_dir()
     with open(_store_path(), "w") as f:
-        json.dump(data, f, indent=2, default=str)
+        # Optimization: removed indent=2 to reduce file size and write time.
+        # This is a persistence file, not intended for frequent manual reading.
+        json.dump(data, f, default=str)
 
 
 def append_intent(intent_data: Dict[str, Any]):
