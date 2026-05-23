@@ -1,26 +1,9 @@
 # backend/db/models/__init__.py
 """
 PHASE 11 — Database models.
-
-SQLAlchemy 2.0 declarative models for all authoritative persistence entities.
-These are the production-oriented truth tables.
-
-Relationship to protected files:
-  - backend/models_core.py (protected) — application-level Pydantic models
-  - backend/models/execution_intent.py (protected) — ExecutionIntent Pydantic model
-  - This file: SQLAlchemy ORM tables (separate from protected models)
-
-Design:
-  - All tables are append-friendly (soft deletes via status, not hard deletes)
-  - audit_log is strictly append-only (no UPDATE, no DELETE)
-  - guardian_events and risk_events are append-only
-  - timestamps are unix seconds (int) for consistency with the rest of the system
-  - One persistence path — no competing truth stores (Rule 6)
 """
 
 from __future__ import annotations
-
-import time
 
 from sqlalchemy import (
     BigInteger,
@@ -33,19 +16,12 @@ from sqlalchemy import (
     Text,
 )
 from sqlalchemy.orm import DeclarativeBase
+from .utils import unix_timestamp
 
 
 class Base(DeclarativeBase):
     pass
 
-
-def unix_timestamp() -> int:
-    return int(time.time())
-
-
-# ---------------------------------------------------------------------------
-# Orders
-# ---------------------------------------------------------------------------
 
 class OrderRecord(Base):
     """Every order submitted to an exchange adapter."""
@@ -72,10 +48,6 @@ class OrderRecord(Base):
         Index("ix_orders_status_created", "status", "created_at"),
     )
 
-
-# ---------------------------------------------------------------------------
-# Fills (confirmed executions)
-# ---------------------------------------------------------------------------
 
 class FillRecord(Base):
     """Confirmed fills — one-to-one with FILLED orders."""
@@ -205,6 +177,7 @@ class ServiceHeartbeat(Base):
 
 __all__ = [
     "Base",
+    "unix_timestamp",
     "OrderRecord",
     "FillRecord",
     "PositionRecord",

@@ -23,6 +23,7 @@ from backend.services.audit.service import (
     append_kill_switch_deactivate,
 )
 from backend.config.loader import get_auth_config
+from backend.logic import context
 
 router = APIRouter(tags=["kill-switch"])
 
@@ -30,6 +31,7 @@ router = APIRouter(tags=["kill-switch"])
 def require_operator_key(
     x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
 ) -> None:
+    # Standard config loader
     auth = get_auth_config()
     if not auth.auth_enabled:
         return
@@ -46,6 +48,7 @@ class KillSwitchResponse(BaseModel):
     kill_switch_active: bool
     action: str
     reason: Optional[str]
+    kill_switch_reason: Optional[str] = None
     audit_id: str
 
 
@@ -81,14 +84,22 @@ async def toggle_kill_switch(body: KillSwitchRequest) -> KillSwitchResponse:
                 kill_switch_active=True,
                 action="already_active",
                 reason=reason,
+                kill_switch_reason=reason,
                 audit_id=entry.id,
             )
         await activate_kill_switch(reason=reason, source="operator_api")
+
+        # Update shared context
+        context.kill_switch_active = True
+        context.kill_switch_reason = reason
+        await context.broadcast({"type": "kill_switch", "active": True, "reason": reason})
+
         entry = await append_kill_switch_manual(reason=reason)
         return KillSwitchResponse(
             kill_switch_active=True,
             action="activated",
             reason=reason,
+            kill_switch_reason=reason,
             audit_id=entry.id,
         )
 
@@ -98,14 +109,22 @@ async def toggle_kill_switch(body: KillSwitchRequest) -> KillSwitchResponse:
             kill_switch_active=False,
             action="already_inactive",
             reason=reason,
+            kill_switch_reason=None,
             audit_id=entry.id,
         )
     await deactivate_kill_switch(reason=reason)
+
+    # Update shared context
+    context.kill_switch_active = False
+    context.kill_switch_reason = None
+    await context.broadcast({"type": "kill_switch", "active": False, "reason": reason})
+
     entry = await append_kill_switch_deactivate(reason=reason)
     return KillSwitchResponse(
         kill_switch_active=False,
         action="deactivated",
         reason=reason,
+        kill_switch_reason=None,
         audit_id=entry.id,
     )
 
@@ -169,7 +188,7 @@ async def get_guardian_status_route() -> dict:
         "last_heartbeat_at": status.last_heartbeat_at,
         "heartbeat_healthy": status.heartbeat_healthy,
         "reconciliation_drift_count": status.reconciliation_drift_count,
-        "reconciliation_drift_active": status.reconciliation_drift_active,
+        "reconciliation_drift_active": status.reconciliation_drift_count > 0,
         "reconciliation_drift_reason": status.reconciliation_drift_reason,
         "strategy_kill_switches": list(status.strategy_kill_switches),
         "venue_kill_switches": list(status.venue_kill_switches),
