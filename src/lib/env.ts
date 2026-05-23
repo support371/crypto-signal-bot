@@ -18,7 +18,9 @@ export function getConfiguredBackendUrl() {
   const explicitUrl =
     env.VITE_BACKEND_URL ||
     env.VITE_BACKEND_BASE_URL ||
-    env.VITE_CRYPTOCORE_API_BASE;
+    env.VITE_CRYPTOCORE_API_BASE ||
+    env.VITE_API_URL ||
+    env.NEXT_PUBLIC_BACKEND_URL;
   return trimTrailingSlash(explicitUrl || LOCAL_BACKEND_URL);
 }
 

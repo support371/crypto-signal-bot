@@ -991,3 +991,19 @@ class TestWebSocket:
             assert data["exchange"] == "binance"
             assert data["market_data_mode"] == "live_public_paper"
             assert data["connected"] is True
+
+
+class TestRenderReadinessEndpoint:
+    def test_ready_reports_auth_env_presence_without_secret(self):
+        with patch.dict("os.environ", {"BACKEND_API_KEY": "secret", "CORS_ORIGINS": "https://a.example"}, clear=False):
+            from backend.render_entrypoint import app as render_app
+
+            render_client = TestClient(render_app)
+            resp = render_client.get("/ready")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "ok"
+        assert data["backend_api_key_configured"] is True
+        assert data["cors_origins_configured"] is True
+        assert "secret" not in str(data)
