@@ -4,6 +4,32 @@ services:
     runtime: python
     plan: free
     rootDir: .
-    buildCommand: pip install -r backend/requirements.txt
-    startCommand: uvicorn backend.app:app --host 0.0.0.0 --port $PORT
+    buildCommand: python -m pip install --upgrade pip && python -m pip install -r backend/requirements.txt
+    startCommand: python -m uvicorn backend.render_entrypoint:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: TRADING_MODE
+        value: paper
+      - key: NETWORK
+        value: testnet
+      - key: EXCHANGE
+        value: binance
+      - key: PAPER_USE_LIVE_MARKET_DATA
+        value: "false"
+      - key: MARKET_DATA_PUBLIC_EXCHANGE
+        value: binance
+      - key: CORS_ORIGINS
+        value: https://crypto-signal-bot-indol.vercel.app,https://crypto-signal-bot-admin-25521151s-projects.vercel.app,http://localhost:5173,http://localhost:8080,http://localhost:3000
+      - key: EVENT_LOG_ENABLED
+        value: "true"
+      - key: EVENT_LOG_PATH
+        value: /tmp/crypto-signal-bot/event_log.db
+      - key: AUDIT_STORE_PATH
+        value: /tmp/crypto-signal-bot/audit.json
+      - key: EARNINGS_STORE_PATH
+        value: /tmp/crypto-signal-bot/earnings.json
+      - key: RATE_LIMIT_RPM
+        value: "120"
+      - key: BACKEND_API_KEY
+        sync: false
