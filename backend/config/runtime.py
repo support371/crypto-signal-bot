@@ -127,11 +127,28 @@ def _normalize_exchange(value: str, default: str = "binance") -> str:
     return default
 
 
-def _env_csv(name: str, default: list[str]) -> list[str]:
-    raw = os.getenv(name)
+def _parse_csv(raw: str | None, default: list[str]) -> list[str]:
     if raw is None or raw == "":
         return list(default)
     return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _env_csv(name: str, default: list[str]) -> list[str]:
+    return _parse_csv(os.getenv(name), default)
+
+
+def _env_csv_any(names: tuple[str, ...], default: list[str]) -> list[str]:
+    """Return the first configured CSV env var from a list of accepted names.
+
+    Render deployment briefs have used both CORS_ALLOWED_ORIGINS and the older
+    CORS_ORIGINS name. Support both so a correctly configured Render dashboard
+    does not silently fall back to local-only defaults.
+    """
+    for name in names:
+        raw = os.getenv(name)
+        if raw is not None and raw != "":
+            return _parse_csv(raw, default)
+    return list(default)
 
 
 def get_runtime_config() -> RuntimeConfig:
@@ -196,7 +213,9 @@ def get_runtime_config() -> RuntimeConfig:
         backend_api_key=_env_str("BACKEND_API_KEY", ""),
         rate_limit_rpm=_env_int("RATE_LIMIT_RPM", 120),
         allow_mainnet=_env_bool("ALLOW_MAINNET", False),
-        server=ServerConfig(cors_origins=_env_csv("CORS_ORIGINS", default_cors)),
+        server=ServerConfig(
+            cors_origins=_env_csv_any(("CORS_ALLOWED_ORIGINS", "CORS_ORIGINS"), default_cors)
+        ),
         guardian=GuardianConfig(
             max_api_errors=_env_int("GUARDIAN_MAX_API_ERRORS", guardian_defaults.max_api_errors),
             max_failed_orders=_env_int(
