@@ -75,6 +75,7 @@ LIVE_MARKET_SYMBOLS = [
     "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "ADAUSDT",
     "XRPUSDT", "DOGEUSDT", "DOTUSDT", "AVAXUSDT", "LINKUSDT",
 ]
+_STARTED_AT = time.time()
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -148,24 +149,41 @@ async def root():
     }
 
 @app.get("/health")
+@app.get("/healthz")
+@app.get("/api/health")
 async def health():
-    """Robust health check for Render."""
-    try:
-        market_data = _get_market_data_status()
-        return {
-            "status": "healthy",
-            "kill_switch_active": context.kill_switch_active,
-            "mode": TRADING_MODE,
-            "adapter": exchange_adapter.mode,
-            "market_data_source": market_data["source"],
-            "timestamp": time.time()
-        }
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        return JSONResponse(
-            status_code=500,
-            content={"status": "degraded", "error": str(e)}
-        )
+    """Dependency-light hosted liveness check.
+
+    Render health probes should only prove that the ASGI application is alive,
+    imported, and bound to the expected port. Deeper runtime diagnostics that can
+    touch market data, portfolio state, audit stores, or exchange adapters belong
+    on `/config`, `/balance`, and `/guardian/status` so a non-critical runtime
+    issue cannot cause Render to mark the whole service unhealthy.
+    """
+    return {
+        "status": "ok",
+        "service": "crypto-signal-bot-backend",
+        "runtime": "render" if os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID") else "asgi",
+        "mode": TRADING_MODE,
+        "network": NETWORK,
+        "adapter": getattr(exchange_adapter, "mode", "unknown"),
+        "kill_switch_active": bool(getattr(context, "kill_switch_active", False)),
+        "uptime_seconds": round(time.time() - _STARTED_AT, 3),
+    }
+
+@app.get("/ready")
+async def ready():
+    """Readiness diagnostics that avoid exposing secret values."""
+    return {
+        "status": "ok",
+        "service": "crypto-signal-bot-backend",
+        "runtime": "render" if os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID") else "asgi",
+        "backend_api_key_configured": bool(BACKEND_API_KEY),
+        "cors_origins_configured": bool(ALLOWED_ORIGINS),
+        "cors_origin_count": len(ALLOWED_ORIGINS),
+        "mode": TRADING_MODE,
+        "network": NETWORK,
+    }
 
 # ---------------------------------------------------------------------------
 # Middleware
