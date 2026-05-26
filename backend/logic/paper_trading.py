@@ -51,6 +51,20 @@ class PaperPortfolio:
                 result.append({"asset": asset, "free": str(amount)})
         return result
 
+    def get_total_exposure(self, price_fn) -> float:
+        """Calculate total portfolio value in USDT."""
+        total = 0.0
+        for asset, amount in self.balances.items():
+            if asset == "USDT":
+                total += amount
+            else:
+                # Try to get price for asset, default to 0 if not found
+                try:
+                    total += amount * price_fn(f"{asset}USDT")
+                except Exception:
+                    pass
+        return total
+
 
 def simulate_fill(
     intent: ExecutionIntent,

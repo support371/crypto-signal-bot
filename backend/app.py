@@ -214,10 +214,11 @@ from backend.routes.compatibility import compatibility_router
 from backend.routes.integrations import integrations_router
 from backend.routes.kill_switch import router as kill_switch_router
 from backend.routes.waitlist import waitlist_router
+from backend.routes.price import router as price_router
 
 # Track already registered paths to avoid duplicates
 _registered_paths = {getattr(route, "path", None) for route in app.routes}
-for _router in (compatibility_router, integrations_router, waitlist_router, kill_switch_router):
+for _router in (compatibility_router, integrations_router, waitlist_router, kill_switch_router, price_router):
     _router_paths = {getattr(route, "path", None) for route in _router.routes}
     if not _router_paths.issubset(_registered_paths):
         app.include_router(_router)
