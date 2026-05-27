@@ -1,9 +1,10 @@
 """ASGI health wrapper for hosted deployments.
 
 Render can mark a service unhealthy when its configured health-check path fails,
-even if the application root is reachable. This module makes the hosted health
-paths dependency-free and intercepts them before the full FastAPI app/router is
-entered. All non-health traffic is lazily delegated to the canonical backend app.
+even if the application root is reachable. This module makes hosted root,
+liveness, and readiness probes dependency-free and handles Render HEAD probes
+before the full FastAPI app/router stack is entered. All non-probe traffic is
+lazily delegated to the canonical backend app.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from typing import Any, Awaitable, Callable, Dict
 _STARTED_AT = time.time()
 _HEALTH_PATHS = {"/health", "/healthz", "/api/health"}
 _READY_PATHS = {"/ready"}
+_ROOT_PATHS = {"/", ""}
 _delegate_app: Callable[[Dict[str, Any], Callable[..., Awaitable[Any]], Callable[..., Awaitable[Any]]], Awaitable[Any]] | None = None
 
 
@@ -52,6 +54,16 @@ def _ready_payload() -> dict[str, Any]:
     }
 
 
+def _root_payload() -> dict[str, Any]:
+    return {
+        "name": "Crypto Signal Bot API",
+        "version": "2.2.0",
+        "status": "online",
+        "docs": "/docs",
+        "health": "/health",
+    }
+
+
 def _get_delegate_app() -> Callable[[Dict[str, Any], Callable[..., Awaitable[Any]], Callable[..., Awaitable[Any]]], Awaitable[Any]]:
     global _delegate_app
     if _delegate_app is None:
@@ -61,10 +73,19 @@ def _get_delegate_app() -> Callable[[Dict[str, Any], Callable[..., Awaitable[Any
     return _delegate_app
 
 
-async def _send_json(send: Callable[..., Awaitable[Any]], body: dict[str, Any], status: int = 200) -> None:
+async def _send_json(
+    send: Callable[..., Awaitable[Any]],
+    body: dict[str, Any],
+    status: int = 200,
+    method: str | None = None,
+) -> None:
+    """Send JSON for GET and headers-only for HEAD probes."""
     status_code, headers, payload = _json_response(body, status=status)
     await send({"type": "http.response.start", "status": status_code, "headers": headers})
-    await send({"type": "http.response.body", "body": payload})
+    if (method or "").upper() == "HEAD":
+        await send({"type": "http.response.body", "body": b""})
+    else:
+        await send({"type": "http.response.body", "body": payload})
 
 
 async def app(scope: Dict[str, Any], receive: Callable[..., Awaitable[Any]], send: Callable[..., Awaitable[Any]]) -> None:
@@ -74,11 +95,15 @@ async def app(scope: Dict[str, Any], receive: Callable[..., Awaitable[Any]], sen
 
     if scope.get("type") == "http":
         path = str(scope.get("path") or "")
-        if path in _HEALTH_PATHS:
-            await _send_json(send, _health_payload(path))
+        method = str(scope.get("method") or "GET").upper()
+        if path in _ROOT_PATHS and method in {"GET", "HEAD"}:
+            await _send_json(send, _root_payload(), method=method)
             return
-        if path in _READY_PATHS:
-            await _send_json(send, _ready_payload())
+        if path in _HEALTH_PATHS and method in {"GET", "HEAD"}:
+            await _send_json(send, _health_payload(path), method=method)
+            return
+        if path in _READY_PATHS and method in {"GET", "HEAD"}:
+            await _send_json(send, _ready_payload(), method=method)
             return
 
     await _get_delegate_app()(scope, receive, send)
