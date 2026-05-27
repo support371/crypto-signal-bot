@@ -29,7 +29,9 @@ def _json_response(body: dict[str, Any], status: int = 200) -> tuple[int, list[t
     return status, headers, payload
 
 
-def _health_payload() -> dict[str, Any]:
+def _health_payload(path: str = "/health") -> dict[str, Any]:
+    if path == "/healthz":
+        return {"status": "ok"}
     return {
         "status": "ok",
         "service": "crypto-signal-bot-backend",
@@ -73,7 +75,7 @@ async def app(scope: Dict[str, Any], receive: Callable[..., Awaitable[Any]], sen
     if scope.get("type") == "http":
         path = str(scope.get("path") or "")
         if path in _HEALTH_PATHS:
-            await _send_json(send, _health_payload())
+            await _send_json(send, _health_payload(path))
             return
         if path in _READY_PATHS:
             await _send_json(send, _ready_payload())

@@ -218,7 +218,7 @@ def get_cors_config() -> dict:
     origins = settings.cors_allowed_origins or ["*"]
     return {
         "allow_origins":     origins,
-        "allow_credentials": True,
+        "allow_credentials": False,
         "allow_methods":     ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers":     ["*"],
     }
