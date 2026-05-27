@@ -18,6 +18,7 @@ from backend.config.runtime import get_runtime_config
 from backend.db.event_log import EventLogStore
 
 _lock = threading.Lock()
+_event_log_lock = threading.Lock()
 _cache: Optional[Dict[str, List[Any]]] = None
 _event_log_store_instance: Optional[EventLogStore] = None
 
@@ -38,9 +39,13 @@ def _event_log_path() -> str:
 
 
 def _event_log_store() -> EventLogStore:
+    # Optimization: Memoize the EventLogStore instance to avoid redundant re-instantiation
+    # and directory/schema checks on every log append.
     global _event_log_store_instance
     if _event_log_store_instance is None:
-        _event_log_store_instance = EventLogStore(_event_log_path())
+        with _event_log_lock:
+            if _event_log_store_instance is None:
+                _event_log_store_instance = EventLogStore(_event_log_path())
     return _event_log_store_instance
 
 

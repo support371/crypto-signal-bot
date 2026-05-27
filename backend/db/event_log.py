@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,7 @@ class EventLogStore:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._initialized = False
+        self._init_lock = threading.Lock()
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path)
@@ -19,21 +21,26 @@ class EventLogStore:
         return conn
 
     def initialize(self) -> None:
+        # Optimization: Use an in-memory flag to skip redundant CREATE TABLE/INDEX checks.
+        # This significantly reduces I/O overhead on every log entry.
         if self._initialized:
             return
-        with self._connect() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS event_log (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    kind TEXT NOT NULL,
-                    created_at INTEGER NOT NULL,
-                    payload_json TEXT NOT NULL
+        with self._init_lock:
+            if self._initialized:
+                return
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS event_log (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        kind TEXT NOT NULL,
+                        created_at INTEGER NOT NULL,
+                        payload_json TEXT NOT NULL
+                    )
+                    """
                 )
-                """
-            )
-            conn.execute("CREATE INDEX IF NOT EXISTS ix_event_log_kind_time ON event_log(kind, created_at)")
-        self._initialized = True
+                conn.execute("CREATE INDEX IF NOT EXISTS ix_event_log_kind_time ON event_log(kind, created_at)")
+            self._initialized = True
 
     def append(self, kind: str, payload: dict[str, Any] | None = None, created_at: int | None = None) -> int:
         self.initialize()
