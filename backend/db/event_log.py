@@ -11,6 +11,7 @@ class EventLogStore:
     def __init__(self, path: str | Path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._initialized = False
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path)
@@ -18,6 +19,8 @@ class EventLogStore:
         return conn
 
     def initialize(self) -> None:
+        if self._initialized:
+            return
         with self._connect() as conn:
             conn.execute(
                 """
@@ -30,6 +33,7 @@ class EventLogStore:
                 """
             )
             conn.execute("CREATE INDEX IF NOT EXISTS ix_event_log_kind_time ON event_log(kind, created_at)")
+        self._initialized = True
 
     def append(self, kind: str, payload: dict[str, Any] | None = None, created_at: int | None = None) -> int:
         self.initialize()
