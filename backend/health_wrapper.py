@@ -14,8 +14,7 @@ import time
 from typing import Any, Awaitable, Callable, Dict
 
 _STARTED_AT = time.time()
-_HEALTH_PATHS = {"/health", "/healthz", "/api/health"}
-_READY_PATHS = {"/ready"}
+_INTERCEPT_PATHS = {"/", "/health", "/healthz", "/api/health", "/ready"}
 _delegate_app: Callable[[Dict[str, Any], Callable[..., Awaitable[Any]], Callable[..., Awaitable[Any]]], Awaitable[Any]] | None = None
 
 
@@ -29,9 +28,26 @@ def _json_response(body: dict[str, Any], status: int = 200) -> tuple[int, list[t
     return status, headers, payload
 
 
-def _health_payload(path: str = "/health") -> dict[str, Any]:
+def _get_payload(path: str) -> dict[str, Any]:
+    if path == "/":
+        return {
+            "name": "Crypto Signal Bot API",
+            "version": "2.2.0",
+            "status": "online",
+            "docs": "/docs",
+            "health": "/health",
+        }
+    if path == "/ready":
+        return {
+            "status": "ok",
+            "service": "crypto-signal-bot-backend",
+            "runtime": "render" if os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID") else "asgi",
+            "mode": os.getenv("TRADING_MODE", "paper"),
+        }
     if path == "/healthz":
         return {"status": "ok"}
+
+    # Default health payload for /health and /api/health
     return {
         "status": "ok",
         "service": "crypto-signal-bot-backend",
@@ -42,29 +58,22 @@ def _health_payload(path: str = "/health") -> dict[str, Any]:
     }
 
 
-def _ready_payload() -> dict[str, Any]:
-    # Keep readiness public and generic. Do not expose API-key or CORS details.
-    return {
-        "status": "ok",
-        "service": "crypto-signal-bot-backend",
-        "runtime": "render" if os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID") else "asgi",
-        "mode": os.getenv("TRADING_MODE", "paper"),
-    }
-
-
 def _get_delegate_app() -> Callable[[Dict[str, Any], Callable[..., Awaitable[Any]], Callable[..., Awaitable[Any]]], Awaitable[Any]]:
     global _delegate_app
     if _delegate_app is None:
         from backend.render_entrypoint import app as render_app
-
         _delegate_app = render_app
     return _delegate_app
 
 
-async def _send_json(send: Callable[..., Awaitable[Any]], body: dict[str, Any], status: int = 200) -> None:
+async def _send_response(send: Callable[..., Awaitable[Any]], body: dict[str, Any], method: str, status: int = 200) -> None:
     status_code, headers, payload = _json_response(body, status=status)
     await send({"type": "http.response.start", "status": status_code, "headers": headers})
-    await send({"type": "http.response.body", "body": payload})
+
+    if method == "HEAD":
+        await send({"type": "http.response.body", "body": b""})
+    else:
+        await send({"type": "http.response.body", "body": payload})
 
 
 async def app(scope: Dict[str, Any], receive: Callable[..., Awaitable[Any]], send: Callable[..., Awaitable[Any]]) -> None:
@@ -73,12 +82,12 @@ async def app(scope: Dict[str, Any], receive: Callable[..., Awaitable[Any]], sen
         return
 
     if scope.get("type") == "http":
+        method = str(scope.get("method") or "GET").upper()
         path = str(scope.get("path") or "")
-        if path in _HEALTH_PATHS:
-            await _send_json(send, _health_payload(path))
-            return
-        if path in _READY_PATHS:
-            await _send_json(send, _ready_payload())
+
+        if path in _INTERCEPT_PATHS and method in ("GET", "HEAD"):
+            payload = _get_payload(path)
+            await _send_response(send, payload, method)
             return
 
     await _get_delegate_app()(scope, receive, send)

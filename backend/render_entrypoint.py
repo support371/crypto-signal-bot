@@ -100,30 +100,30 @@ async def render_ready() -> dict:
         "status": "ok",
         "service": "crypto-signal-bot-backend",
         "runtime": "render",
-        "backend_api_key_configured": bool(os.getenv("BACKEND_API_KEY")),
-        "cors_origins_configured": bool(backend_app_module.ALLOWED_ORIGINS),
+        "mode": os.getenv("TRADING_MODE", "paper"),
     }
 
 
 async def render_root() -> dict:
     """Root route for manual browser checks and platform probes."""
     return {
-        "service": "crypto-signal-bot-backend",
-        "status": "ok",
-        "health": "/health",
+        "name": "Crypto Signal Bot API",
+        "version": "2.2.0",
+        "status": "online",
         "docs": "/docs",
+        "health": "/health",
     }
 
 
 _replace_cors_middleware()
 
 for _path in ("/", "/health", "/healthz", "/api/health", "/ready"):
-    _remove_route(_path, {"GET"})
+    _remove_route(_path, {"GET", "HEAD"})
 
 app.add_api_route(
     "/",
     render_root,
-    methods=["GET"],
+    methods=["GET", "HEAD"],
     tags=["health"],
     summary="Service root",
 )
@@ -131,14 +131,14 @@ for _path in ("/health", "/api/health"):
     app.add_api_route(
         _path,
         render_health,
-        methods=["GET"],
+        methods=["GET", "HEAD"],
         tags=["health"],
         summary="Hosted runtime liveness health check",
     )
 app.add_api_route(
     "/healthz",
     healthz,
-    methods=["GET"],
+    methods=["GET", "HEAD"],
     tags=["health"],
     summary="Simple status probe",
 )
@@ -146,7 +146,7 @@ app.add_api_route(
 app.add_api_route(
     "/ready",
     render_ready,
-    methods=["GET"],
+    methods=["GET", "HEAD"],
     tags=["health"],
     summary="Hosted runtime deployment readiness diagnostics",
 )
