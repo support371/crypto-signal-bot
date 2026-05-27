@@ -1,7 +1,9 @@
 """Universal Render startup shim.
 
 This file exists specifically to make Render auto-detect the backend entrypoint
-even if the service loses its configured start command.
+even if the service loses its configured start command. Prefer the lightweight
+health wrapper so hosted liveness/readiness probes are handled before the full
+FastAPI router stack sees them.
 """
 
 from __future__ import annotations
@@ -13,6 +15,7 @@ import sys
 PORT = os.getenv("PORT", "10000")
 
 CANDIDATES = [
+    "backend.health_wrapper:app",
     "backend.render_entrypoint:app",
     "backend.app:app",
     "main:app",
