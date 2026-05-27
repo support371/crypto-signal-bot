@@ -144,14 +144,6 @@ app.add_api_route(
 )
 
 app.add_api_route(
-    "/healthz",
-    healthz,
-    methods=["GET"],
-    tags=["health"],
-    summary="Simple status probe",
-)
-
-app.add_api_route(
     "/ready",
     render_ready,
     methods=["GET"],
