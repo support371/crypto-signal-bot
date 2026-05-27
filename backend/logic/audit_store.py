@@ -18,6 +18,7 @@ from backend.config.runtime import get_runtime_config
 from backend.db.event_log import EventLogStore
 
 _lock = threading.Lock()
+_event_log_lock = threading.Lock()
 _cache: Optional[Dict[str, List[Any]]] = None
 _event_log_store_instance: Optional[EventLogStore] = None
 
