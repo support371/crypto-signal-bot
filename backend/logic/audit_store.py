@@ -39,13 +39,9 @@ def _event_log_path() -> str:
 
 
 def _event_log_store() -> EventLogStore:
-    # Optimization: Memoize the EventLogStore instance to avoid redundant re-instantiation
-    # and directory/schema checks on every log append.
     global _event_log_store_instance
     if _event_log_store_instance is None:
-        with _event_log_lock:
-            if _event_log_store_instance is None:
-                _event_log_store_instance = EventLogStore(_event_log_path())
+        _event_log_store_instance = EventLogStore(_event_log_path())
     return _event_log_store_instance
 
 
