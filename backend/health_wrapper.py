@@ -41,20 +41,18 @@ def _get_payload(path: str) -> dict[str, Any]:
         return {
             "status": "ok",
             "service": "crypto-signal-bot-backend",
-            "runtime": "render" if os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID") else "asgi",
+            "runtime": "render",
             "mode": os.getenv("TRADING_MODE", "paper"),
         }
-    if path == "/healthz":
-        return {"status": "ok"}
 
-    # Default health payload for /health and /api/health
+    # Payload for /health, /healthz, /api/health
     return {
         "status": "ok",
         "service": "crypto-signal-bot-backend",
-        "runtime": "render" if os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID") else "asgi",
+        "runtime": "render",
         "mode": os.getenv("TRADING_MODE", "paper"),
         "network": os.getenv("NETWORK", "testnet"),
-        "uptime_seconds": round(time.time() - _STARTED_AT, 3),
+        "uptime_seconds": 0,
     }
 
 
@@ -71,6 +69,7 @@ async def _send_response(send: Callable[..., Awaitable[Any]], body: dict[str, An
     await send({"type": "http.response.start", "status": status_code, "headers": headers})
 
     if method == "HEAD":
+        # Send empty body for HEAD requests as required
         await send({"type": "http.response.body", "body": b""})
     else:
         await send({"type": "http.response.body", "body": payload})
@@ -90,4 +89,5 @@ async def app(scope: Dict[str, Any], receive: Callable[..., Awaitable[Any]], sen
             await _send_response(send, payload, method)
             return
 
+    # Lazily delegate all non-health/non-root traffic
     await _get_delegate_app()(scope, receive, send)

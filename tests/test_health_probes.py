@@ -46,7 +46,9 @@ class TestHealthProbes(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resp["status"], 200)
         body = json.loads(resp["body"].decode())
         self.assertEqual(body["name"], "Crypto Signal Bot API")
+        self.assertEqual(body["version"], "2.2.0")
         self.assertEqual(body["status"], "online")
+        self.assertEqual(body["health"], "/health")
 
     async def test_head_root(self):
         resp = await self._call_app("HEAD", "/")
@@ -54,41 +56,32 @@ class TestHealthProbes(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resp["body"], b"")
 
     async def test_get_health(self):
-        resp = await self._call_app("GET", "/health")
-        self.assertEqual(resp["status"], 200)
-        body = json.loads(resp["body"].decode())
-        self.assertEqual(body["status"], "ok")
-        self.assertEqual(body["service"], "crypto-signal-bot-backend")
-        self.assertIn("uptime_seconds", body)
+        for path in ("/health", "/healthz", "/api/health"):
+            with self.subTest(path=path):
+                resp = await self._call_app("GET", path)
+                self.assertEqual(resp["status"], 200)
+                body = json.loads(resp["body"].decode())
+                self.assertEqual(body["status"], "ok")
+                self.assertEqual(body["service"], "crypto-signal-bot-backend")
+                self.assertEqual(body["runtime"], "render")
+                self.assertEqual(body["uptime_seconds"], 0)
 
     async def test_head_health(self):
-        resp = await self._call_app("HEAD", "/health")
-        self.assertEqual(resp["status"], 200)
-        self.assertEqual(resp["body"], b"")
-
-    async def test_get_healthz(self):
-        resp = await self._call_app("GET", "/healthz")
-        self.assertEqual(resp["status"], 200)
-        body = json.loads(resp["body"].decode())
-        self.assertEqual(body, {"status": "ok"})
-
-    async def test_head_healthz(self):
-        resp = await self._call_app("HEAD", "/healthz")
-        self.assertEqual(resp["status"], 200)
-        self.assertEqual(resp["body"], b"")
-
-    async def test_get_api_health(self):
-        resp = await self._call_app("GET", "/api/health")
-        self.assertEqual(resp["status"], 200)
-        body = json.loads(resp["body"].decode())
-        self.assertEqual(body["status"], "ok")
+        for path in ("/health", "/healthz", "/api/health"):
+            with self.subTest(path=path):
+                resp = await self._call_app("HEAD", path)
+                self.assertEqual(resp["status"], 200)
+                self.assertEqual(resp["body"], b"")
 
     async def test_get_ready(self):
         resp = await self._call_app("GET", "/ready")
         self.assertEqual(resp["status"], 200)
         body = json.loads(resp["body"].decode())
         self.assertEqual(body["status"], "ok")
+        self.assertEqual(body["service"], "crypto-signal-bot-backend")
+        # Generic payload check
         self.assertNotIn("backend_api_key_configured", body)
+        self.assertNotIn("cors_origins_configured", body)
 
     async def test_head_ready(self):
         resp = await self._call_app("HEAD", "/ready")
@@ -96,13 +89,13 @@ class TestHealthProbes(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resp["body"], b"")
 
     async def test_delegation(self):
-        # Path not in intercept list
+        # Path not in intercept list should delegate to the main app
         resp = await self._call_app("GET", "/api/v1/waitlist")
         self.assertIn("status", resp)
+        # Check that it's NOT our health interceptor payload
         if resp["status"] == 200:
-             body = json.loads(resp["body"].decode())
-             self.assertNotIn("name", body)
-             self.assertNotIn("uptime_seconds", body)
+            body = json.loads(resp["body"].decode())
+            self.assertNotIn("service", body)
 
 if __name__ == "__main__":
     unittest.main()
