@@ -76,12 +76,6 @@ def _replace_cors_middleware() -> None:
     )
 
 
-
-async def healthz() -> dict:
-    """Simple health check alias for frontend/lb probes."""
-    return {"status": "ok"}
-
-
 async def render_health() -> dict:
     """Small hosted-runtime liveness response used by deployment health checks."""
     return {
@@ -127,7 +121,7 @@ app.add_api_route(
     tags=["health"],
     summary="Service root",
 )
-for _path in ("/health", "/api/health"):
+for _path in ("/health", "/healthz", "/api/health"):
     app.add_api_route(
         _path,
         render_health,
@@ -135,13 +129,6 @@ for _path in ("/health", "/api/health"):
         tags=["health"],
         summary="Hosted runtime liveness health check",
     )
-app.add_api_route(
-    "/healthz",
-    healthz,
-    methods=["GET"],
-    tags=["health"],
-    summary="Simple status probe",
-)
 
 app.add_api_route(
     "/ready",
@@ -150,15 +137,3 @@ app.add_api_route(
     tags=["health"],
     summary="Hosted runtime deployment readiness diagnostics",
 )
-
-# Ensure SPA fallback doesn't intercept health checks
-_spa_route = None
-_retained = []
-for _r in app.router.routes:
-    if getattr(_r, "path", None) == "/{path:path}":
-        _spa_route = _r
-        continue
-    _retained.append(_r)
-if _spa_route:
-    _retained.append(_spa_route)
-    app.router.routes = _retained

@@ -1,17 +1,13 @@
 from __future__ import annotations
 
 import os
-import threading
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
 from backend.db.event_log import EventLogStore
 
 router = APIRouter(prefix="/event-log", tags=["event-log"])
-
-_event_log_store_instance: Optional[EventLogStore] = None
-_event_log_lock = threading.Lock()
 
 
 def event_log_enabled() -> bool:
@@ -23,14 +19,7 @@ def event_log_path() -> str:
 
 
 def get_store() -> EventLogStore:
-    # Optimization: Memoize the EventLogStore instance to avoid redundant re-instantiation
-    # and directory/schema checks on every request.
-    global _event_log_store_instance
-    if _event_log_store_instance is None:
-        with _event_log_lock:
-            if _event_log_store_instance is None:
-                _event_log_store_instance = EventLogStore(event_log_path())
-    return _event_log_store_instance
+    return EventLogStore(event_log_path())
 
 
 @router.get("/status")

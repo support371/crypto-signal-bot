@@ -6,7 +6,7 @@ Simulates order fills against a paper portfolio with realistic slippage.
 
 import time
 import random
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Callable
 from dataclasses import dataclass, field
 
 from backend.config.runtime import get_runtime_config
@@ -51,18 +51,19 @@ class PaperPortfolio:
                 result.append({"asset": asset, "free": str(amount)})
         return result
 
-    def get_total_exposure(self, price_fn) -> float:
-        """Calculate total portfolio value in USDT."""
+    def get_total_exposure(self, price_fn: Callable[[str], float]) -> float:
+        """Calculate total exposure in USDT across all non-USDT holdings."""
         total = 0.0
         for asset, amount in self.balances.items():
-            if asset == "USDT":
-                total += amount
-            else:
-                # Try to get price for asset, default to 0 if not found
-                try:
-                    total += amount * price_fn(f"{asset}USDT")
-                except Exception:
-                    pass
+            if asset == "USDT" or amount <= 0:
+                continue
+            # Assume pairs are formatted as ASSETUSDT
+            symbol = f"{asset}USDT"
+            try:
+                total += amount * price_fn(symbol)
+            except Exception:
+                # If price fails, we skip this asset's contribution to exposure
+                continue
         return total
 
 

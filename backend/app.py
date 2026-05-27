@@ -75,7 +75,6 @@ LIVE_MARKET_SYMBOLS = [
     "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "ADAUSDT",
     "XRPUSDT", "DOGEUSDT", "DOTUSDT", "AVAXUSDT", "LINKUSDT",
 ]
-_STARTED_AT = time.time()
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -149,41 +148,24 @@ async def root():
     }
 
 @app.get("/health")
-@app.get("/healthz")
-@app.get("/api/health")
 async def health():
-    """Dependency-light hosted liveness check.
-
-    Render health probes should only prove that the ASGI application is alive,
-    imported, and bound to the expected port. Deeper runtime diagnostics that can
-    touch market data, portfolio state, audit stores, or exchange adapters belong
-    on `/config`, `/balance`, and `/guardian/status` so a non-critical runtime
-    issue cannot cause Render to mark the whole service unhealthy.
-    """
-    return {
-        "status": "ok",
-        "service": "crypto-signal-bot-backend",
-        "runtime": "render" if os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID") else "asgi",
-        "mode": TRADING_MODE,
-        "network": NETWORK,
-        "adapter": getattr(exchange_adapter, "mode", "unknown"),
-        "kill_switch_active": bool(getattr(context, "kill_switch_active", False)),
-        "uptime_seconds": round(time.time() - _STARTED_AT, 3),
-    }
-
-@app.get("/ready")
-async def ready():
-    """Readiness diagnostics that avoid exposing secret values."""
-    return {
-        "status": "ok",
-        "service": "crypto-signal-bot-backend",
-        "runtime": "render" if os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID") else "asgi",
-        "backend_api_key_configured": bool(BACKEND_API_KEY),
-        "cors_origins_configured": bool(ALLOWED_ORIGINS),
-        "cors_origin_count": len(ALLOWED_ORIGINS),
-        "mode": TRADING_MODE,
-        "network": NETWORK,
-    }
+    """Robust health check for Render."""
+    try:
+        market_data = _get_market_data_status()
+        return {
+            "status": "healthy",
+            "kill_switch_active": context.kill_switch_active,
+            "mode": TRADING_MODE,
+            "adapter": exchange_adapter.mode,
+            "market_data_source": market_data["source"],
+            "timestamp": time.time()
+        }
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "degraded", "error": str(e)}
+        )
 
 # ---------------------------------------------------------------------------
 # Middleware
@@ -196,7 +178,7 @@ ALLOWED_ORIGINS = os.getenv(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=False,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -214,11 +196,10 @@ from backend.routes.compatibility import compatibility_router
 from backend.routes.integrations import integrations_router
 from backend.routes.kill_switch import router as kill_switch_router
 from backend.routes.waitlist import waitlist_router
-from backend.routes.price import router as price_router
 
 # Track already registered paths to avoid duplicates
 _registered_paths = {getattr(route, "path", None) for route in app.routes}
-for _router in (compatibility_router, integrations_router, waitlist_router, kill_switch_router, price_router):
+for _router in (compatibility_router, integrations_router, waitlist_router, kill_switch_router):
     _router_paths = {getattr(route, "path", None) for route in _router.routes}
     if not _router_paths.issubset(_registered_paths):
         app.include_router(_router)

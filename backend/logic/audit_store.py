@@ -18,9 +18,7 @@ from backend.config.runtime import get_runtime_config
 from backend.db.event_log import EventLogStore
 
 _lock = threading.Lock()
-_event_log_lock = threading.Lock()
 _cache: Optional[Dict[str, List[Any]]] = None
-_event_log_store_instance: Optional[EventLogStore] = None
 
 
 def _store_path() -> str:
@@ -39,10 +37,7 @@ def _event_log_path() -> str:
 
 
 def _event_log_store() -> EventLogStore:
-    global _event_log_store_instance
-    if _event_log_store_instance is None:
-        _event_log_store_instance = EventLogStore(_event_log_path())
-    return _event_log_store_instance
+    return EventLogStore(_event_log_path())
 
 
 def _copy_to_event_log(kind: str, payload: Dict[str, Any]) -> None:

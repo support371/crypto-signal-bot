@@ -9,7 +9,6 @@ VENV_PIP := $(VENV_BIN)/pip
 .PHONY: help install backend-install frontend-install \
         backend frontend build \
         test test-v test-live lint repo-audit branch-salvage release-check \
-        render-health render-diagnose render-mcp-config \
         docker-build-backend docker-build-frontend docker-build-stack \
         compose-preflight compose-up compose-down compose-backend compose-backend-down \
         synthetic-paper-smoke testnet-smoke testnet-smoke-dry live-paper-smoke secured-write-smoke compose-live-paper-smoke release-verify clean
@@ -35,11 +34,6 @@ help:
 	@echo "    make repo-audit           Run structural repo audit checks"
 	@echo "    make branch-salvage       Inventory remote branches for salvage candidates"
 	@echo "    make release-check        Run local release validation without CircleCI"
-	@echo ""
-	@echo "  Render:"
-	@echo "    make render-health        Check deployed Render backend /health"
-	@echo "    make render-diagnose      Check /health and optional Render API diagnostics"
-	@echo "    make render-mcp-config    Print placeholder Render MCP config"
 	@echo ""
 	@echo "  Build:"
 	@echo "    make build                Build frontend for production"
@@ -100,15 +94,6 @@ branch-salvage:
 
 release-check:
 	$(VENV_PYTHON) scripts/local_release_check.py
-
-render-health:
-	$(PYTHON) scripts/render_manage.py health
-
-render-diagnose:
-	$(PYTHON) scripts/render_manage.py diagnose
-
-render-mcp-config:
-	$(PYTHON) scripts/render_manage.py mcp-config
 
 build:
 	$(VENV_PYTHON) scripts/frontend_build.py
