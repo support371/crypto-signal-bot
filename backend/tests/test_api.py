@@ -501,17 +501,17 @@ class TestRateLimiting:
             assert resp.status_code == 200
 
     def test_rate_limit_triggers_after_threshold(self, client):
-        original_limit = app_module._rate_limit_max_requests
-        app_module._rate_limit_max_requests = 3
-        app_module._rate_limit_store.clear()
+        original_limit = app_module.rate_limit._rate_limit_max_requests
+        app_module.rate_limit._rate_limit_max_requests = 3
+        app_module.rate_limit._rate_limit_store.clear()
         try:
             results = []
             for _ in range(5):
                 results.append(client.get("/health").status_code)
             assert 429 in results
         finally:
-            app_module._rate_limit_max_requests = original_limit
-            app_module._rate_limit_store.clear()
+            app_module.rate_limit._rate_limit_max_requests = original_limit
+            app_module.rate_limit._rate_limit_store.clear()
 
 
 class TestIntentPaper:
