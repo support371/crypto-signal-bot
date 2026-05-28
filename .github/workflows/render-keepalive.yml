@@ -1,0 +1,77 @@
+name: Render Keepalive
+
+on:
+  schedule:
+    # GitHub Actions schedules are best-effort and may be delayed, but this is
+    # the shortest practical cadence for keeping Render's free web service warm.
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      backend_url:
+        description: 'Render backend base URL to ping'
+        required: false
+        default: 'https://crypto-signal-bot-deqd.onrender.com'
+      fail_on_error:
+        description: 'Fail the workflow if the backend cannot be reached'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: render-keepalive
+  cancel-in-progress: true
+
+jobs:
+  ping-render:
+    name: Ping Render backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DEFAULT_BACKEND_URL: https://crypto-signal-bot-deqd.onrender.com
+    steps:
+      - name: Resolve backend URL
+        id: backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          INPUT_URL="${{ github.event.inputs.backend_url || '' }}"
+          BACKEND_URL="${INPUT_URL:-$DEFAULT_BACKEND_URL}"
+          BACKEND_URL="${BACKEND_URL%/}"
+          echo "url=$BACKEND_URL" >> "$GITHUB_OUTPUT"
+          echo "Resolved Render backend: $BACKEND_URL"
+
+      - name: Warm liveness endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          BACKEND_URL="${{ steps.backend.outputs.url }}"
+          endpoints=("/" "/health" "/healthz" "/ready")
+
+          for path in "${endpoints[@]}"; do
+            url="${BACKEND_URL}${path}"
+            echo "Pinging ${url}"
+            http_code="$(curl --silent --show-error --location --max-time 20 --retry 3 --retry-delay 5 --retry-all-errors --output /tmp/render-keepalive-response.txt --write-out '%{http_code}' "$url" || true)"
+            echo "HTTP ${http_code} from ${path}"
+            cat /tmp/render-keepalive-response.txt || true
+            echo
+
+            if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
+              echo "Endpoint ${path} returned non-2xx status: ${http_code}" >&2
+              exit 1
+            fi
+          done
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Render keepalive"
+            echo ""
+            echo "Backend: ${{ steps.backend.outputs.url }}"
+            echo "Checked: /, /health, /healthz, /ready"
+            echo "Time: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          } >> "$GITHUB_STEP_SUMMARY"
