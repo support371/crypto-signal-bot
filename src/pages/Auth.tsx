@@ -8,8 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { z } from 'zod';
-import { Loader2, TrendingUp, Shield } from 'lucide-react';
-import { SUPABASE_CONFIGURED } from '@/integrations/supabase/config';
+import { Loader2, TrendingUp, Shield, AlertTriangle } from 'lucide-react';
 
 const authSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
@@ -51,15 +50,15 @@ function friendlyAuthError(message: string): string {
 
 const Auth = () => {
   const navigate = useNavigate();
-  const { user, isLoading: authLoading, signIn, signUp } = useAuth();
+  const { user, isLoading: authLoading, signIn, signUp, authUnconfigured, isDemoMode } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
 
-  // Redirect if already logged in
+  // Redirect if already logged in (including demo mode)
   useEffect(() => {
-    if (!SUPABASE_CONFIGURED || user) {
+    if (user) {
       navigate('/');
     }
   }, [user, navigate]);
@@ -125,6 +124,89 @@ const Auth = () => {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-accent" />
+      </div>
+    );
+  }
+
+  // Show configuration error when Supabase is not set up and demo mode is not enabled
+  if (authUnconfigured) {
+    return (
+      <div className="min-h-screen bg-background scanlines flex flex-col items-center justify-center p-4">
+        <div className="mb-8 text-center">
+          <div className="flex items-center justify-center gap-2 mb-2">
+            <TrendingUp className="h-8 w-8 text-accent" />
+            <h1 className="text-2xl font-bold font-mono tracking-wider text-accent">
+              CRYPTO RISK AGENT
+            </h1>
+          </div>
+        </div>
+
+        <Card className="w-full max-w-md cyber-card border-warning">
+          <CardHeader>
+            <CardTitle className="font-mono flex items-center gap-2 text-warning">
+              <AlertTriangle className="h-5 w-5" />
+              Authentication Not Configured
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Supabase authentication is not configured for this deployment.
+            </p>
+            <div className="bg-muted/50 p-3 rounded-md font-mono text-xs space-y-1">
+              <p className="text-muted-foreground">Required environment variables:</p>
+              <p className="text-foreground">VITE_SUPABASE_URL</p>
+              <p className="text-foreground">VITE_SUPABASE_PUBLISHABLE_KEY</p>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              To enable demo mode without authentication, set:
+            </p>
+            <div className="bg-muted/50 p-3 rounded-md font-mono text-xs">
+              <p className="text-foreground">VITE_DEMO_MODE=true</p>
+            </div>
+          </CardContent>
+          <CardFooter className="flex-col gap-2">
+            <Button
+              variant="outline"
+              className="w-full font-mono"
+              onClick={() => navigate('/public')}
+            >
+              View Public Dashboard
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full font-mono"
+              onClick={() => navigate('/waitlist')}
+            >
+              Join Waitlist
+            </Button>
+          </CardFooter>
+        </Card>
+
+        <p className="mt-4 text-xs text-muted-foreground font-mono">
+          Paper trading only - No real money involved
+        </p>
+      </div>
+    );
+  }
+
+  // If in demo mode, user should already be set and redirected - but show a message just in case
+  if (isDemoMode) {
+    return (
+      <div className="min-h-screen bg-background scanlines flex flex-col items-center justify-center p-4">
+        <Card className="w-full max-w-md cyber-card">
+          <CardHeader>
+            <CardTitle className="font-mono flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-accent" />
+              Demo Mode Active
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground mb-4">
+              You are running in demo mode. Redirecting to dashboard...
+            </p>
+            <Loader2 className="h-6 w-6 animate-spin text-accent mx-auto" />
+          </CardContent>
+        </Card>
       </div>
     );
   }

@@ -17,6 +17,8 @@
  * Run: npx vitest run src/tests/frontend_contracts.test.ts
  */
 
+import { describe, it, expect } from 'vitest';
+
 // ---------------------------------------------------------------------------
 // 1. API client — missing env var
 // ---------------------------------------------------------------------------
