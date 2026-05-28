@@ -123,6 +123,15 @@ OHLCV_STALE_THRESHOLD_SECONDS = {
 _last_known: dict[str, tuple[Ticker, int]] = {}   # symbol -> (ticker, fetched_at)
 _last_ohlcv: dict[str, tuple[list[OhlcvCandle], int]] = {}  # key -> (candles, fetched_at)
 
+# ---------------------------------------------------------------------------
+# Global adapter cache
+# Re-instantiating adapters and their httpx clients on every call is a
+# significant performance bottleneck.
+# ---------------------------------------------------------------------------
+
+_cached_adapters: Optional[list[BaseExchangeAdapter]] = None
+_adapter_lock = asyncio.Lock()
+
 
 # ---------------------------------------------------------------------------
 # Redis cache layer (optional — degrades gracefully if Redis is absent)
@@ -184,43 +193,57 @@ async def _get_adapters() -> list[BaseExchangeAdapter]:
     """
     Return ordered list of adapters to try.
     Primary is determined by config. Secondaries are all other configured adapters.
+
+    Performance: Adapters are cached globally to avoid repeated instantiation
+    and redundant httpx connection pool creation.
     """
-    from backend.adapters.exchanges.btcc    import BtccAdapter
-    from backend.adapters.exchanges.binance import BinanceAdapter
-    from backend.adapters.exchanges.bitget  import BitgetAdapter
+    global _cached_adapters
 
-    cfg = get_exchange_config()
-    paper = cfg.mode == "paper"
-    adapters: list[BaseExchangeAdapter] = []
+    if _cached_adapters is not None:
+        return _cached_adapters
 
-    # Primary — from Phase 5 factory
-    adapters.append(get_adapter(cfg))
+    async with _adapter_lock:
+        # Double-check pattern
+        if _cached_adapters is not None:
+            return _cached_adapters
 
-    # Secondaries — remaining adapters that have credentials (or paper mode)
-    seen_types = {type(adapters[0])}
+        from backend.adapters.exchanges.btcc    import BtccAdapter
+        from backend.adapters.exchanges.binance import BinanceAdapter
+        from backend.adapters.exchanges.bitget  import BitgetAdapter
 
-    if BtccAdapter not in seen_types and (cfg.btcc_api_key or paper):
-        adapters.append(BtccAdapter(
-            api_key=cfg.btcc_api_key, api_secret=cfg.btcc_api_secret,
-            paper=paper, base_url=cfg.btcc_base_url
-        ))
-        seen_types.add(BtccAdapter)
+        cfg = get_exchange_config()
+        paper = cfg.mode == "paper"
+        adapters: list[BaseExchangeAdapter] = []
 
-    if BinanceAdapter not in seen_types and (cfg.binance_api_key or paper):
-        adapters.append(BinanceAdapter(
-            api_key=cfg.binance_api_key, api_secret=cfg.binance_api_secret,
-            paper=paper, base_url=cfg.binance_base_url, testnet=cfg.binance_testnet
-        ))
-        seen_types.add(BinanceAdapter)
+        # Primary — from Phase 5 factory
+        adapters.append(get_adapter(cfg))
 
-    if BitgetAdapter not in seen_types and (cfg.bitget_api_key or paper):
-        adapters.append(BitgetAdapter(
-            api_key=cfg.bitget_api_key, api_secret=cfg.bitget_api_secret,
-            passphrase=cfg.bitget_passphrase, paper=paper, base_url=cfg.bitget_base_url
-        ))
-        seen_types.add(BitgetAdapter)
+        # Secondaries — remaining adapters that have credentials (or paper mode)
+        seen_types = {type(adapters[0])}
 
-    return adapters
+        if BtccAdapter not in seen_types and (cfg.btcc_api_key or paper):
+            adapters.append(BtccAdapter(
+                api_key=cfg.btcc_api_key, api_secret=cfg.btcc_api_secret,
+                paper=paper, base_url=cfg.btcc_base_url
+            ))
+            seen_types.add(BtccAdapter)
+
+        if BinanceAdapter not in seen_types and (cfg.binance_api_key or paper):
+            adapters.append(BinanceAdapter(
+                api_key=cfg.binance_api_key, api_secret=cfg.binance_api_secret,
+                paper=paper, base_url=cfg.binance_base_url, testnet=cfg.binance_testnet
+            ))
+            seen_types.add(BinanceAdapter)
+
+        if BitgetAdapter not in seen_types and (cfg.bitget_api_key or paper):
+            adapters.append(BitgetAdapter(
+                api_key=cfg.bitget_api_key, api_secret=cfg.bitget_api_secret,
+                passphrase=cfg.bitget_passphrase, paper=paper, base_url=cfg.bitget_base_url
+            ))
+            seen_types.add(BitgetAdapter)
+
+        _cached_adapters = adapters
+        return _cached_adapters
 
 
 # ---------------------------------------------------------------------------
