@@ -22,6 +22,12 @@ export function getConfiguredBackendUrl() {
     env.VITE_CRYPTOCORE_API_BASE ||
     env.VITE_API_URL ||
     env.NEXT_PUBLIC_BACKEND_URL;
+  
+  // In development, use the Vite proxy to avoid CORS issues
+  if (!env.PROD && explicitUrl) {
+    return '/api';
+  }
+  
   return trimTrailingSlash(explicitUrl || LOCAL_BACKEND_URL);
 }
 
