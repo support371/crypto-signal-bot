@@ -1,6 +1,7 @@
 const env = import.meta.env;
 
 const LOCAL_BACKEND_URL = 'http://localhost:8000';
+const HOSTED_BACKEND_URL = 'https://crypto-signal-bot-deqd.onrender.com';
 
 export type FrontendEnvValidation = {
   backendUrl: string;
@@ -22,13 +23,12 @@ export function getConfiguredBackendUrl() {
     env.VITE_CRYPTOCORE_API_BASE ||
     env.VITE_API_URL ||
     env.NEXT_PUBLIC_BACKEND_URL;
-  
-  // In development, use the Vite proxy to avoid CORS issues
-  if (!env.PROD && explicitUrl) {
+
+  if (!env.PROD && explicitUrl && /^https?:\/\//i.test(explicitUrl)) {
     return '/api';
   }
-  
-  return trimTrailingSlash(explicitUrl || LOCAL_BACKEND_URL);
+
+  return trimTrailingSlash(explicitUrl || (env.PROD ? HOSTED_BACKEND_URL : LOCAL_BACKEND_URL));
 }
 
 export function getSupabasePublishableKey() {
@@ -39,14 +39,11 @@ export function getSupabaseUrl() {
   return env.VITE_SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || '';
 }
 
-/**
- * Check if demo mode is enabled.
- * Demo mode allows accessing the dashboard without auth when Supabase is not configured.
- * Set VITE_DEMO_MODE=true to enable.
- */
 export function isDemoModeEnabled() {
   const demoMode = env.VITE_DEMO_MODE;
-  return demoMode === 'true' || demoMode === '1';
+  if (demoMode === 'false' || demoMode === '0') return false;
+  if (demoMode === 'true' || demoMode === '1') return true;
+  return Boolean(env.PROD);
 }
 
 export function validateFrontendEnv(): FrontendEnvValidation {
@@ -74,7 +71,6 @@ export function validateFrontendEnv(): FrontendEnvValidation {
     warnings.push('Supabase frontend auth is partially configured. Set both URL and publishable key, or leave both empty for local paper mode.');
   }
 
-  // Warn if demo mode is enabled in production without Supabase
   if (isProductionBuild && isDemoMode && !hasSupabaseUrl) {
     warnings.push('Demo mode is enabled without Supabase auth. This is intended for paper/demo releases only. Live trading is disabled.');
   }
