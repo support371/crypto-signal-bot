@@ -166,12 +166,14 @@ export function useBackendStatus(pollIntervalMs = 30000): UseBackendStatusResult
 
     // /health is the source of truth for connectivity
     if (healthResult.status === 'fulfilled') {
+      console.log('[v0] Health check succeeded:', healthResult.value);
       const normalized = normalizeHealth(healthResult.value);
       setHealth(normalized);
       setIsConnected(true);
       setError(null);
       setLastSuccessfulHealthAt(new Date());
     } else {
+      console.log('[v0] Health check failed:', healthResult.reason);
       const healthErr = healthResult.reason instanceof Error
         ? healthResult.reason.message
         : 'Failed to reach backend';
