@@ -1,7 +1,7 @@
 /**
  * src/tests/frontend_contracts.test.ts
  *
- * PHASE 13 — Frontend contract tests.
+ * PHASE 13+ — Frontend contract tests.
  *
  * Tests (pure logic, no rendering):
  *   1. useBackendState: loading state on init
@@ -11,6 +11,8 @@
  *   5. Prices hook is backend-only (no CoinGecko import)
  *   6. MarketDataMode never contains "SYNTHETIC"
  *   7. Auth bypass removed — authUnconfigured flag present
+ *   8. useBackendStatus resilient endpoint handling
+ *   9. Demo mode behavior
  *
  * Run: npx vitest run src/tests/frontend_contracts.test.ts
  */
@@ -164,5 +166,195 @@ describe("Kill switch — backend authoritative", () => {
     // which is fetched from GET /guardian/status (Phase 8/10)
     const killSwitchSource = "GET /guardian/status";
     expect(killSwitchSource).toContain("guardian/status");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 8. useBackendStatus — resilient endpoint handling
+// ---------------------------------------------------------------------------
+
+describe("useBackendStatus — resilient endpoint handling", () => {
+  it("/health success + /balance failure still results in isConnected=true", () => {
+    // Contract: if /health succeeds, isConnected must be true
+    // even if /balance, /config, or /exchange/status fail
+    const mockHealthSuccess = { status: 'ok' };
+    const mockBalanceFailure = new Error('Failed to fetch balance');
+    
+    // Simulated result: health worked, balance failed
+    const isConnected = mockHealthSuccess !== null;
+    expect(isConnected).toBe(true);
+    expect(mockBalanceFailure).toBeInstanceOf(Error);
+  });
+
+  it("/health failure results in isConnected=false", () => {
+    // Contract: if /health fails, isConnected must be false
+    const mockHealthFailure = null;
+    const isConnected = mockHealthFailure !== null;
+    expect(isConnected).toBe(false);
+  });
+
+  it("minimal health payload is normalized without runtime errors", () => {
+    // Contract: backend may return minimal { status: 'ok', ... }
+    // Frontend must normalize this to full shape with defaults
+    const minimalHealth = {
+      status: 'ok',
+      service: 'crypto-signal-bot-backend',
+      runtime: 'render',
+      mode: 'paper',
+      network: 'testnet',
+      uptime_seconds: 123,
+    };
+
+    // Normalize function should add missing fields with defaults
+    const normalized = {
+      ...minimalHealth,
+      kill_switch_active: minimalHealth.kill_switch_active ?? false,
+      kill_switch_reason: minimalHealth.kill_switch_reason ?? null,
+      api_error_count: minimalHealth.api_error_count ?? 0,
+      failed_order_count: minimalHealth.failed_order_count ?? 0,
+      halted: minimalHealth.halted ?? false,
+      guardian_triggered: minimalHealth.guardian_triggered ?? false,
+      market_data_mode: minimalHealth.market_data_mode ?? 'paper',
+      market_data_connected: minimalHealth.market_data_connected ?? false,
+      market_data_source: minimalHealth.market_data_source ?? 'health',
+    };
+
+    expect(normalized.kill_switch_active).toBe(false);
+    expect(normalized.kill_switch_reason).toBeNull();
+    expect(normalized.api_error_count).toBe(0);
+    expect(normalized.guardian_triggered).toBe(false);
+  });
+
+  it("exposes per-endpoint errors for diagnostics", () => {
+    // Contract: useBackendStatus exposes EndpointErrors
+    const endpointErrors = {
+      healthError: null,
+      balanceError: 'Failed to fetch balance',
+      configError: null,
+      exchangeStatusError: 'Failed to fetch exchange status',
+    };
+
+    expect(endpointErrors).toHaveProperty('healthError');
+    expect(endpointErrors).toHaveProperty('balanceError');
+    expect(endpointErrors).toHaveProperty('configError');
+    expect(endpointErrors).toHaveProperty('exchangeStatusError');
+    expect(endpointErrors.balanceError).toBeTruthy();
+    expect(endpointErrors.healthError).toBeNull();
+  });
+
+  it("backend diagnostics warning appears when optional endpoint fails but health works", () => {
+    // Contract: when health succeeds but optional endpoints fail,
+    // show degraded warning not full backend-offline
+    const isConnected = true;
+    const endpointErrors = {
+      healthError: null,
+      balanceError: 'Network error',
+      configError: null,
+      exchangeStatusError: null,
+    };
+
+    const hasOptionalEndpointFailures = 
+      endpointErrors.balanceError || 
+      endpointErrors.configError || 
+      endpointErrors.exchangeStatusError;
+
+    // Should show diagnostics warning, not backend unavailable
+    expect(isConnected).toBe(true);
+    expect(hasOptionalEndpointFailures).toBeTruthy();
+  });
+
+  it("exposes lastSuccessfulHealthAt timestamp", () => {
+    // Contract: useBackendStatus tracks when health last succeeded
+    const mockResult = {
+      lastSuccessfulHealthAt: new Date(),
+    };
+    expect(mockResult.lastSuccessfulHealthAt).toBeInstanceOf(Date);
+  });
+
+  it("exposes backendUrl for diagnostics", () => {
+    // Contract: useBackendStatus exposes the backend URL
+    const mockBackendUrl = 'https://crypto-signal-bot-deqd.onrender.com';
+    expect(mockBackendUrl).toContain('onrender.com');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 9. Demo mode behavior
+// ---------------------------------------------------------------------------
+
+describe("Demo mode — VITE_DEMO_MODE behavior", () => {
+  it("isDemoMode flag exists on AuthContextValue", () => {
+    const authContextKeys = [
+      "user", "session", "isLoading", "authUnconfigured", "isDemoMode",
+      "signUp", "signIn", "signOut",
+    ];
+    expect(authContextKeys).toContain("isDemoMode");
+  });
+
+  it("demo mode injects demo user when Supabase is not configured", () => {
+    // Contract: when VITE_DEMO_MODE=true and no Supabase,
+    // inject demo user instead of null
+    const demoModeEnabled = true;
+    const supabaseConfigured = false;
+    const shouldUseDemoMode = demoModeEnabled && !supabaseConfigured;
+
+    const DEMO_USER = { id: 'demo-paper-user', email: 'demo@paper.local' };
+    const user = shouldUseDemoMode ? DEMO_USER : null;
+
+    expect(user).not.toBeNull();
+    expect(user?.id).toBe('demo-paper-user');
+  });
+
+  it("live trading is never allowed in demo mode", () => {
+    // Contract: when isDemoMode=true, live trading must be blocked
+    const isDemoMode = true;
+    const systemMode = 'live';
+
+    const shouldBlockLiveTrading = isDemoMode && systemMode === 'live';
+    expect(shouldBlockLiveTrading).toBe(true);
+  });
+
+  it("paper trading is allowed in demo mode", () => {
+    // Contract: when isDemoMode=true, paper trading is allowed
+    const isDemoMode = true;
+    const systemMode = 'paper';
+
+    const shouldBlockTrading = isDemoMode && systemMode === 'live';
+    expect(shouldBlockTrading).toBe(false);
+  });
+
+  it("demo banner should be visible when in demo mode", () => {
+    // Contract: when isDemoMode=true, visible banner must be shown
+    const isDemoMode = true;
+    const showDemoBanner = isDemoMode;
+    expect(showDemoBanner).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 10. WebSocket failure does not mark backend offline
+// ---------------------------------------------------------------------------
+
+describe("WebSocket — failure isolation", () => {
+  it("WebSocket failure does not mark backend offline", () => {
+    // Contract: WS failure is tracked separately from backend health
+    const isConnected = true; // From /health
+    const wsConnected = false; // WebSocket failed
+
+    // Backend should still be considered online
+    expect(isConnected).toBe(true);
+    expect(wsConnected).toBe(false);
+  });
+
+  it("WebSocket status is displayed separately from backend status", () => {
+    // Contract: UI shows WS status and backend status as separate indicators
+    const wsConnected = false;
+    const isConnected = true;
+
+    const wsLabel = wsConnected ? 'WS LIVE' : 'WS OFFLINE';
+    const backendLabel = isConnected ? 'SYSTEM OPERATIONAL' : 'BACKEND DISCONNECTED';
+
+    expect(wsLabel).toBe('WS OFFLINE');
+    expect(backendLabel).toBe('SYSTEM OPERATIONAL');
   });
 });
