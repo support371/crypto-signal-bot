@@ -14,7 +14,7 @@ import { SettingsModal } from '@/components/dashboard/SettingsModal';
 import type { UserSettings } from '@/components/dashboard/SettingsModal';
 import { SignalPanel } from '@/components/dashboard/SignalPanel';
 import { SystemMetricsPanel } from '@/components/dashboard/SystemMetricsPanel';
-import { useBackendStatus } from '@/hooks/useBackendStatus';
+import { useBackendStatus, type EndpointErrors } from '@/hooks/useBackendStatus';
 import { useBackendWebSocket } from '@/hooks/useBackendWebSocket';
 import { useCryptoPrices } from '@/hooks/useCryptoPrices';
 import { useEarnings } from '@/hooks/useEarnings';
@@ -25,13 +25,71 @@ import { usePersistedSettings } from '@/hooks/usePersistedSettings';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { useSignalEngine } from '@/hooks/useSignalEngine';
 import { fetchBackendJson } from '@/lib/backend';
+import { useAuth } from '@/context/AuthProvider';
+
+/**
+ * DemoModeBanner displays a warning when running in demo mode.
+ * Live trading is disabled in demo mode.
+ */
+function DemoModeBanner() {
+  return (
+    <div className="bg-amber-500/90 text-black py-2 px-4 text-center font-mono text-sm">
+      <span className="font-bold">DEMO PAPER MODE</span> — Auth disabled, live trading unavailable. For evaluation only.
+    </div>
+  );
+}
+
+/**
+ * DiagnosticsWarning displays a warning when optional endpoints fail
+ * but the backend health check is still successful.
+ */
+function DiagnosticsWarning({
+  endpointErrors,
+  backendUrl,
+}: {
+  endpointErrors: EndpointErrors;
+  backendUrl: string;
+}) {
+  const failedEndpoints: string[] = [];
+  if (endpointErrors.balanceError) failedEndpoints.push('balance');
+  if (endpointErrors.configError) failedEndpoints.push('config');
+  if (endpointErrors.exchangeStatusError) failedEndpoints.push('exchange status');
+
+  if (failedEndpoints.length === 0) return null;
+
+  return (
+    <div className="cyber-card p-4 border-warning bg-warning/10">
+      <p className="text-warning font-mono text-sm">
+        Backend is online, but some diagnostics are unavailable: {failedEndpoints.join(', ')}.
+      </p>
+      <details className="mt-2">
+        <summary className="text-warning/70 font-mono text-xs cursor-pointer">
+          Diagnostics details
+        </summary>
+        <div className="mt-2 space-y-1 text-xs font-mono text-muted-foreground">
+          <p>Backend URL: {backendUrl}</p>
+          {endpointErrors.balanceError && (
+            <p>Balance error: {endpointErrors.balanceError}</p>
+          )}
+          {endpointErrors.configError && (
+            <p>Config error: {endpointErrors.configError}</p>
+          )}
+          {endpointErrors.exchangeStatusError && (
+            <p>Exchange status error: {endpointErrors.exchangeStatusError}</p>
+          )}
+        </div>
+      </details>
+    </div>
+  );
+}
 
 const Index = () => {
   const [selectedSymbol, setSelectedSymbol] = useState('bitcoin');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { settings, setSettings } = usePersistedSettings();
+  const { isDemoMode } = useAuth();
 
-  const { health, config, exchangeStatus, paperBalance, isConnected, refetch: refetchStatus } = useBackendStatus();
+  const { health, config, exchangeStatus, paperBalance, isConnected, endpointErrors, backendUrl, refetch: refetchStatus } = useBackendStatus();
   const systemMode = health?.mode ?? 'paper';
   const preferBackendPrices = exchangeStatus?.market_data_mode === 'live_public_paper';
   const { prices, isLoading, error, source: priceSource, refetch: refetchPrices } = useCryptoPrices(
@@ -58,6 +116,11 @@ const Index = () => {
   const lastAutoTradeSig = useRef<string | null>(null);
 
   useEffect(() => {
+    // Never allow live trading in demo mode
+    if (isDemoMode && systemMode === 'live') {
+      return;
+    }
+
     if (
       !settings.autoTradeEnabled ||
       !signal ||
@@ -103,6 +166,7 @@ const Index = () => {
       });
   }, [
     health?.kill_switch_active,
+    isDemoMode,
     refetchAudit,
     refetchMetrics,
     refetchPortfolio,
@@ -211,6 +275,7 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background scanlines">
+      {isDemoMode && <DemoModeBanner />}
       <Header
         onSettingsClick={() => setSettingsOpen(true)}
         backendConnected={isConnected}
@@ -233,11 +298,18 @@ const Index = () => {
         )}
 
         {!isConnected && (
-          <div className="cyber-card p-4 border-warning bg-warning/10">
-            <p className="text-warning font-mono text-sm">
-              ⚠ Backend unavailable. Market state, health, and paper balance are offline.
+          <div className="cyber-card p-4 border-destructive bg-destructive/10">
+            <p className="text-destructive font-mono text-sm">
+              Backend unavailable. Market state, health, and paper balance are offline.
+            </p>
+            <p className="text-destructive/70 font-mono text-xs mt-2">
+              Backend URL: {backendUrl}
             </p>
           </div>
+        )}
+
+        {isConnected && (endpointErrors.balanceError || endpointErrors.configError || endpointErrors.exchangeStatusError) && (
+          <DiagnosticsWarning endpointErrors={endpointErrors} backendUrl={backendUrl} />
         )}
 
         {isConnected && config?.auth_enabled && !settings.backendApiKey && (

@@ -8,6 +8,7 @@ export type FrontendEnvValidation = {
   isProductionBuild: boolean;
   hasSupabaseUrl: boolean;
   hasSupabaseKey: boolean;
+  isDemoMode: boolean;
   missingRequired: string[];
   warnings: string[];
 };
@@ -32,12 +33,23 @@ export function getSupabaseUrl() {
   return env.VITE_SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || '';
 }
 
+/**
+ * Check if demo mode is enabled.
+ * Demo mode allows accessing the dashboard without auth when Supabase is not configured.
+ * Set VITE_DEMO_MODE=true to enable.
+ */
+export function isDemoModeEnabled() {
+  const demoMode = env.VITE_DEMO_MODE;
+  return demoMode === 'true' || demoMode === '1';
+}
+
 export function validateFrontendEnv(): FrontendEnvValidation {
   const backendUrl = getConfiguredBackendUrl();
   const isProductionBuild = env.PROD;
   const isLocalBackend = /^http:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i.test(backendUrl);
   const hasSupabaseUrl = Boolean(getSupabaseUrl());
   const hasSupabaseKey = Boolean(getSupabasePublishableKey());
+  const isDemoMode = isDemoModeEnabled();
   const warnings: string[] = [];
   const missingRequired: string[] = [];
 
@@ -56,12 +68,18 @@ export function validateFrontendEnv(): FrontendEnvValidation {
     warnings.push('Supabase frontend auth is partially configured. Set both URL and publishable key, or leave both empty for local paper mode.');
   }
 
+  // Warn if demo mode is enabled in production without Supabase
+  if (isProductionBuild && isDemoMode && !hasSupabaseUrl) {
+    warnings.push('Demo mode is enabled without Supabase auth. This is intended for paper/demo releases only. Live trading is disabled.');
+  }
+
   return {
     backendUrl,
     isLocalBackend,
     isProductionBuild,
     hasSupabaseUrl,
     hasSupabaseKey,
+    isDemoMode,
     missingRequired: Array.from(new Set(missingRequired)),
     warnings,
   };

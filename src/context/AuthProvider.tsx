@@ -14,12 +14,18 @@
  *     The ProtectedRoute redirects to /auth, which shows a clear error.
  *   - When Supabase IS configured: real auth lifecycle as before.
  *
+ * DEMO MODE (Option B):
+ *   - When VITE_DEMO_MODE=true AND Supabase is not configured:
+ *     - A demo user is injected for paper/demo dashboard access.
+ *     - isDemoMode flag is exposed to show demo banner.
+ *     - Live trading is never allowed in demo mode.
+ *
  * NOTE: VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY must be set
- *       as Vercel environment variables for authentication to work.
- *       The app will not bypass auth when they are absent.
+ *       as Vercel environment variables for production authentication.
  */
 
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { isDemoModeEnabled } from "@/lib/env";
 
 // ---------------------------------------------------------------------------
 // Supabase config check — no fabricated session when absent
@@ -79,6 +85,11 @@ export interface AuthContextValue {
    * UI should show a clear "configure Supabase" error, not a fake login.
    */
   authUnconfigured: boolean;
+  /**
+   * True when demo mode is active (VITE_DEMO_MODE=true and Supabase not configured).
+   * UI should show a demo banner and disable live trading.
+   */
+  isDemoMode: boolean;
   signUp:   (email: string, password: string) => Promise<{ error: Error | null }>;
   signIn:   (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut:  () => Promise<void>;
@@ -100,15 +111,28 @@ export function useAuth(): AuthContextValue {
 // Provider
 // ---------------------------------------------------------------------------
 
+// Demo user for VITE_DEMO_MODE=true when Supabase is not configured
+const DEMO_USER: AuthUser = { id: 'demo-paper-user', email: 'demo@paper.local' };
+const DEMO_SESSION: AuthSession = { user: DEMO_USER, access_token: 'demo-paper-token' };
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user,      setUser]      = useState<AuthUser | null>(null);
-  const [session,   setSession]   = useState<AuthSession | null>(null);
+  const demoModeEnabled = isDemoModeEnabled();
+  const shouldUseDemoMode = demoModeEnabled && !isSupabaseConfigured;
+
+  const [user, setUser] = useState<AuthUser | null>(shouldUseDemoMode ? DEMO_USER : null);
+  const [session, setSession] = useState<AuthSession | null>(shouldUseDemoMode ? DEMO_SESSION : null);
   const [isLoading, setIsLoading] = useState(isSupabaseConfigured); // false when not configured
 
   // When Supabase is configured, subscribe to auth state
   useEffect(() => {
+    // Demo mode: user already set, no need for auth
+    if (shouldUseDemoMode) {
+      setIsLoading(false);
+      return;
+    }
+
     if (!isSupabaseConfigured) {
-      // PHASE 3: no hardcoded local user injected here.
+      // PHASE 3: no hardcoded local user injected here (unless demo mode).
       // user = null, session = null. ProtectedRoute handles the redirect.
       setIsLoading(false);
       return;
@@ -150,7 +174,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
       unsubscribe();
     };
-  }, []);
+  }, [shouldUseDemoMode]);
 
   // ---------------------------------------------------------------------------
   // Auth actions — fail with clear error when Supabase is not configured
@@ -197,7 +221,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         session,
         isLoading,
-        authUnconfigured: !isSupabaseConfigured,
+        authUnconfigured: !isSupabaseConfigured && !shouldUseDemoMode,
+        isDemoMode: shouldUseDemoMode,
         signUp,
         signIn,
         signOut,
