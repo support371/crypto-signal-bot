@@ -28,6 +28,11 @@ export function getConfiguredBackendUrl() {
     return '/api';
   }
 
+  if (env.PROD && explicitUrl && !/^https?:\/\//i.test(explicitUrl)) {
+    console.warn(`[env] Ignoring relative production backend URL "${explicitUrl}". Using hosted Render backend instead.`);
+    return HOSTED_BACKEND_URL;
+  }
+
   return trimTrailingSlash(explicitUrl || (env.PROD ? HOSTED_BACKEND_URL : LOCAL_BACKEND_URL));
 }
 
