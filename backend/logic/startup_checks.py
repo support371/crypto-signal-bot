@@ -18,6 +18,8 @@ import os
 from backend.config.runtime import get_runtime_config
 from backend.logic.exchange_adapter import get_required_credential_envs, normalize_exchange_name
 
+_MAINNET_TRUTHY = {"1", "true", "yes"}
+
 logger = logging.getLogger("backend.startup")
 
 
@@ -77,8 +79,8 @@ def _check_mainnet_gate(trading_mode: str, network: str, adapter_mode: str) -> N
     This prevents accidental mainnet activation from a stale .env file.
     """
     if trading_mode == "live" and network == "mainnet":
-        allow = os.getenv("ALLOW_MAINNET", "").lower()
-        if allow != "true":
+        allow = os.getenv("ALLOW_MAINNET", "").strip().lower()
+        if allow not in _MAINNET_TRUTHY:
             # build_adapter() already fell back to paper if ccxt/creds are missing,
             # but if adapter_mode is still 'mainnet' we must enforce the gate.
             if adapter_mode == "mainnet":
