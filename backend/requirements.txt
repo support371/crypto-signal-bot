@@ -9,6 +9,7 @@ websockets
 prometheus_client
 httpx
 sqlalchemy>=2.0
+aiosqlite
 
 # Testing (also needed in CI)
 pytest

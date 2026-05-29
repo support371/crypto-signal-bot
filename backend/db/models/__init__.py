@@ -148,6 +148,16 @@ class AuditLogRecord(Base):
     )
 
 
+class PortfolioStateRecord(Base):
+    """Current portfolio balance per asset — upserted on each trade."""
+    __tablename__ = "portfolio_state"
+
+    asset = Column(String(20), primary_key=True)
+    amount = Column(Float, nullable=False)
+    mode = Column(String(8), nullable=False, default="paper")
+    updated_at = Column(BigInteger, default=unix_timestamp, onupdate=unix_timestamp)
+
+
 class ReconciliationReport(Base):
     """Periodic reconciliation snapshots."""
     __tablename__ = "reconciliation_reports"
@@ -185,6 +195,7 @@ __all__ = [
     "GuardianEventRecord",
     "RiskEventRecord",
     "AuditLogRecord",
+    "PortfolioStateRecord",
     "ReconciliationReport",
     "ServiceHeartbeat",
 ]

@@ -32,6 +32,7 @@ from backend.db.models import (
     FillRecord,
     GuardianEventRecord,
     OrderRecord,
+    PortfolioStateRecord,
     PositionRecord,
     ReconciliationReport,
     RiskEventRecord,
@@ -268,3 +269,42 @@ class HeartbeatRepository(BaseRepository):
     async def get_all(self) -> Sequence[ServiceHeartbeat]:
         result = await self.session.execute(select(ServiceHeartbeat))
         return result.scalars().all()
+
+
+# ---------------------------------------------------------------------------
+# Portfolio state repository — survives restarts
+# ---------------------------------------------------------------------------
+
+class PortfolioRepository(BaseRepository):
+    """Persist and restore in-memory PaperPortfolio balances."""
+
+    async def save_balances(self, balances: dict[str, float], mode: str = "paper") -> None:
+        """Upsert every asset balance into the portfolio_state table."""
+        now = int(time.time())
+        for asset, amount in balances.items():
+            existing = await self.session.get(PortfolioStateRecord, asset)
+            if existing:
+                existing.amount = amount
+                existing.mode = mode
+                existing.updated_at = now
+            else:
+                self.session.add(PortfolioStateRecord(
+                    asset=asset, amount=amount, mode=mode, updated_at=now,
+                ))
+        # Remove assets no longer in balances (dust cleanup)
+        result = await self.session.execute(select(PortfolioStateRecord))
+        for record in result.scalars().all():
+            if record.asset not in balances:
+                await self.session.delete(record)
+        await self.session.flush()
+
+    async def load_balances(self, mode: str = "paper") -> dict[str, float]:
+        """Load all asset balances from the portfolio_state table."""
+        result = await self.session.execute(
+            select(PortfolioStateRecord)
+            .where(PortfolioStateRecord.mode == mode)
+        )
+        records = result.scalars().all()
+        if not records:
+            return {}
+        return {r.asset: r.amount for r in records}
