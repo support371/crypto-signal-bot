@@ -263,7 +263,8 @@ class TestHybridPaperModeStartup:
         original_mode = app_module.TRADING_MODE
         original_network = app_module.NETWORK
         original_live_market = app_module.PAPER_USE_LIVE_MARKET_DATA
-        original_service = app_module.market_data_service
+        from backend.logic import context as ctx
+        original_service = ctx.market_data_service
         original_adapter = app_module.exchange_adapter
         original_api_key = app_module.BACKEND_API_KEY
 
@@ -272,7 +273,7 @@ class TestHybridPaperModeStartup:
         app_module.NETWORK = "testnet"
         app_module.PAPER_USE_LIVE_MARKET_DATA = True
         app_module.BACKEND_API_KEY = ""
-        app_module.market_data_service = fake_service
+        ctx.market_data_service = fake_service
         app_module.exchange_adapter = build_adapter(
             trading_mode="paper",
             network="testnet",
@@ -294,7 +295,7 @@ class TestHybridPaperModeStartup:
             app_module.TRADING_MODE = original_mode
             app_module.NETWORK = original_network
             app_module.PAPER_USE_LIVE_MARKET_DATA = original_live_market
-            app_module.market_data_service = original_service
+            ctx.market_data_service = original_service
             app_module.exchange_adapter = original_adapter
             app_module.BACKEND_API_KEY = original_api_key
 

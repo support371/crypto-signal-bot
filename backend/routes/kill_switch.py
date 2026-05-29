@@ -22,7 +22,6 @@ from backend.services.audit.service import (
     append_kill_switch_manual,
     append_kill_switch_deactivate,
 )
-from backend.config.loader import get_auth_config
 from backend.logic import context
 
 router = APIRouter(tags=["kill-switch"])
@@ -31,11 +30,10 @@ router = APIRouter(tags=["kill-switch"])
 def require_operator_key(
     x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
 ) -> None:
-    # Standard config loader
-    auth = get_auth_config()
-    if not auth.auth_enabled:
+    key = context.BACKEND_API_KEY
+    if not key:
         return
-    if not x_api_key or x_api_key != auth.api_key:
+    if not x_api_key or x_api_key != key:
         raise HTTPException(status_code=401, detail="X-API-Key required for kill-switch control.")
 
 
