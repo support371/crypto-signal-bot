@@ -11,7 +11,6 @@ import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { Input } from '@/components/ui/input';
 import { Settings, Shield, Activity, Wallet, Volume2 } from 'lucide-react';
 import { DEFAULT_SETTINGS } from '@/components/dashboard/settingsDefaults';
 
@@ -22,7 +21,6 @@ export interface UserSettings {
   spreadStressThreshold: number;
   autoTradeEnabled: boolean;
   soundAlertsEnabled: boolean;
-  backendApiKey: string;
 }
 
 interface SettingsModalProps {
@@ -203,29 +201,6 @@ export function SettingsModal({
               />
               <p className="text-xs text-muted-foreground">
                 Spread percentage above which stress is flagged
-              </p>
-            </div>
-          </div>
-
-          <Separator className="bg-border" />
-
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <Shield className="w-4 h-4 text-primary" />
-              <Label className="text-sm font-semibold">Backend Operator API Key</Label>
-            </div>
-            <div className="space-y-2 pl-6">
-              <Input
-                type="password"
-                value={localSettings.backendApiKey}
-                onChange={(event) =>
-                  setLocalSettings((s) => ({ ...s, backendApiKey: event.target.value }))
-                }
-                placeholder="Optional X-API-Key for authenticated write endpoints"
-                autoComplete="off"
-              />
-              <p className="text-xs text-muted-foreground">
-                Stored only in this browser and sent as <span className="font-mono">X-API-Key</span> on backend requests when set.
               </p>
             </div>
           </div>

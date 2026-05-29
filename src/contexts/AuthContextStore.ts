@@ -1,10 +1,6 @@
-import {
-  AuthProvider,
-  useAuth,
-  isSupabaseConfigured,
-} from "@/context/AuthProvider";
+import { useAuth } from "@/context/AuthContext";
 
-export { AuthProvider, useAuth, isSupabaseConfigured };
+export { useAuth, isSupabaseConfigured } from "@/context/AuthContext";
 
 export const useAuthUser = () => useAuth().user;
 export const useIsAdmin = () => false;

@@ -25,7 +25,7 @@ import { usePersistedSettings } from '@/hooks/usePersistedSettings';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { useSignalEngine } from '@/hooks/useSignalEngine';
 import { fetchBackendJson } from '@/lib/backend';
-import { useAuth } from '@/context/AuthProvider';
+import { useAuth } from '@/context/AuthContext';
 
 /**
  * DemoModeBanner displays a warning when running in demo mode.
@@ -310,14 +310,6 @@ const Index = () => {
 
         {isConnected && (endpointErrors.balanceError || endpointErrors.configError || endpointErrors.exchangeStatusError) && (
           <DiagnosticsWarning endpointErrors={endpointErrors} backendUrl={backendUrl} />
-        )}
-
-        {isConnected && config?.auth_enabled && !settings.backendApiKey && (
-          <div className="cyber-card p-4 border-warning bg-warning/10">
-            <p className="text-warning font-mono text-sm">
-              ⚠ Backend write auth is enabled. Add your operator API key in Settings to use trading, kill-switch, withdraw, and reset actions from the UI.
-            </p>
-          </div>
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6">
