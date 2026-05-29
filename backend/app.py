@@ -43,8 +43,15 @@ from backend.logic.paper_trading import (
 from backend.logic.risk import compute_risk_score, risk_gate
 from backend.logic.signals import build_signal
 from backend.engine.risk_rules import RiskRuleEngine
+from backend.engine.mainnet_gate import assert_not_mainnet, mainnet_status, MainnetGateError
 from backend.models.risk import RiskContext
 from backend.logic.simulate import StepResult, simulate_session
+from backend.db.session import init_db, close_db
+from backend.services.portfolio_persistence import (
+    persist_portfolio,
+    persist_order,
+    restore_portfolio,
+)
 from backend.models.execution_intent import (
     ExecutionIntent,
     IntentRequest,
@@ -121,6 +128,16 @@ context.risk_engine = risk_engine
 @asynccontextmanager
 async def lifespan(application):
     context.app_event_loop = asyncio.get_running_loop()
+
+    # Initialize database and restore portfolio state
+    try:
+        await init_db()
+        await restore_portfolio(paper_portfolio, mode=TRADING_MODE)
+        # Update guardian starting NAV to match restored portfolio value
+        context.guardian_starting_nav = paper_portfolio.get_total_exposure(_synthetic_price)
+    except Exception as exc:
+        logger.warning("DB init skipped (non-fatal): %s", exc)
+
     if TRADING_MODE == "paper" and PAPER_USE_LIVE_MARKET_DATA:
         svc = _get_market_data_service()
         await svc.start()
@@ -136,9 +153,18 @@ async def lifespan(application):
     try:
         yield
     finally:
+        # Persist portfolio before shutdown
+        try:
+            await persist_portfolio(paper_portfolio, mode=TRADING_MODE)
+        except Exception:
+            logger.warning("Portfolio persist on shutdown failed (non-fatal).")
         await stop_reconciliation()
         if context.market_data_service is not None:
             await context.market_data_service.stop()
+        try:
+            await close_db()
+        except Exception:
+            pass
 
 app = FastAPI(title="Crypto Signal Bot — Trading Backend", version="2.2.0", lifespan=lifespan)
 
@@ -168,7 +194,10 @@ async def health():
     on `/config`, `/balance`, and `/guardian/status` so a non-critical runtime
     issue cannot cause Render to mark the whole service unhealthy.
     """
-    market_data = _get_market_data_status()
+    try:
+        market_data = _get_market_data_status()
+    except Exception:
+        market_data = {"market_data_mode": "unknown", "connected": False, "source": "unavailable"}
     return {
         "status": "ok",
         "service": "crypto-signal-bot-backend",
@@ -431,6 +460,16 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
         venue_id=req.venue_id or EXCHANGE,
     )
 
+    # Mainnet gate: block live mainnet execution unless explicitly allowed
+    try:
+        assert_not_mainnet(NETWORK, mode)
+    except MainnetGateError as exc:
+        intent.status = IntentStatus.RISK_REJECTED
+        intent.notes = str(exc)
+        append_risk_event({"intent_id": intent.id, "reason": intent.notes, "source": "mainnet_gate"})
+        append_intent(intent.model_dump())
+        return IntentResponse(id=intent.id, status=intent.status.value, notes=intent.notes)
+
     try:
         assert_scope_allowed(strategy_id=intent.strategy_id, venue_id=intent.venue_id)
     except TradingScopeHaltedError as exc:
@@ -519,6 +558,10 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
             timestamp=intent.updated_at,
         )
 
+    # Persist portfolio state and order to database
+    context.schedule_background(persist_portfolio, paper_portfolio, TRADING_MODE)
+    context.schedule_background(persist_order, intent_data, TRADING_MODE)
+
     context.schedule_background(
         context.broadcast,
         {
@@ -560,6 +603,10 @@ def get_config():
             "max_slippage_pct": RUNTIME_CONFIG.risk.max_slippage_pct,
         },
     }
+
+@app.get("/mainnet-gate/status", dependencies=[Depends(rate_limit.rate_limit)])
+def get_mainnet_gate_status():
+    return mainnet_status()
 
 @app.get("/exchange/status", dependencies=[Depends(rate_limit.rate_limit)])
 def get_exchange_status():
@@ -703,6 +750,21 @@ async def reconciliation_status_api():
     if report is None:
         return {"status": "no_report", "message": "Reconciliation has not run yet."}
     return {"status": "ok", "report": report}
+
+@app.get("/reconciliation/exchange", dependencies=[Depends(rate_limit.rate_limit)])
+def exchange_reconciliation_api():
+    from backend.services.exchange_reconciler import reconcile_against_exchange
+    result = reconcile_against_exchange(
+        adapter=exchange_adapter,
+        local_balances=dict(paper_portfolio.balances),
+    )
+    return result.to_dict()
+
+@app.get("/exchange/validate", dependencies=[Depends(rate_limit.rate_limit)])
+def exchange_validation_api():
+    from backend.services.testnet_validator import validate_exchange_connectivity
+    result = validate_exchange_connectivity(exchange_adapter)
+    return result.to_dict()
 
 @app.post("/market-state")
 def market_state_api(req: MarketStateRequest, _: None = Depends(require_auth)):

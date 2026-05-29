@@ -15,6 +15,8 @@ from typing import Dict, Optional
 
 logger = logging.getLogger("backend.exchange_adapter")
 
+from backend.engine.mainnet_gate import assert_not_mainnet
+
 SUPPORTED_EXCHANGES = {"binance", "bitget", "btcc"}
 _CREDENTIAL_ENV_MAP = {
     "binance": ("BINANCE_API_KEY", "BINANCE_API_SECRET", None),
@@ -452,6 +454,10 @@ def build_adapter(
         return PaperAdapter(portfolio, synthetic_price_fn)
 
     testnet = network != "mainnet"
+
+    # Mainnet gate: block live mainnet unless explicitly allowed
+    assert_not_mainnet(network, trading_mode)
+
     try:
         adapter = CCXTSpotAdapter(exchange_id=selected_exchange, testnet=testnet)
         logger.info("Adapter: %s (exchange=%s mode=%s)", adapter.__class__.__name__, adapter.exchange, adapter.mode)

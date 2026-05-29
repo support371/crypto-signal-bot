@@ -223,6 +223,9 @@ class SlippageRule(RiskRule):
         self.max_slippage_pct = max_slippage_pct
 
     def evaluate(self, ctx: RiskContext) -> RuleResult:
+        if ctx.side == "SELL":
+            return RuleResult(self.name, True, "SELL reduces position — always allowed")
+
         if not ctx.price or ctx.price <= 0:
             return RuleResult(self.name, True, "No price data, skipping slippage check")
 
