@@ -192,7 +192,10 @@ async def health():
     on `/config`, `/balance`, and `/guardian/status` so a non-critical runtime
     issue cannot cause Render to mark the whole service unhealthy.
     """
-    market_data = _get_market_data_status()
+    try:
+        market_data = _get_market_data_status()
+    except Exception:
+        market_data = {"market_data_mode": "unknown", "connected": False, "source": "unavailable"}
     return {
         "status": "ok",
         "service": "crypto-signal-bot-backend",
