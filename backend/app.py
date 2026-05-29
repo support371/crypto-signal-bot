@@ -37,6 +37,7 @@ from backend.logic.market_data import BasePublicMarketDataService, build_public_
 from backend.logic.startup_checks import run as run_startup_checks
 from backend.logic.paper_trading import (
     PaperPortfolio,
+    _parse_symbol,
     _synthetic_price,
 )
 from backend.logic.risk import compute_risk_score, risk_gate
@@ -243,10 +244,10 @@ def _guardian_evaluate() -> Optional[str]:
         return f"API error threshold reached ({context.api_error_count} errors)"
     if context.failed_order_count >= _GUARDIAN_MAX_FAILED_ORDERS:
         return f"Failed order threshold reached ({context.failed_order_count} failures)"
-    current_usdt = paper_portfolio.get_balance("USDT")
+    current_nav = paper_portfolio.get_total_exposure(_synthetic_price)
     if context.guardian_starting_nav > 0:
         context.guardian_drawdown_pct = max(
-            0.0, (context.guardian_starting_nav - current_usdt) / context.guardian_starting_nav
+            0.0, (context.guardian_starting_nav - current_nav) / context.guardian_starting_nav
         )
         if context.guardian_drawdown_pct >= _GUARDIAN_MAX_DRAWDOWN_PCT:
             return (
@@ -432,18 +433,30 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
         return IntentResponse(id=intent.id, status=intent.status.value, notes=intent.notes)
 
     current_price = req.price or _synthetic_price(intent.symbol)
-    account_balance = paper_portfolio.get_balance("USDT")
-    exposure = paper_portfolio.get_total_exposure(_synthetic_price)
+    total_equity = paper_portfolio.get_total_exposure(_synthetic_price)
+
+    # Symbol-specific position value (not total portfolio)
+    base_asset, _quote = _parse_symbol(intent.symbol)
+    symbol_position_value = paper_portfolio.get_balance(base_asset) * current_price
+
+    # Non-cash exposure: sum of all non-USDT holdings at current prices
+    non_cash_exposure = 0.0
+    for asset, amount in paper_portfolio.balances.items():
+        if asset not in ("USDT", "USDC", "BUSD"):
+            try:
+                non_cash_exposure += amount * _synthetic_price(f"{asset}USDT")
+            except Exception:
+                pass
 
     risk_ctx = RiskContext(
         symbol=intent.symbol,
         side=intent.side.value,
         quantity=intent.quantity,
         price=current_price,
-        current_position_value=exposure,
-        current_total_exposure=exposure,
+        current_position_value=symbol_position_value,
+        current_total_exposure=non_cash_exposure,
         daily_pnl=context.guardian_drawdown_pct * context.guardian_starting_nav * -1.0,
-        account_balance=account_balance,
+        account_balance=total_equity,
         volatility_24h=0.02, # Simplified
     )
     engine_result = risk_engine.evaluate(risk_ctx)
