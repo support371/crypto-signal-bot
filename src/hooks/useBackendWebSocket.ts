@@ -187,6 +187,8 @@ export function useBackendWebSocket(options: UseBackendWebSocketOptions = {}): W
 
     ws.onmessage = (event) => {
       if (!mountedRef.current) return;
+      // Ignore messages from a superseded socket
+      if (wsRef.current !== ws) return;
       let msg: WsMessage;
       try {
         msg = JSON.parse(event.data) as WsMessage;
@@ -201,10 +203,8 @@ export function useBackendWebSocket(options: UseBackendWebSocketOptions = {}): W
         if (msg.type === 'ping' && ws.readyState === WebSocket.OPEN) {
           ws.send('pong');
         }
-        if (msg.type === 'status') {
-          // Status messages don't need to propagate to UI state
-          return;
-        }
+        // Heartbeat/status messages don't need to propagate to UI state
+        return;
       }
 
       setLastMessage(msg);
@@ -238,6 +238,9 @@ export function useBackendWebSocket(options: UseBackendWebSocketOptions = {}): W
 
     ws.onclose = () => {
       if (!mountedRef.current) return;
+      // Guard: if another socket already took over (e.g. visibility change
+      // reconnect), don't clobber the new connection.
+      if (wsRef.current !== ws) return;
       setConnected(false);
       wsRef.current = null;
       scheduleReconnect();
