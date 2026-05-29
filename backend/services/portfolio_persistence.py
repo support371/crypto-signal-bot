@@ -76,7 +76,7 @@ async def persist_order(intent_dict: dict, mode: str = "paper") -> None:
                 filled_qty=intent_dict.get("fill_quantity"),
                 status=intent_dict.get("status", ""),
                 mode=mode,
-                venue="paper",
+                venue=intent_dict.get("venue_id", "paper"),
                 reject_reason=intent_dict.get("notes") if intent_dict.get("status") != "FILLED" else None,
             )
             session.add(record)
