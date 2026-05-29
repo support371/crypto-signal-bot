@@ -133,6 +133,8 @@ async def lifespan(application):
     try:
         await init_db()
         await restore_portfolio(paper_portfolio, mode=TRADING_MODE)
+        # Update guardian starting NAV to match restored portfolio value
+        context.guardian_starting_nav = paper_portfolio.get_total_exposure(_synthetic_price)
     except Exception as exc:
         logger.warning("DB init skipped (non-fatal): %s", exc)
 
