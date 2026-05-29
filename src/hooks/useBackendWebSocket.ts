@@ -11,6 +11,20 @@ export interface WsHealthMessage {
   market_data_connected: boolean;
 }
 
+export interface WsTickerMessage {
+  type: 'ticker';
+  symbol: string;
+  price: number;
+  change: number;
+  timestamp: number;
+}
+
+export interface WsStatusMessage {
+  type: 'status';
+  ws: string;
+  backend: string;
+}
+
 export interface WsOrderUpdateMessage {
   type: 'order_update';
   intent_id: string;
@@ -71,6 +85,8 @@ export interface WsExchangeStatusMessage {
 
 export type WsMessage =
   | WsHealthMessage
+  | WsTickerMessage
+  | WsStatusMessage
   | WsOrderUpdateMessage
   | WsGuardianAlertMessage
   | WsKillSwitchMessage
@@ -79,12 +95,12 @@ export type WsMessage =
 
 interface UseBackendWebSocketOptions {
   onHealthUpdate?: (msg: WsHealthMessage) => void;
+  onTickerUpdate?: (msg: WsTickerMessage) => void;
   onOrderUpdate?: (msg: WsOrderUpdateMessage) => void;
   onGuardianAlert?: (msg: WsGuardianAlertMessage) => void;
   onKillSwitchChange?: (msg: WsKillSwitchMessage) => void;
   onMarketUpdate?: (msg: WsMarketUpdateMessage) => void;
   onExchangeStatus?: (msg: WsExchangeStatusMessage) => void;
-  reconnectDelayMs?: number;
 }
 
 interface WebSocketState {
@@ -93,6 +109,10 @@ interface WebSocketState {
   lastGuardianAlert: WsGuardianAlertMessage | null;
 }
 
+// Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s max
+const MIN_RECONNECT_MS = 1000;
+const MAX_RECONNECT_MS = 30000;
+
 function getWsUrl(): string {
   return getBackendWebSocketUrl();
 }
@@ -100,12 +120,12 @@ function getWsUrl(): string {
 export function useBackendWebSocket(options: UseBackendWebSocketOptions = {}): WebSocketState {
   const {
     onHealthUpdate,
+    onTickerUpdate,
     onOrderUpdate,
     onGuardianAlert,
     onKillSwitchChange,
     onMarketUpdate,
     onExchangeStatus,
-    reconnectDelayMs = 5000,
   } = options;
 
   const [connected, setConnected] = useState(false);
@@ -115,6 +135,12 @@ export function useBackendWebSocket(options: UseBackendWebSocketOptions = {}): W
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
+  const attemptRef = useRef(0);
+  const lastPingRef = useRef<number>(0);
+
+  // Store callbacks in refs so connect() doesn't need them as deps
+  const cbRef = useRef(options);
+  cbRef.current = options;
 
   const clearReconnectTimer = useCallback(() => {
     if (reconnectTimerRef.current !== null) {
@@ -123,19 +149,46 @@ export function useBackendWebSocket(options: UseBackendWebSocketOptions = {}): W
     }
   }, []);
 
-  const connect = useCallback(() => {
-    if (!mountedRef.current) return;
+  const connectRef = useRef<() => void>(() => {});
 
-    const ws = new WebSocket(getWsUrl());
+  const scheduleReconnect = useCallback(() => {
+    if (!mountedRef.current) return;
+    clearReconnectTimer();
+    const delay = Math.min(MIN_RECONNECT_MS * Math.pow(2, attemptRef.current), MAX_RECONNECT_MS);
+    attemptRef.current += 1;
+    reconnectTimerRef.current = setTimeout(() => {
+      if (mountedRef.current) connectRef.current();
+    }, delay);
+  }, [clearReconnectTimer]);
+
+  const connectWs = useCallback(() => {
+    if (!mountedRef.current) return;
+    // Prevent duplicate sockets
+    if (wsRef.current && (wsRef.current.readyState === WebSocket.CONNECTING || wsRef.current.readyState === WebSocket.OPEN)) {
+      return;
+    }
+
+    const url = getWsUrl();
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(url);
+    } catch {
+      scheduleReconnect();
+      return;
+    }
     wsRef.current = ws;
 
     ws.onopen = () => {
       if (!mountedRef.current) return;
+      attemptRef.current = 0; // Reset backoff on successful connect
       setConnected(true);
+      lastPingRef.current = Date.now();
     };
 
     ws.onmessage = (event) => {
       if (!mountedRef.current) return;
+      // Ignore messages from a superseded socket
+      if (wsRef.current !== ws) return;
       let msg: WsMessage;
       try {
         msg = JSON.parse(event.data) as WsMessage;
@@ -143,68 +196,113 @@ export function useBackendWebSocket(options: UseBackendWebSocketOptions = {}): W
         return;
       }
 
+      // Track heartbeat
+      if (msg.type === 'ping' || msg.type === 'status') {
+        lastPingRef.current = Date.now();
+        // Respond to ping with pong
+        if (msg.type === 'ping' && ws.readyState === WebSocket.OPEN) {
+          ws.send('pong');
+        }
+        // Heartbeat/status messages don't need to propagate to UI state
+        return;
+      }
+
       setLastMessage(msg);
 
+      const cbs = cbRef.current;
       switch (msg.type) {
         case 'health':
-          onHealthUpdate?.(msg);
+          cbs.onHealthUpdate?.(msg);
+          break;
+        case 'ticker':
+          cbs.onTickerUpdate?.(msg);
           break;
         case 'order_update':
-          onOrderUpdate?.(msg);
+          cbs.onOrderUpdate?.(msg);
           break;
         case 'guardian_alert':
           setLastGuardianAlert(msg);
-          onGuardianAlert?.(msg);
+          cbs.onGuardianAlert?.(msg);
           break;
         case 'kill_switch':
-          onKillSwitchChange?.(msg);
+          cbs.onKillSwitchChange?.(msg);
           break;
         case 'market_update':
-          onMarketUpdate?.(msg);
+          cbs.onMarketUpdate?.(msg);
           break;
         case 'exchange_status':
-          onExchangeStatus?.(msg);
+          cbs.onExchangeStatus?.(msg);
           break;
       }
     };
 
     ws.onclose = () => {
       if (!mountedRef.current) return;
+      // Guard: if another socket already took over (e.g. visibility change
+      // reconnect), don't clobber the new connection.
+      if (wsRef.current !== ws) return;
       setConnected(false);
       wsRef.current = null;
-      // Schedule reconnect
-      reconnectTimerRef.current = setTimeout(() => {
-        if (mountedRef.current) connect();
-      }, reconnectDelayMs);
+      scheduleReconnect();
     };
 
     ws.onerror = () => {
-      // onclose fires after onerror, which handles reconnect
+      // onclose fires after onerror — reconnect handled there
       ws.close();
     };
-  }, [
-    onExchangeStatus,
-    onGuardianAlert,
-    onHealthUpdate,
-    onKillSwitchChange,
-    onMarketUpdate,
-    onOrderUpdate,
-    reconnectDelayMs,
-  ]);
+  }, [scheduleReconnect]);
 
+  // Keep connectRef in sync so scheduleReconnect can call the latest connectWs
+  connectRef.current = connectWs;
+
+  // Main effect: connect + visibility/focus reconnect
   useEffect(() => {
     mountedRef.current = true;
-    connect();
+    connectWs();
+
+    // Reconnect on tab resume (mobile wake, tab switch)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && mountedRef.current) {
+        // If socket is dead or stale (no ping in 30s), reconnect
+        const ws = wsRef.current;
+        const stale = Date.now() - lastPingRef.current > 30000;
+        if (!ws || ws.readyState !== WebSocket.OPEN || stale) {
+          if (ws) {
+            try { ws.close(); } catch { /* ignore */ }
+          }
+          wsRef.current = null;
+          attemptRef.current = 0;
+          clearReconnectTimer();
+          connectWs();
+        }
+      }
+    };
+
+    const handleFocus = () => {
+      if (mountedRef.current) {
+        const ws = wsRef.current;
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          attemptRef.current = 0;
+          clearReconnectTimer();
+          connectWs();
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
 
     return () => {
       mountedRef.current = false;
       clearReconnectTimer();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
       }
     };
-  }, [connect, clearReconnectTimer]);
+  }, [connectWs, clearReconnectTimer]);
 
   return { connected, lastMessage, lastGuardianAlert };
 }

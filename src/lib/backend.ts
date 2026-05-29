@@ -24,17 +24,24 @@ export function getBackendBaseUrl() {
 }
 
 export function getBackendWebSocketUrl() {
+  // Allow explicit WS URL override
+  const explicitWsUrl =
+    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_WS_URL) || '';
+  if (explicitWsUrl) {
+    return explicitWsUrl;
+  }
+
   const backendBaseUrl = getBackendBaseUrl();
 
   if (typeof window === 'undefined') {
-    return `${backendBaseUrl.replace(/^http/i, 'ws')}/ws/updates`;
+    return `${backendBaseUrl.replace(/^http/i, 'ws')}/ws`;
   }
 
   const resolved = new URL(backendBaseUrl, window.location.origin);
   const normalizedPath = trimTrailingSlash(resolved.pathname);
   const wsPath = normalizedPath.endsWith('/api')
-    ? `${normalizedPath.slice(0, -4) || ''}/ws/updates`
-    : `${normalizedPath}/ws/updates`;
+    ? `${normalizedPath.slice(0, -4) || ''}/ws`
+    : `${normalizedPath}/ws`;
 
   resolved.protocol = resolved.protocol === 'https:' ? 'wss:' : 'ws:';
   resolved.pathname = wsPath.replace(/\/{2,}/g, '/');

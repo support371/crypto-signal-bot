@@ -66,6 +66,11 @@ from backend.services.reconciliation.service import (
     stop_reconciliation,
     get_latest_report as get_reconciliation_report,
 )
+from backend.services.websocket_manager import (
+    ConnectionManager,
+    broadcast_ticker_loop,
+    manager as ws_manager,
+)
 
 # ---------------------------------------------------------------------------
 # Load .env
@@ -150,9 +155,25 @@ async def lifespan(application):
     )
     logger.info("Startup auth config: BACKEND_API_KEY configured=%s", bool(BACKEND_API_KEY))
     await start_reconciliation()
+
+    # Preload ticker cache with initial prices
+    _warm_ticker_cache()
+
+    # Start background tasks: heartbeat + ticker broadcast
+    heartbeat_task = asyncio.create_task(ws_manager.heartbeat_loop())
+    ticker_task = asyncio.create_task(
+        broadcast_ticker_loop(
+            get_live_price=_get_live_price_for_ticker,
+            interval=3.0,
+        )
+    )
+    logger.info("Background tasks started: heartbeat + ticker broadcast")
+
     try:
         yield
     finally:
+        heartbeat_task.cancel()
+        ticker_task.cancel()
         # Persist portfolio before shutdown
         try:
             await persist_portfolio(paper_portfolio, mode=TRADING_MODE)
@@ -166,7 +187,7 @@ async def lifespan(application):
         except Exception:
             pass
 
-app = FastAPI(title="Crypto Signal Bot — Trading Backend", version="2.2.0", lifespan=lifespan)
+app = FastAPI(title="Crypto Signal Bot — Trading Backend", version="2.3.0", lifespan=lifespan)
 
 # ---------------------------------------------------------------------------
 # Basic Routes (Defined FIRST to avoid 404s)
@@ -176,7 +197,7 @@ async def root():
     """Root endpoint for health checks and discovery."""
     return {
         "name": "Crypto Signal Bot API",
-        "version": "2.2.0",
+        "version": "2.3.0",
         "status": "online",
         "docs": "/docs",
         "health": "/health"
@@ -213,6 +234,11 @@ async def health():
         "market_data_source": market_data.get("source", "synthetic"),
         "uptime_seconds": round(time.time() - _STARTED_AT, 3),
     }
+
+@app.get("/ping")
+async def ping():
+    """Lightweight keepalive endpoint — responds under 50ms."""
+    return {"ok": True}
 
 @app.get("/ready")
 async def ready():
@@ -356,6 +382,33 @@ async def _handle_market_data_update(snapshot: Dict[str, Any]) -> None:
 
 async def _handle_market_data_status_change(status: Dict[str, Any]) -> None:
     await context.broadcast({"type": "exchange_status", **status})
+
+# ---------------------------------------------------------------------------
+# Ticker helpers (warm cache + live price resolver for broadcast)
+# ---------------------------------------------------------------------------
+_ticker_cache: Dict[str, float] = {}
+
+def _warm_ticker_cache() -> None:
+    """Preload ticker cache with synthetic prices so dashboard never shows blanks."""
+    from backend.services.websocket_manager import TICKER_SYMBOLS, _BASE_PRICES
+    for symbol in TICKER_SYMBOLS:
+        try:
+            _ticker_cache[symbol] = _synthetic_price(symbol)
+        except Exception:
+            _ticker_cache[symbol] = _BASE_PRICES.get(symbol, 0.0)
+    logger.info("Ticker cache warmed: %s", list(_ticker_cache.keys()))
+
+def _get_live_price_for_ticker(symbol: str) -> Optional[float]:
+    """Try to get a live/cached price for the ticker broadcast."""
+    # Check context signal cache first
+    cached = context.latest_signal_by_symbol.get(symbol)
+    if cached and "price" in cached:
+        return float(cached["price"])
+    # Try synthetic price
+    try:
+        return _synthetic_price(symbol)
+    except Exception:
+        return None
 
 def _get_market_data_status() -> Dict[str, Any]:
     if TRADING_MODE == "paper" and PAPER_USE_LIVE_MARKET_DATA:
@@ -822,45 +875,66 @@ def reset_earnings_ledger_api(_: None = Depends(require_auth)):
     reset_earnings()
     return {"status": "ok", "message": "Earnings ledger cleared"}
 
-@app.websocket("/ws/updates")
-async def websocket_updates(ws: WebSocket):
-    await ws.accept()
+@app.websocket("/ws")
+async def websocket_endpoint(ws: WebSocket):
+    """Primary WebSocket endpoint — persistent connection with ticker + status."""
+    await ws_manager.connect(ws)
+    # Also register in context for legacy broadcast() calls
     context.ws_clients.add(ws)
-    logger.info("WebSocket client connected (%d total)", len(context.ws_clients))
     try:
+        # Send initial health snapshot
         market_data = _get_market_data_status()
-        await ws.send_json(
-            {
-                "type": "health",
-                "kill_switch_active": context.kill_switch_active,
-                "mode": TRADING_MODE,
-                "api_error_count": context.api_error_count,
-                "guardian_triggered": context.guardian_triggered,
-                "market_data_mode": market_data["market_data_mode"],
-                "market_data_connected": market_data["connected"],
-            }
-        )
+        await ws.send_json({
+            "type": "health",
+            "kill_switch_active": context.kill_switch_active,
+            "mode": TRADING_MODE,
+            "api_error_count": context.api_error_count,
+            "guardian_triggered": context.guardian_triggered,
+            "market_data_mode": market_data["market_data_mode"],
+            "market_data_connected": market_data["connected"],
+        })
         while True:
-            try:
-                await asyncio.wait_for(ws.receive_text(), timeout=30.0)
-            except asyncio.TimeoutError:
-                market_data = _get_market_data_status()
-                await ws.send_json(
-                    {
-                        "type": "health",
-                        "kill_switch_active": context.kill_switch_active,
-                        "mode": TRADING_MODE,
-                        "api_error_count": context.api_error_count,
-                        "guardian_triggered": context.guardian_triggered,
-                        "market_data_mode": market_data["market_data_mode"],
-                        "market_data_connected": market_data["connected"],
-                    }
-                )
+            # Keep connection alive — handle client messages (pong, etc.)
+            data = await ws.receive_text()
+            if data == "pong":
+                continue
+            # Echo back any other message as acknowledgment
     except WebSocketDisconnect:
+        pass
+    except Exception:
         pass
     finally:
         context.ws_clients.discard(ws)
-        logger.info("WebSocket client disconnected (%d remaining)", len(context.ws_clients))
+        await ws_manager.disconnect(ws)
+
+
+@app.websocket("/ws/updates")
+async def websocket_updates_legacy(ws: WebSocket):
+    """Legacy WS endpoint — redirects to /ws behavior for backward compat."""
+    await ws_manager.connect(ws)
+    context.ws_clients.add(ws)
+    try:
+        market_data = _get_market_data_status()
+        await ws.send_json({
+            "type": "health",
+            "kill_switch_active": context.kill_switch_active,
+            "mode": TRADING_MODE,
+            "api_error_count": context.api_error_count,
+            "guardian_triggered": context.guardian_triggered,
+            "market_data_mode": market_data["market_data_mode"],
+            "market_data_connected": market_data["connected"],
+        })
+        while True:
+            data = await ws.receive_text()
+            if data == "pong":
+                continue
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        context.ws_clients.discard(ws)
+        await ws_manager.disconnect(ws)
 
 @app.post("/analyze-features", response_model=AnalyzeResponse)
 def analyze_features_api(payload: FeaturesIn) -> AnalyzeResponse:

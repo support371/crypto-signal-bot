@@ -15,7 +15,7 @@ import type { UserSettings } from '@/components/dashboard/SettingsModal';
 import { SignalPanel } from '@/components/dashboard/SignalPanel';
 import { SystemMetricsPanel } from '@/components/dashboard/SystemMetricsPanel';
 import { useBackendStatus, type EndpointErrors } from '@/hooks/useBackendStatus';
-import { useBackendWebSocket } from '@/hooks/useBackendWebSocket';
+import { useBackendWebSocket, type WsTickerMessage } from '@/hooks/useBackendWebSocket';
 import { useCryptoPrices } from '@/hooks/useCryptoPrices';
 import { useEarnings } from '@/hooks/useEarnings';
 import { useAuditTrail } from '@/hooks/useAuditTrail';
@@ -89,7 +89,7 @@ const Index = () => {
   const { settings, setSettings } = usePersistedSettings();
   const { isDemoMode } = useAuth();
 
-  const { health, config, exchangeStatus, paperBalance, isConnected, endpointErrors, backendUrl, refetch: refetchStatus } = useBackendStatus();
+  const { health, config, exchangeStatus, paperBalance, isConnected, isLoading: backendLoading, endpointErrors, backendUrl, refetch: refetchStatus } = useBackendStatus();
   const systemMode = health?.mode ?? 'paper';
   const preferBackendPrices = exchangeStatus?.market_data_mode === 'live_public_paper';
   const { prices, isLoading, error, source: priceSource, refetch: refetchPrices } = useCryptoPrices(
@@ -246,12 +246,21 @@ const Index = () => {
     refetchMetrics();
   }, [refetchEarnings, refetchAudit, refetchMetrics]);
 
+  const handleTickerUpdate = useCallback(
+    (msg: WsTickerMessage) => {
+      // Ticker updates drive the marquee values via WS — no action needed here
+      // as prices are fetched via REST. Could be used for real-time price overlay.
+    },
+    []
+  );
+
   const { connected: wsConnected } = useBackendWebSocket({
     onExchangeStatus: handleExchangeStatus,
     onGuardianAlert: handleGuardianAlert,
     onKillSwitchChange: handleKillSwitchChange,
     onMarketUpdate: handleMarketUpdate,
     onOrderUpdate: handleOrderUpdate,
+    onTickerUpdate: handleTickerUpdate,
   });
 
   const handleSettingsChange = (newSettings: UserSettings) => {
@@ -260,6 +269,9 @@ const Index = () => {
     lastAutoTradeSig.current = null;
     toast.success('Settings updated successfully');
   };
+
+  // Backend readiness gate — show connecting screen before dashboard init
+  const showReadinessGate = backendLoading && !isConnected && !health;
 
   const footerLabel = !isConnected
     ? 'BACKEND DISCONNECTED'
@@ -272,6 +284,20 @@ const Index = () => {
     : health?.kill_switch_active
     ? 'bg-destructive'
     : 'bg-accent';
+
+  if (showReadinessGate) {
+    return (
+      <div className="min-h-screen bg-background scanlines flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4 font-mono">
+          <div className="relative">
+            <div className="w-12 h-12 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
+          </div>
+          <p className="text-sm text-muted-foreground">Connecting to backend...</p>
+          <p className="text-xs text-muted-foreground/60">{backendUrl}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background scanlines">
@@ -400,7 +426,7 @@ const Index = () => {
           <span className="flex items-center gap-3">
             <span className="flex items-center gap-1.5">
               <span className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-accent animate-pulse' : 'bg-muted-foreground'}`} />
-              {wsConnected ? 'WS LIVE' : 'WS OFFLINE'}
+              {wsConnected ? 'WS ONLINE' : 'WS OFFLINE'}
             </span>
             <span className="flex items-center gap-1.5">
               <span className={`w-1.5 h-1.5 rounded-full ${footerDotClass} ${isConnected && !health?.kill_switch_active ? 'animate-pulse' : ''}`} />

@@ -251,11 +251,8 @@
   .ticker-marquee-track {
     animation: ticker-marquee-left 32s linear infinite;
     will-change: transform;
-  }
-
-  .ticker-marquee:hover .ticker-marquee-track,
-  .ticker-marquee:focus-within .ticker-marquee-track {
-    animation-play-state: paused;
+    /* Animation runs independently from data updates — never pauses */
+    animation-play-state: running !important;
   }
 
   @keyframes ticker-marquee-left {
