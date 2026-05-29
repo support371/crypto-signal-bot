@@ -6,7 +6,7 @@ Simulates order fills against a paper portfolio with realistic slippage.
 
 import time
 import random
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
 from backend.config.runtime import get_runtime_config
@@ -51,7 +51,7 @@ class PaperPortfolio:
                 result.append({"asset": asset, "free": str(amount)})
         return result
 
-    def get_total_exposure(self, price_fn) -> float:
+    def get_total_exposure(self, price_fn: Callable[[str], float]) -> float:
         """Calculate total portfolio value in USDT."""
         total = 0.0
         for asset, amount in self.balances.items():
@@ -118,7 +118,11 @@ def simulate_fill(
             intent.updated_at = time.time()
             return intent
 
-        portfolio.balances[base_asset] = base_balance - fill_quantity
+        new_base = base_balance - fill_quantity
+        if new_base < 1e-10:
+            portfolio.balances.pop(base_asset, None)
+        else:
+            portfolio.balances[base_asset] = new_base
         portfolio.balances[quote_asset] = portfolio.get_balance(quote_asset) + cost
 
     intent.status = IntentStatus.FILLED
@@ -128,10 +132,12 @@ def simulate_fill(
     intent.updated_at = time.time()
 
     portfolio.filled_orders.append(intent)
+    if intent in portfolio.open_orders:
+        portfolio.open_orders.remove(intent)
     return intent
 
 
-def _parse_symbol(symbol: str) -> tuple:
+def _parse_symbol(symbol: str) -> Tuple[str, str]:
     """Parse a trading pair symbol into base and quote assets."""
     quote_currencies = ["USDT", "USDC", "BUSD", "BTC", "ETH", "BNB"]
     for quote in quote_currencies:

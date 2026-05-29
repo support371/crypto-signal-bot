@@ -1,22 +1,8 @@
-import os
+# backend/config/mode_control.py
+"""
+Trading mode is resolved exclusively by ``backend.config.runtime.get_runtime_config()``
+which reads ``TRADING_MODE`` from the environment or ``config.yaml``.
 
-class ModeControl:
-    def __init__(self, mode=None):
-        self.mode = mode or self.load_mode_from_env()
-        self.validate_mode()
-
-    def load_mode_from_env(self):
-        return os.getenv('APP_MODE', 'default')  # Load mode from environment variable, default to 'default'
-
-    def validate_mode(self):
-        valid_modes = ['development', 'production', 'testing', 'default']
-        if self.mode not in valid_modes:
-            raise ValueError(f"Invalid mode: {self.mode}. Must be one of {valid_modes}.")
-
-    def get_mode(self):
-        return self.mode
-
-# Example usage:
-# if __name__ == '__main__':
-#     mode_control = ModeControl()
-#     print(f'Current mode: {mode_control.get_mode()}')
+The legacy ``ModeControl`` class that previously lived here was dead code and has
+been removed.  All runtime mode checks should reference ``RuntimeConfig.trading_mode``.
+"""

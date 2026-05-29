@@ -45,6 +45,11 @@ class MaxPositionRule(RiskRule):
             return RuleResult(self.name, False, "Account balance is zero or negative")
 
         order_value = ctx.quantity * (ctx.price or 0)
+
+        # SELL reduces position; only BUY increases it
+        if ctx.side == "SELL":
+            return RuleResult(self.name, True, "SELL reduces position — always allowed")
+
         position_after = ctx.current_position_value + order_value
         position_pct = position_after / ctx.account_balance
 
@@ -82,6 +87,11 @@ class PortfolioExposureRule(RiskRule):
 
         order_value = ctx.quantity * (ctx.price or 0)
         exposure_before = max(ctx.current_total_exposure, ctx.current_position_value)
+
+        # SELL reduces exposure; only BUY increases it
+        if ctx.side == "SELL":
+            return RuleResult(self.name, True, "SELL reduces exposure — always allowed")
+
         exposure_after = exposure_before + order_value
         exposure_pct = exposure_after / ctx.account_balance
 
@@ -182,7 +192,13 @@ class LeverageRule(RiskRule):
             return RuleResult(self.name, False, "Account balance is zero or negative")
 
         order_value = ctx.quantity * (ctx.price or 0)
-        total_exposure = max(ctx.current_total_exposure, ctx.current_position_value) + order_value
+        base_exposure = max(ctx.current_total_exposure, ctx.current_position_value)
+
+        # SELL reduces leverage; only BUY increases it
+        if ctx.side == "SELL":
+            return RuleResult(self.name, True, "SELL reduces leverage — always allowed")
+
+        total_exposure = base_exposure + order_value
         effective_leverage = total_exposure / ctx.account_balance
 
         if effective_leverage > self.max_leverage:

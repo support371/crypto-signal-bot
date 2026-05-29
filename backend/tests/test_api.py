@@ -8,7 +8,9 @@ from fastapi.testclient import TestClient
 
 import backend.app as app_module
 import backend.logic.earnings as earnings_module
+import backend.services.guardian_bot.service as guardian_service
 from backend.app import app
+from backend.logic import context as context_module
 from backend.logic.exchange_adapter import PaperAdapter, build_adapter
 from backend.logic.paper_trading import PaperPortfolio, _synthetic_price
 
@@ -48,25 +50,37 @@ class FakeMarketDataService:
 @pytest.fixture(autouse=True)
 def reset_state():
     """Reset shared mutable state between tests."""
-    app_module.kill_switch_active = False
-    app_module.kill_switch_reason = None
-    app_module.api_error_count = 0
-    app_module.failed_order_count = 0
-    app_module._latest_signal_by_symbol = {}
-    app_module._latest_signal_ts_by_symbol = {}
-    app_module._latest_signal_symbol = None
-    app_module._latest_signal_ts = None
-    app_module._guardian_triggered = False
-    app_module._guardian_trigger_reason = None
-    app_module._guardian_trigger_ts = None
-    app_module._guardian_drawdown_pct = 0.0
+    # Reset context-level state (authoritative source for kill-switch, guardian, signals)
+    context_module.kill_switch_active = False
+    context_module.kill_switch_reason = None
+    context_module.api_error_count = 0
+    context_module.failed_order_count = 0
+    context_module.latest_signal_by_symbol = {}
+    context_module.latest_signal_ts_by_symbol = {}
+    context_module.latest_signal_symbol = None
+    context_module.latest_signal_ts = None
+    context_module.guardian_triggered = False
+    context_module.guardian_trigger_reason = None
+    context_module.guardian_trigger_ts = None
+    context_module.guardian_drawdown_pct = 0.0
+    context_module.guardian_starting_nav = 10000.0
+    context_module.market_data_service = None
+    context_module.ws_clients = set()
+    # Reset guardian service globals so is_kill_switch_active() returns False
+    guardian_service._kill_switch_active = False
+    guardian_service._kill_switch_reason = None
+    guardian_service._triggered = False
+    guardian_service._trigger_reason = None
+    guardian_service._strategy_kill_switches = set()
+    guardian_service._venue_kill_switches = set()
+    # Reset app-module-level config (keep app_module + context in sync)
     app_module.BACKEND_API_KEY = ""
+    context_module.BACKEND_API_KEY = ""
     app_module.TRADING_MODE = "paper"
     app_module.NETWORK = "testnet"
     app_module.EXCHANGE = "binance"
     app_module.MARKET_DATA_PUBLIC_EXCHANGE = "binance"
     app_module.PAPER_USE_LIVE_MARKET_DATA = False
-    app_module.market_data_service = None
     app_module.exchange_adapter = build_adapter(
         "paper",
         "testnet",
@@ -91,6 +105,7 @@ def client():
 def auth_client():
     """Client with auth key configured."""
     app_module.BACKEND_API_KEY = "test-secret-key"
+    context_module.BACKEND_API_KEY = "test-secret-key"
     client = TestClient(app)
     client.headers.update({"X-API-Key": "test-secret-key"})
     return client
@@ -188,7 +203,7 @@ class TestPriceEndpoint:
 
     def test_price_uses_live_market_snapshot_in_hybrid_paper_mode(self, client):
         app_module.PAPER_USE_LIVE_MARKET_DATA = True
-        app_module.market_data_service = FakeMarketDataService(
+        context_module.market_data_service = FakeMarketDataService(
             snapshot={
                 "BTCUSDT": {
                     "symbol": "BTCUSDT",
@@ -213,7 +228,7 @@ class TestPriceEndpoint:
 
     def test_price_hybrid_mode_rejects_untracked_symbol(self, client):
         app_module.PAPER_USE_LIVE_MARKET_DATA = True
-        app_module.market_data_service = FakeMarketDataService(snapshot={})
+        context_module.market_data_service = FakeMarketDataService(snapshot={})
         resp = client.get("/price?symbol=FOOUSDT")
         assert resp.status_code == 404
         data = resp.json()
@@ -221,7 +236,7 @@ class TestPriceEndpoint:
 
     def test_price_hybrid_mode_reports_unavailable_when_feed_missing(self, client):
         app_module.PAPER_USE_LIVE_MARKET_DATA = True
-        app_module.market_data_service = FakeMarketDataService(snapshot={})
+        context_module.market_data_service = FakeMarketDataService(snapshot={})
         resp = client.get("/price?symbol=BTCUSDT")
         assert resp.status_code == 503
         data = resp.json()
@@ -340,7 +355,7 @@ class TestExchangeStatus:
 
     def test_exchange_status_exposes_live_paper_state(self, client):
         app_module.PAPER_USE_LIVE_MARKET_DATA = True
-        app_module.market_data_service = FakeMarketDataService()
+        context_module.market_data_service = FakeMarketDataService()
         resp = client.get("/exchange/status")
         assert resp.status_code == 200
         data = resp.json()
@@ -352,7 +367,7 @@ class TestExchangeStatus:
     def test_exchange_status_tracks_selected_public_exchange(self, client):
         app_module.PAPER_USE_LIVE_MARKET_DATA = True
         app_module.MARKET_DATA_PUBLIC_EXCHANGE = "bitget"
-        app_module.market_data_service = FakeMarketDataService(
+        context_module.market_data_service = FakeMarketDataService(
             status={
                 "exchange": "bitget",
                 "market_data_mode": "live_public_paper",
@@ -391,7 +406,7 @@ class TestGuardianStatus:
 
     def test_guardian_status_includes_market_data(self, client):
         app_module.PAPER_USE_LIVE_MARKET_DATA = True
-        app_module.market_data_service = FakeMarketDataService()
+        context_module.market_data_service = FakeMarketDataService()
         data = client.get("/guardian/status").json()
         assert "market_data" in data
         assert data["market_data"]["market_data_mode"] == "live_public_paper"
@@ -407,6 +422,7 @@ class TestKillSwitch:
 
     def test_kill_switch_requires_auth_when_key_set(self, client):
         app_module.BACKEND_API_KEY = "secret"
+        context_module.BACKEND_API_KEY = "secret"
         resp = client.post("/kill-switch", json={"activate": True})
         assert resp.status_code == 401
 
@@ -416,8 +432,8 @@ class TestKillSwitch:
         assert resp.json()["kill_switch_active"] is True
 
     def test_kill_switch_deactivate(self, client):
-        app_module.kill_switch_active = True
-        app_module.kill_switch_reason = "test halt"
+        context_module.kill_switch_active = True
+        context_module.kill_switch_reason = "test halt"
         resp = client.post("/kill-switch", json={"activate": False})
         assert resp.status_code == 200
         data = resp.json()
@@ -507,7 +523,7 @@ class TestRateLimiting:
         try:
             results = []
             for _ in range(5):
-                results.append(client.get("/health").status_code)
+                results.append(client.get("/balance").status_code)
             assert 429 in results
         finally:
             app_module.rate_limit._rate_limit_max_requests = original_limit
@@ -599,8 +615,8 @@ class TestIntentLive:
         assert data["status"] in ("FILLED", "RISK_REJECTED", "FAILED")
 
     def test_live_intent_blocked_by_kill_switch(self, client):
-        app_module.kill_switch_active = True
-        app_module.kill_switch_reason = "test halt"
+        context_module.kill_switch_active = True
+        context_module.kill_switch_reason = "test halt"
         resp = client.post("/intent/live", json={
             "symbol": "BTCUSDT",
             "side": "BUY",
@@ -916,7 +932,12 @@ class TestWebSocket:
             resp = client.post("/kill-switch", json={"activate": True, "reason": "ws test"})
             assert resp.status_code == 200
 
-            data = ws.receive_json()
+            # Drain up to 5 messages to find the kill_switch broadcast
+            # (background tasks from earlier tests may inject extra messages)
+            for _ in range(5):
+                data = ws.receive_json()
+                if data["type"] == "kill_switch":
+                    break
             assert data["type"] == "kill_switch"
             assert data["active"] is True
             assert data["reason"] == "ws test"

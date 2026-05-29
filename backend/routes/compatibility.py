@@ -47,6 +47,8 @@ def _install_hosted_health_routes() -> None:
             _remove_existing_routes(app, path, {"GET"})
 
         async def hosted_health() -> dict:
+            market_data = backend_app_module._get_market_data_status()
+            ctx = backend_app_module.context
             return {
                 "status": "ok",
                 "service": "crypto-signal-bot-backend",
@@ -54,7 +56,12 @@ def _install_hosted_health_routes() -> None:
                 "mode": getattr(backend_app_module, "TRADING_MODE", os.getenv("TRADING_MODE", "paper")),
                 "network": getattr(backend_app_module, "NETWORK", os.getenv("NETWORK", "testnet")),
                 "adapter": getattr(getattr(backend_app_module, "exchange_adapter", None), "mode", "unknown"),
-                "kill_switch_active": bool(getattr(backend_app_module.context, "kill_switch_active", False)),
+                "kill_switch_active": ctx.kill_switch_active,
+                "halted": ctx.kill_switch_active,
+                "guardian_triggered": ctx.guardian_triggered,
+                "market_data_mode": market_data["market_data_mode"],
+                "market_data_connected": market_data["connected"],
+                "market_data_source": market_data.get("source", "synthetic"),
                 "uptime_seconds": round(time.time() - _STARTED_AT, 3),
             }
 

@@ -37,6 +37,7 @@ from backend.logic.market_data import BasePublicMarketDataService, build_public_
 from backend.logic.startup_checks import run as run_startup_checks
 from backend.logic.paper_trading import (
     PaperPortfolio,
+    _parse_symbol,
     _synthetic_price,
 )
 from backend.logic.risk import compute_risk_score, risk_gate
@@ -53,6 +54,11 @@ from backend.models.execution_intent import (
 from backend.models_core import Features
 from backend.services.guardian_bot.service import TradingScopeHaltedError, assert_scope_allowed
 from backend.logic.market_state import build_market_state_result
+from backend.services.reconciliation.service import (
+    start_reconciliation,
+    stop_reconciliation,
+    get_latest_report as get_reconciliation_report,
+)
 
 # ---------------------------------------------------------------------------
 # Load .env
@@ -126,9 +132,11 @@ async def lifespan(application):
         exchange=EXCHANGE,
     )
     logger.info("Startup auth config: BACKEND_API_KEY configured=%s", bool(BACKEND_API_KEY))
+    await start_reconciliation()
     try:
         yield
     finally:
+        await stop_reconciliation()
         if context.market_data_service is not None:
             await context.market_data_service.stop()
 
@@ -160,6 +168,7 @@ async def health():
     on `/config`, `/balance`, and `/guardian/status` so a non-critical runtime
     issue cannot cause Render to mark the whole service unhealthy.
     """
+    market_data = _get_market_data_status()
     return {
         "status": "ok",
         "service": "crypto-signal-bot-backend",
@@ -167,7 +176,12 @@ async def health():
         "mode": TRADING_MODE,
         "network": NETWORK,
         "adapter": getattr(exchange_adapter, "mode", "unknown"),
-        "kill_switch_active": bool(getattr(context, "kill_switch_active", False)),
+        "kill_switch_active": context.kill_switch_active,
+        "halted": context.kill_switch_active,
+        "guardian_triggered": context.guardian_triggered,
+        "market_data_mode": market_data["market_data_mode"],
+        "market_data_connected": market_data["connected"],
+        "market_data_source": market_data.get("source", "synthetic"),
         "uptime_seconds": round(time.time() - _STARTED_AT, 3),
     }
 
@@ -214,11 +228,13 @@ from backend.routes.compatibility import compatibility_router
 from backend.routes.integrations import integrations_router
 from backend.routes.kill_switch import router as kill_switch_router
 from backend.routes.waitlist import waitlist_router
-from backend.routes.price import router as price_router
 
 # Track already registered paths to avoid duplicates
+# NOTE: price_router excluded — app.py defines /price and /exchange/status
+# with synthetic fallback; the routes/price.py router requires a live
+# MarketDataService and would shadow the synthetic-safe defaults.
 _registered_paths = {getattr(route, "path", None) for route in app.routes}
-for _router in (compatibility_router, integrations_router, waitlist_router, kill_switch_router, price_router):
+for _router in (compatibility_router, integrations_router, waitlist_router, kill_switch_router):
     _router_paths = {getattr(route, "path", None) for route in _router.routes}
     if not _router_paths.issubset(_registered_paths):
         app.include_router(_router)
@@ -236,10 +252,10 @@ def _guardian_evaluate() -> Optional[str]:
         return f"API error threshold reached ({context.api_error_count} errors)"
     if context.failed_order_count >= _GUARDIAN_MAX_FAILED_ORDERS:
         return f"Failed order threshold reached ({context.failed_order_count} failures)"
-    current_usdt = paper_portfolio.get_balance("USDT")
+    current_nav = paper_portfolio.get_total_exposure(_synthetic_price)
     if context.guardian_starting_nav > 0:
         context.guardian_drawdown_pct = max(
-            0.0, (context.guardian_starting_nav - current_usdt) / context.guardian_starting_nav
+            0.0, (context.guardian_starting_nav - current_nav) / context.guardian_starting_nav
         )
         if context.guardian_drawdown_pct >= _GUARDIAN_MAX_DRAWDOWN_PCT:
             return (
@@ -425,18 +441,30 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
         return IntentResponse(id=intent.id, status=intent.status.value, notes=intent.notes)
 
     current_price = req.price or _synthetic_price(intent.symbol)
-    account_balance = paper_portfolio.get_balance("USDT")
-    exposure = paper_portfolio.get_total_exposure(_synthetic_price)
+    total_equity = paper_portfolio.get_total_exposure(_synthetic_price)
+
+    # Symbol-specific position value (not total portfolio)
+    base_asset, _quote = _parse_symbol(intent.symbol)
+    symbol_position_value = paper_portfolio.get_balance(base_asset) * current_price
+
+    # Non-cash exposure: sum of all non-USDT holdings at current prices
+    non_cash_exposure = 0.0
+    for asset, amount in paper_portfolio.balances.items():
+        if asset not in ("USDT", "USDC", "BUSD"):
+            try:
+                non_cash_exposure += amount * _synthetic_price(f"{asset}USDT")
+            except Exception:
+                pass
 
     risk_ctx = RiskContext(
         symbol=intent.symbol,
         side=intent.side.value,
         quantity=intent.quantity,
         price=current_price,
-        current_position_value=exposure,
-        current_total_exposure=exposure,
+        current_position_value=symbol_position_value,
+        current_total_exposure=non_cash_exposure,
         daily_pnl=context.guardian_drawdown_pct * context.guardian_starting_nav * -1.0,
-        account_balance=account_balance,
+        account_balance=total_equity,
         volatility_24h=0.02, # Simplified
     )
     engine_result = risk_engine.evaluate(risk_ctx)
@@ -533,6 +561,26 @@ def get_config():
         },
     }
 
+@app.get("/exchange/status", dependencies=[Depends(rate_limit.rate_limit)])
+def get_exchange_status():
+    market_data = _get_market_data_status()
+    execution_mode = exchange_adapter.mode
+    return {
+        "trading_mode": TRADING_MODE,
+        "execution_mode": execution_mode,
+        "market_data_mode": market_data["market_data_mode"],
+        "paper_use_live_market_data": PAPER_USE_LIVE_MARKET_DATA,
+        "exchange": market_data.get("exchange"),
+        "connected": market_data.get("connected", False),
+        "connection_state": market_data.get("connection_state", "disabled"),
+        "fallback_active": market_data.get("fallback_active", False),
+        "stale": market_data.get("stale", True),
+        "symbols": market_data.get("symbols", []),
+        "source": market_data.get("source", "synthetic"),
+        "last_update_ts": market_data.get("last_update_ts"),
+        "last_error": market_data.get("last_error"),
+    }
+
 @app.get("/balance", dependencies=[Depends(rate_limit.rate_limit)])
 def get_balance():
     return {"balances": paper_portfolio.get_all_balances(), "positions": paper_portfolio.get_positions()}
@@ -574,6 +622,17 @@ def get_price_api(symbol: str = Query("BTCUSDT")):
                 "exchange": snap.get("exchange", MARKET_DATA_PUBLIC_EXCHANGE),
                 "market_data_mode": "live_public_paper",
             }
+        status = svc.get_status()
+        tracked = status.get("symbols", [])
+        if normalized_symbol not in [s.upper() for s in tracked]:
+            return JSONResponse(
+                status_code=404,
+                content={"error": "symbol_not_tracked", "symbol": normalized_symbol},
+            )
+        return JSONResponse(
+            status_code=503,
+            content={"error": "market_data_unavailable", "symbol": normalized_symbol},
+        )
 
     if TRADING_MODE == "live" and exchange_adapter.mode != "paper":
         try:
@@ -586,6 +645,12 @@ def get_price_api(symbol: str = Query("BTCUSDT")):
             }
         except Exception as exc:
             raise ExchangeAPIError(f"Live price fetch failed: {exc}")
+
+    if TRADING_MODE == "live" and exchange_adapter.mode == "paper":
+        return JSONResponse(
+            status_code=503,
+            content={"error": "execution_unavailable", "symbol": normalized_symbol},
+        )
 
     price = _synthetic_price(normalized_symbol)
     return {
@@ -631,6 +696,13 @@ def get_guardian_status_api():
         },
         "market_data": market_data,
     }
+
+@app.get("/reconciliation/status", dependencies=[Depends(rate_limit.rate_limit)])
+async def reconciliation_status_api():
+    report = await get_reconciliation_report()
+    if report is None:
+        return {"status": "no_report", "message": "Reconciliation has not run yet."}
+    return {"status": "ok", "report": report}
 
 @app.post("/market-state")
 def market_state_api(req: MarketStateRequest, _: None = Depends(require_auth)):

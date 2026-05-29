@@ -27,7 +27,7 @@ paper_portfolio: PaperPortfolio = PaperPortfolio(
 def get_portfolio() -> PaperPortfolio:
     return paper_portfolio
 
-def set_portfolio(p: PaperPortfolio):
+def set_portfolio(p: PaperPortfolio) -> None:
     global paper_portfolio
     paper_portfolio = p
 
@@ -57,7 +57,7 @@ guardian_starting_nav: float = 10000.0
 def unix_timestamp() -> float:
     return time.time()
 
-async def broadcast(message: Dict[str, Any]):
+async def broadcast(message: Dict[str, Any]) -> None:
     dead: List[WebSocket] = []
     for ws in ws_clients:
         try:
