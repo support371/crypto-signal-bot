@@ -53,6 +53,11 @@ from backend.models.execution_intent import (
 from backend.models_core import Features
 from backend.services.guardian_bot.service import TradingScopeHaltedError, assert_scope_allowed
 from backend.logic.market_state import build_market_state_result
+from backend.services.reconciliation.service import (
+    start_reconciliation,
+    stop_reconciliation,
+    get_latest_report as get_reconciliation_report,
+)
 
 # ---------------------------------------------------------------------------
 # Load .env
@@ -126,9 +131,11 @@ async def lifespan(application):
         exchange=EXCHANGE,
     )
     logger.info("Startup auth config: BACKEND_API_KEY configured=%s", bool(BACKEND_API_KEY))
+    await start_reconciliation()
     try:
         yield
     finally:
+        await stop_reconciliation()
         if context.market_data_service is not None:
             await context.market_data_service.stop()
 
@@ -631,6 +638,13 @@ def get_guardian_status_api():
         },
         "market_data": market_data,
     }
+
+@app.get("/reconciliation/status", dependencies=[Depends(rate_limit.rate_limit)])
+async def reconciliation_status_api():
+    report = await get_reconciliation_report()
+    if report is None:
+        return {"status": "no_report", "message": "Reconciliation has not run yet."}
+    return {"status": "ok", "report": report}
 
 @app.post("/market-state")
 def market_state_api(req: MarketStateRequest, _: None = Depends(require_auth)):
