@@ -98,14 +98,13 @@ class BinanceAdapter(BaseExchangeAdapter):
 
     async def fetch_ticker(self, symbol: str) -> Ticker:
         symbol = self._normalize_symbol(symbol)
-        data = await self._get_public("/api/v3/ticker/bookTicker", {"symbol": symbol})
-        assert isinstance(data, dict)
-        # Enrich with 24h stats
+        # Use /api/v3/ticker/24hr as it already contains bidPrice/askPrice in the FULL response.
+        # This eliminates the redundant /api/v3/ticker/bookTicker call, reducing latency.
         stats = await self._get_public("/api/v3/ticker/24hr", {"symbol": symbol})
         assert isinstance(stats, dict)
         price = Decimal(str(stats["lastPrice"]))
-        bid   = Decimal(str(data["bidPrice"]))
-        ask   = Decimal(str(data["askPrice"]))
+        bid   = Decimal(str(stats["bidPrice"]))
+        ask   = Decimal(str(stats["askPrice"]))
         return Ticker(
             symbol=symbol,
             price=price,

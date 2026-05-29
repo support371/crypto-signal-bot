@@ -22,6 +22,7 @@ Protected files: none touched.
 
 from __future__ import annotations
 
+import datetime
 import time
 from typing import Optional
 
@@ -232,7 +233,6 @@ async def get_prices_batch(
     if not snapshots:
         raise HTTPException(status_code=503, detail="All price fetches failed.")
 
-    import datetime
     now = int(time.time())
     items = []
     for snap in snapshots:
