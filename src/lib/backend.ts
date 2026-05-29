@@ -1,4 +1,3 @@
-import { getStoredBackendApiKey } from '@/lib/backendAuth';
 import { getConfiguredBackendUrl, trimTrailingSlash } from '@/lib/env';
 
 async function readErrorMessage(response: Response) {
@@ -50,11 +49,6 @@ function buildBackendHeaders(initHeaders: HeadersInit | undefined, includeJsonCo
 
   if (includeJsonContentType && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
-  }
-
-  const apiKey = getStoredBackendApiKey();
-  if (apiKey && !headers.has('X-API-Key')) {
-    headers.set('X-API-Key', apiKey);
   }
 
   return headers;

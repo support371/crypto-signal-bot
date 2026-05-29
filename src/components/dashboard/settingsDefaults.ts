@@ -7,5 +7,4 @@ export const DEFAULT_SETTINGS: UserSettings = {
   spreadStressThreshold: 0.002,
   autoTradeEnabled: false,
   soundAlertsEnabled: true,
-  backendApiKey: '',
 };

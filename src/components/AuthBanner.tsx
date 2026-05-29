@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuthBanner } from '@/contexts/AuthBannerContextStore';
-import { useAuth } from '@/context/AuthProvider';
+import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle, X } from 'lucide-react';
 import { useEffect } from 'react';
