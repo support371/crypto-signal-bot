@@ -10,6 +10,7 @@ prometheus_client
 httpx
 sqlalchemy>=2.0
 aiosqlite
+asyncpg
 
 # Testing (also needed in CI)
 pytest

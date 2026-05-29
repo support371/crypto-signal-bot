@@ -917,7 +917,14 @@ class TestExchangeAdapter:
 class TestWebSocket:
     def test_ws_connect_and_receive_health(self, client):
         with client.websocket_connect("/ws/updates") as ws:
-            data = ws.receive_json()
+            # First message from ws_manager.connect() is a status message
+            first = ws.receive_json()
+            if first["type"] == "status":
+                assert first["ws"] == "online"
+                assert first["backend"] == "operational"
+                data = ws.receive_json()
+            else:
+                data = first
             assert data["type"] == "health"
             assert "kill_switch_active" in data
             assert "mode" in data
@@ -927,7 +934,11 @@ class TestWebSocket:
 
     def test_ws_receives_kill_switch_broadcast(self, client):
         with client.websocket_connect("/ws/updates") as ws:
-            ws.receive_json()  # initial health snapshot
+            # Drain initial status + health messages
+            for _ in range(3):
+                msg = ws.receive_json()
+                if msg["type"] == "health":
+                    break
 
             resp = client.post("/kill-switch", json={"activate": True, "reason": "ws test"})
             assert resp.status_code == 200
@@ -944,7 +955,11 @@ class TestWebSocket:
 
     def test_ws_receives_order_update_broadcast(self, client):
         with client.websocket_connect("/ws/updates") as ws:
-            ws.receive_json()  # initial health snapshot
+            # Drain initial status + health messages
+            for _ in range(3):
+                msg = ws.receive_json()
+                if msg["type"] == "health":
+                    break
 
             resp = client.post("/intent/paper", json={
                 "symbol": "BTCUSDT",
@@ -962,7 +977,11 @@ class TestWebSocket:
 
     def test_ws_receives_market_update_broadcast(self, client):
         with client.websocket_connect("/ws/updates") as ws:
-            ws.receive_json()  # initial health snapshot
+            # Drain initial status + health messages
+            for _ in range(3):
+                msg = ws.receive_json()
+                if msg["type"] == "health":
+                    break
 
             asyncio.run(
                 app_module._handle_market_data_update(
@@ -988,7 +1007,11 @@ class TestWebSocket:
 
     def test_ws_receives_exchange_status_broadcast(self, client):
         with client.websocket_connect("/ws/updates") as ws:
-            ws.receive_json()  # initial health snapshot
+            # Drain initial status + health messages
+            for _ in range(3):
+                msg = ws.receive_json()
+                if msg["type"] == "health":
+                    break
 
             asyncio.run(
                 app_module._handle_market_data_status_change(
@@ -1012,6 +1035,27 @@ class TestWebSocket:
             assert data["exchange"] == "binance"
             assert data["market_data_mode"] == "live_public_paper"
             assert data["connected"] is True
+
+
+class TestPingEndpoint:
+    def test_ping_returns_ok(self, client):
+        resp = client.get("/ping")
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+
+
+class TestNewWsEndpoint:
+    def test_ws_primary_endpoint_sends_status_and_health(self, client):
+        """The /ws endpoint sends an initial status then health message."""
+        with client.websocket_connect("/ws") as ws:
+            first = ws.receive_json()
+            assert first["type"] == "status"
+            assert first["ws"] == "online"
+            assert first["backend"] == "operational"
+            second = ws.receive_json()
+            assert second["type"] == "health"
+            assert "kill_switch_active" in second
+            assert "mode" in second
 
 
 class TestRenderReadinessEndpoint:

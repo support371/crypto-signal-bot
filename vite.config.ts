@@ -14,6 +14,11 @@ export default defineConfig(({ mode }) => ({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
+      '/ws': {
+        target: (process.env.VITE_BACKEND_URL || 'https://crypto-signal-bot-deqd.onrender.com').replace(/^http/, 'ws'),
+        ws: true,
+        changeOrigin: true,
+      },
     },
   },
   build: {
