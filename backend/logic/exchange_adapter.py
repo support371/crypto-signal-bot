@@ -15,7 +15,7 @@ from typing import Dict, Optional
 
 logger = logging.getLogger("backend.exchange_adapter")
 
-from backend.engine.mainnet_gate import assert_not_mainnet
+from backend.engine.mainnet_gate import MainnetGateError, assert_not_mainnet
 
 SUPPORTED_EXCHANGES = {"binance", "bitget", "btcc"}
 _CREDENTIAL_ENV_MAP = {
@@ -455,8 +455,17 @@ def build_adapter(
 
     testnet = network != "mainnet"
 
-    # Mainnet gate: block live mainnet unless explicitly allowed
-    assert_not_mainnet(network, trading_mode)
+    # Mainnet gate: block live mainnet unless explicitly allowed.
+    # Fall back to PaperAdapter instead of crashing — the intent-level gate
+    # in _process_intent() will reject individual orders with RISK_REJECTED.
+    try:
+        assert_not_mainnet(network, trading_mode)
+    except MainnetGateError:
+        logger.warning(
+            "Mainnet gate blocked adapter construction — falling back to PaperAdapter. "
+            "Individual intents will be rejected with RISK_REJECTED."
+        )
+        return PaperAdapter(portfolio, synthetic_price_fn)
 
     try:
         adapter = CCXTSpotAdapter(exchange_id=selected_exchange, testnet=testnet)

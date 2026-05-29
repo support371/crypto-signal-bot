@@ -467,7 +467,9 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
         intent.status = IntentStatus.RISK_REJECTED
         intent.notes = str(exc)
         append_risk_event({"intent_id": intent.id, "reason": intent.notes, "source": "mainnet_gate"})
-        append_intent(intent.model_dump())
+        intent_data = intent.model_dump()
+        append_intent(intent_data)
+        context.schedule_background(persist_order, intent_data, TRADING_MODE)
         return IntentResponse(id=intent.id, status=intent.status.value, notes=intent.notes)
 
     try:
@@ -476,7 +478,9 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
         intent.status = IntentStatus.RISK_REJECTED
         intent.notes = str(exc)
         append_risk_event({"intent_id": intent.id, "reason": intent.notes, "source": "guardian_scope"})
-        append_intent(intent.model_dump())
+        intent_data = intent.model_dump()
+        append_intent(intent_data)
+        context.schedule_background(persist_order, intent_data, TRADING_MODE)
         return IntentResponse(id=intent.id, status=intent.status.value, notes=intent.notes)
 
     current_price = req.price or _synthetic_price(intent.symbol)
@@ -512,7 +516,9 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
         intent.status = IntentStatus.RISK_REJECTED
         intent.notes = engine_result.reason
         append_risk_event({"intent_id": intent.id, "risk_engine": engine_result.to_dict(), "reason": intent.notes})
-        append_intent(intent.model_dump())
+        intent_data = intent.model_dump()
+        append_intent(intent_data)
+        context.schedule_background(persist_order, intent_data, TRADING_MODE)
         return IntentResponse(id=intent.id, status=intent.status.value, notes=intent.notes)
 
     if engine_result.size_multiplier < 1.0:
