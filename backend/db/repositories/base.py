@@ -282,17 +282,19 @@ class PortfolioRepository(BaseRepository):
         """Upsert every asset balance into the portfolio_state table."""
         now = int(time.time())
         for asset, amount in balances.items():
-            existing = await self.session.get(PortfolioStateRecord, asset)
+            existing = await self.session.get(PortfolioStateRecord, (asset, mode))
             if existing:
                 existing.amount = amount
-                existing.mode = mode
                 existing.updated_at = now
             else:
                 self.session.add(PortfolioStateRecord(
                     asset=asset, amount=amount, mode=mode, updated_at=now,
                 ))
-        # Remove assets no longer in balances (dust cleanup)
-        result = await self.session.execute(select(PortfolioStateRecord))
+        # Remove assets no longer in balances — scoped to current mode only
+        result = await self.session.execute(
+            select(PortfolioStateRecord)
+            .where(PortfolioStateRecord.mode == mode)
+        )
         for record in result.scalars().all():
             if record.asset not in balances:
                 await self.session.delete(record)

@@ -149,12 +149,12 @@ class AuditLogRecord(Base):
 
 
 class PortfolioStateRecord(Base):
-    """Current portfolio balance per asset — upserted on each trade."""
+    """Current portfolio balance per asset+mode — upserted on each trade."""
     __tablename__ = "portfolio_state"
 
     asset = Column(String(20), primary_key=True)
+    mode = Column(String(8), primary_key=True, default="paper")
     amount = Column(Float, nullable=False)
-    mode = Column(String(8), nullable=False, default="paper")
     updated_at = Column(BigInteger, default=unix_timestamp, onupdate=unix_timestamp)
 
 

@@ -180,6 +180,43 @@ class TestPortfolioPersistence:
         finally:
             await close_db()
 
+    @pytest.mark.asyncio
+    async def test_save_balances_mode_isolation(self):
+        """Saving balances for one mode should not delete records from another mode."""
+        from backend.db.session import close_db, get_session
+        from backend.db.repositories.base import PortfolioRepository
+        from backend.db.models import Base
+
+        engine = _init_test_db()
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+
+            # Save paper balances
+            async with get_session() as session:
+                repo = PortfolioRepository(session)
+                await repo.save_balances({"USDT": 9500.0, "BTC": 0.05}, mode="paper")
+                await session.commit()
+
+            # Save live balances (different mode, different assets)
+            async with get_session() as session:
+                repo = PortfolioRepository(session)
+                await repo.save_balances({"USDT": 50000.0}, mode="live")
+                await session.commit()
+
+            # Paper balances should be intact
+            async with get_session() as session:
+                repo = PortfolioRepository(session)
+                paper = await repo.load_balances(mode="paper")
+                live = await repo.load_balances(mode="live")
+
+            assert paper["USDT"] == 9500.0
+            assert paper["BTC"] == 0.05
+            assert live["USDT"] == 50000.0
+            assert "BTC" not in live
+        finally:
+            await close_db()
+
 
 # ---------------------------------------------------------------------------
 # Layer 2: Testnet validation
@@ -312,6 +349,25 @@ class TestExchangeReconciliation:
         )
 
         assert result.drift_detected is True
+        assert "BTC" in result.balance_drift
+
+    def test_reconciliation_detects_unexpected_exchange_asset(self):
+        """Asset on exchange but not locally should flag 100% drift."""
+        from backend.services.exchange_reconciler import reconcile_against_exchange
+
+        adapter = MagicMock()
+        adapter.reconcile.return_value = {
+            "balances": {"USDT": "10000.0", "BTC": "1.0"},
+        }
+
+        result = reconcile_against_exchange(
+            adapter=adapter,
+            local_balances={"USDT": 10000.0},
+            drift_tolerance_pct=1.0,
+        )
+
+        assert result.drift_detected is True
+        assert result.max_drift_pct >= 100.0
         assert "BTC" in result.balance_drift
 
     def test_reconciliation_result_to_dict(self):

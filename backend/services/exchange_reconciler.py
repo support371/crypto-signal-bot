@@ -91,6 +91,9 @@ def reconcile_against_exchange(
                 if local_amt > 0:
                     drift_pct = abs(diff / local_amt) * 100
                     result.max_drift_pct = max(result.max_drift_pct, drift_pct)
+                elif exchange_amt > 0:
+                    # Asset exists on exchange but not locally — treat as 100% drift
+                    result.max_drift_pct = max(result.max_drift_pct, 100.0)
 
         result.drift_detected = result.max_drift_pct > drift_tolerance_pct
         result.status = "drift_detected" if result.drift_detected else "ok"
