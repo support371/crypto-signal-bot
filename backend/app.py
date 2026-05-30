@@ -873,7 +873,9 @@ def get_traces_api(
 
 @app.get("/trace/{intent_id}", dependencies=[Depends(rate_limit.rate_limit)])
 def get_trace_by_intent(intent_id: str):
-    traces = get_traces()
+    from backend.logic.audit_store import _load, _lock
+    with _lock:
+        traces = _load().get("traces", [])
     for t in traces:
         if t.get("intent_id") == intent_id:
             return t
@@ -901,26 +903,6 @@ def get_circuit_breaker_statuses():
         return {"circuit_breakers": get_all_circuit_breaker_statuses()}
     except Exception as exc:
         return {"circuit_breakers": [], "error": str(exc)}
-
-@app.get("/guardian/status", dependencies=[Depends(rate_limit.rate_limit)])
-def get_guardian_status_api():
-    market_data = _get_market_data_status()
-    return {
-        "triggered": context.guardian_triggered,
-        "trigger_reason": context.guardian_trigger_reason,
-        "trigger_ts": context.guardian_trigger_ts,
-        "kill_switch_active": context.kill_switch_active,
-        "kill_switch_reason": context.kill_switch_reason,
-        "drawdown_pct": round(context.guardian_drawdown_pct * 100, 2),
-        "api_error_count": context.api_error_count,
-        "failed_order_count": context.failed_order_count,
-        "thresholds": {
-            "max_api_errors": _GUARDIAN_MAX_API_ERRORS,
-            "max_failed_orders": _GUARDIAN_MAX_FAILED_ORDERS,
-            "max_drawdown_pct": _GUARDIAN_MAX_DRAWDOWN_PCT * 100,
-        },
-        "market_data": market_data,
-    }
 
 @app.get("/reconciliation/status", dependencies=[Depends(rate_limit.rate_limit)])
 async def reconciliation_status_api():
