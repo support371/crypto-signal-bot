@@ -309,13 +309,15 @@ from backend.routes.kill_switch import router as kill_switch_router
 from backend.routes.waitlist import waitlist_router
 from backend.routes.signals_v1 import router as signals_v1_router
 from backend.services.signal_service.service import start_signal_service
+from backend.routes.portfolio_v1 import router as portfolio_v1_router
+from backend.services.portfolio.service import start_portfolio_service
 
 # Track already registered paths to avoid duplicates
 # NOTE: price_router excluded — app.py defines /price and /exchange/status
 # with synthetic fallback; the routes/price.py router requires a live
 # MarketDataService and would shadow the synthetic-safe defaults.
 _registered_paths = {getattr(route, "path", None) for route in app.routes}
-for _router in (compatibility_router, integrations_router, waitlist_router, kill_switch_router, signals_v1_router):
+for _router in (compatibility_router, integrations_router, waitlist_router, kill_switch_router, signals_v1_router, portfolio_v1_router):
     _router_paths = {getattr(route, "path", None) for route in _router.routes}
     if not _router_paths.issubset(_registered_paths):
         app.include_router(_router)
@@ -1156,5 +1158,6 @@ async def serve_spa(path: str):
 # Start signal evaluation loop
 try:
     start_signal_service(app)
+    start_portfolio_service(app)
 except Exception:
     pass

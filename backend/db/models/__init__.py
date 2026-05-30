@@ -208,6 +208,98 @@ class SignalRecord(Base):
     )
 
 
+class AccountRecord(Base):
+    """Paper trading account — one per user/mode."""
+    __tablename__ = "accounts"
+
+    id             = Column(String(64), primary_key=True)
+    user_id        = Column(String(64), nullable=False, index=True)
+    base_currency  = Column(String(10), nullable=False, default="USDT")
+    cash_balance   = Column(Float, nullable=False, default=10000.0)
+    equity         = Column(Float, nullable=False, default=10000.0)
+    mode           = Column(String(8), nullable=False, default="paper")
+    created_at     = Column(BigInteger, default=unix_timestamp, index=True)
+    updated_at     = Column(BigInteger, default=unix_timestamp, onupdate=unix_timestamp)
+
+
+class PaperOrderRecord(Base):
+    """Paper trade orders — full lifecycle tracked here."""
+    __tablename__ = "paper_orders"
+
+    id          = Column(String(64), primary_key=True)
+    account_id  = Column(String(64), nullable=False, index=True)
+    symbol      = Column(String(20), nullable=False, index=True)
+    side        = Column(String(8),  nullable=False)          # BUY | SELL
+    order_type  = Column(String(16), nullable=False)          # MARKET | LIMIT
+    qty         = Column(Float, nullable=False)
+    price       = Column(Float, nullable=True)                 # None = MARKET
+    status      = Column(String(16), nullable=False, index=True)  # PENDING|FILLED|CANCELLED
+    mode        = Column(String(8),  nullable=False, default="paper")
+    created_at  = Column(BigInteger, default=unix_timestamp, index=True)
+    updated_at  = Column(BigInteger, default=unix_timestamp, onupdate=unix_timestamp)
+
+    __table_args__ = (
+        Index("ix_paper_orders_account_symbol", "account_id", "symbol"),
+        Index("ix_paper_orders_status_created", "status", "created_at"),
+    )
+
+
+class TradeRecord(Base):
+    """Confirmed fills — one-to-one with FILLED paper orders."""
+    __tablename__ = "trades"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    order_id    = Column(String(64), nullable=False, index=True)
+    account_id  = Column(String(64), nullable=False, index=True)
+    symbol      = Column(String(20), nullable=False, index=True)
+    qty         = Column(Float, nullable=False)
+    price       = Column(Float, nullable=False)               # fill price
+    fee         = Column(Float, nullable=False, default=0.0)
+    side        = Column(String(8), nullable=False)
+    realized_pnl = Column(Float, nullable=True)               # set on SELL fills
+    executed_at = Column(BigInteger, default=unix_timestamp, index=True)
+
+    __table_args__ = (
+        Index("ix_trades_account_symbol", "account_id", "symbol"),
+    )
+
+
+class PositionRecord2(Base):
+    """Current open positions per symbol per account."""
+    __tablename__ = "paper_positions"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    account_id      = Column(String(64), nullable=False, index=True)
+    symbol          = Column(String(20), nullable=False, index=True)
+    qty             = Column(Float, nullable=False)           # signed: + long, - short
+    avg_entry_price = Column(Float, nullable=False)
+    realized_pnl    = Column(Float, nullable=False, default=0.0)
+    unrealized_pnl  = Column(Float, nullable=False, default=0.0)
+    updated_at      = Column(BigInteger, default=unix_timestamp, onupdate=unix_timestamp)
+
+    __table_args__ = (
+        Index("ix_paper_positions_account_symbol", "account_id", "symbol", unique=True),
+    )
+
+
+class EquitySnapshotRecord(Base):
+    """Equity snapshots — append-only time series per account."""
+    __tablename__ = "equity_snapshots"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    account_id  = Column(String(64), nullable=False, index=True)
+    equity      = Column(Float, nullable=False)
+    cash        = Column(Float, nullable=False)
+    unrealized  = Column(Float, nullable=False, default=0.0)
+    drawdown_pct = Column(Float, nullable=False, default=0.0)
+    max_equity  = Column(Float, nullable=False)
+    timestamp   = Column(BigInteger, default=unix_timestamp, index=True)
+
+    __table_args__ = (
+        Index("ix_equity_snapshots_account_ts", "account_id", "timestamp"),
+    )
+
+
 __all__ = [
     "Base",
     "unix_timestamp",
@@ -221,5 +313,10 @@ __all__ = [
     "PortfolioStateRecord",
     "ReconciliationReport",
     "SignalRecord",
+    "AccountRecord",
+    "PaperOrderRecord",
+    "TradeRecord",
+    "PositionRecord2",
+    "EquitySnapshotRecord",
     "ServiceHeartbeat",
 ]
