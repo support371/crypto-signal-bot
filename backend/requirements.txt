@@ -21,9 +21,10 @@ aioredis>=2.0
 # DB migrations
 alembic
 
-# Testing (also needed in CI)
+# Testing & linting (also needed in CI)
 pytest
 pytest-asyncio
+ruff>=0.4
 
 # Optional: required only when TRADING_MODE=live
 # Install with: pip install ccxt

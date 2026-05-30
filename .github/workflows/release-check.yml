@@ -39,7 +39,13 @@ jobs:
           python -m pip install -r backend/requirements.txt
 
       - name: Verify backend import surface
-        run: python -m py_compile backend/app.py
+        run: python -m py_compile backend/app.py backend/public_app.py
+
+      - name: Lint backend (ruff)
+        run: python -m ruff check backend/ --select E,W,F --ignore E402,F401,E501,E741 --exit-zero
+
+      - name: Run full backend test suite
+        run: python -m pytest backend/tests/ -x -q
 
       - name: Run stabilization test contract
         run: python -m pytest backend/tests/test_event_log_store.py backend/tests/test_audit_store_event_log.py backend/tests/test_event_log_router.py tests/test_provider_registry.py tests/test_integrations_endpoint.py tests/test_waitlist_endpoint.py -q

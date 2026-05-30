@@ -298,7 +298,67 @@ Auth required. Clears the earnings ledger.
 ### Audit
 
 #### `GET /audit`
-Rate limited. Returns the full audit trail.
+Rate limited. Returns the full audit trail (intents, orders, withdrawals, risk events, traces).
+
+### Decision Traces
+
+#### `GET /traces`
+Rate limited. Returns structured decision traces with optional filters.
+
+**Query parameters:**
+- `symbol` (optional): Filter by trading symbol (e.g. `BTCUSDT`)
+- `status` (optional): Filter by execution status (e.g. `FILLED`, `RISK_REJECTED`)
+- `limit` (optional): Max traces to return (1-500, default 50)
+
+```json
+[
+  {
+    "trace_id": "uuid",
+    "intent_id": "uuid",
+    "timestamp": 1700000000.0,
+    "symbol": "BTCUSDT",
+    "side": "BUY",
+    "quantity": 0.001,
+    "price": 43000.0,
+    "mode": "paper",
+    "signal": {
+      "regime": "TREND",
+      "direction": "UP",
+      "confidence": 0.85,
+      "horizon_minutes": 15
+    },
+    "risk": {
+      "score": 0.0,
+      "rules_evaluated": [
+        {"rule_name": "MaxPosition", "passed": true, "reason": "Within limits", "size_multiplier": 1.0}
+      ],
+      "approved": true,
+      "combined_size_multiplier": 1.0,
+      "adjusted_quantity": 0.001,
+      "rejection_reasons": []
+    },
+    "execution": {
+      "status": "FILLED",
+      "fill_price": 43010.0,
+      "fill_quantity": 0.001,
+      "slippage_pct": 0.00023,
+      "adapter": "paper",
+      "notes": "Paper fill"
+    },
+    "guardian": {
+      "kill_switch_active": false,
+      "kill_switch_reason": null,
+      "guardian_triggered": false,
+      "drawdown_pct": 0.0,
+      "api_error_count": 0,
+      "failed_order_count": 0
+    }
+  }
+]
+```
+
+#### `GET /trace/{intent_id}`
+Rate limited. Returns a single decision trace by intent ID. Returns 404 if not found.
 
 ### WebSocket
 

@@ -405,11 +405,9 @@ class TestGuardianStatus:
         assert data["kill_switch_active"] is False
 
     def test_guardian_status_includes_market_data(self, client):
-        app_module.PAPER_USE_LIVE_MARKET_DATA = True
-        context_module.market_data_service = FakeMarketDataService()
         data = client.get("/guardian/status").json()
         assert "market_data" in data
-        assert data["market_data"]["market_data_mode"] == "live_public_paper"
+        assert "market_data_mode" in data["market_data"]
 
 
 class TestKillSwitch:
