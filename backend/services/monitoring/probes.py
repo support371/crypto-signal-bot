@@ -60,17 +60,22 @@ async def probe_health() -> ProbeResult:
     return ProbeResult(name="health", ok=ok, latency_ms=ms, detail=detail)
 
 
+try:
+    from backend.services.market_data.service import get_price as _get_market_price
+except Exception:
+    _get_market_price = None  # type: ignore[assignment]
+
+
 async def probe_market_data() -> ProbeResult:
-    """Check live market data connectivity."""
+    """Check live market data connectivity — fetches a live BTC price."""
     t0 = time.perf_counter()
     try:
-        from backend.services.market_data.aggregator import get_price  # noqa: PLC0415
-        snap = await get_price("BTCUSDT")
+        if _get_market_price is None:
+            raise ImportError("market_data service not available")
+        snap = await _get_market_price("BTCUSDT")
         ok = snap is not None and float(snap.price) > 0
-        detail = {"price": float(snap.price) if snap else None}
+        detail: Dict[str, Any] = {"price": float(snap.price) if snap else None}
     except Exception as exc:
-        ok = False
-        detail = {}
         return ProbeResult(name="market_data", ok=False,
                            latency_ms=int((time.perf_counter() - t0) * 1000),
                            error=str(exc))
@@ -122,22 +127,25 @@ except Exception:
 
 
 async def probe_signal_engine() -> ProbeResult:
-    """Check signal evaluation service — at least one symbol has a cached signal."""
+    """Check signal evaluation service — loop running is sufficient; candle
+    availability is optional (FLAT signals are valid in data-limited envs)."""
     t0 = time.perf_counter()
     try:
         if get_signal_service_status is None or get_all_cached_signals is None:
             raise ImportError("signal service not available")
         status = get_signal_service_status()
         signals = get_all_cached_signals()
-        ok = status.get("running", False) and len(signals) > 0
-        detail = {
-            "running":        status.get("running"),
+        running = status.get("running", False)
+        # ok = loop is running (cache may be empty in first 60s or if OHLCV unavailable)
+        ok = running
+        non_flat = [s for s in signals if getattr(s, "side", "FLAT") != "FLAT"]
+        detail: Dict[str, Any] = {
+            "running":        running,
             "cached_symbols": status.get("cached_symbols", []),
             "cached_count":   len(signals),
+            "non_flat":       len(non_flat),
         }
     except Exception as exc:
-        ok = False
-        detail = {}
         return ProbeResult(name="signal_engine", ok=False,
                            latency_ms=int((time.perf_counter() - t0) * 1000),
                            error=str(exc))

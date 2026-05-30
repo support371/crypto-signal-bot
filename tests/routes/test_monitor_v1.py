@@ -392,10 +392,24 @@ class TestProbeSignalEngine:
         assert result.ok is True
 
     @pytest.mark.asyncio
-    async def test_no_cached_signals_is_not_ok(self):
+    async def test_no_cached_signals_still_ok_when_running(self):
+        """Loop running is sufficient — empty cache is ok (first-eval window or no OHLCV)."""
         with (
             patch("backend.services.monitoring.probes.get_signal_service_status",
                   return_value={"running": True, "cached_symbols": []}),
+            patch("backend.services.monitoring.probes.get_all_cached_signals",
+                  return_value=[]),
+        ):
+            result = await probe_signal_engine()
+        assert result.ok is True
+        assert result.detail["non_flat"] == 0
+
+    @pytest.mark.asyncio
+    async def test_signal_engine_not_ok_when_loop_stopped(self):
+        """Probe fails when the eval loop is not running."""
+        with (
+            patch("backend.services.monitoring.probes.get_signal_service_status",
+                  return_value={"running": False, "cached_symbols": []}),
             patch("backend.services.monitoring.probes.get_all_cached_signals",
                   return_value=[]),
         ):
