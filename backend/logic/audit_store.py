@@ -143,12 +143,28 @@ def append_trace(trace_data: Dict[str, Any]):
 
 def get_traces(symbol: Optional[str] = None, status: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
     with _lock:
-        traces = _load().get("traces", [])
+        # Copy the list while holding the lock so subsequent appends cannot
+        # mutate the slice we hand back to the caller.
+        traces = list(_load().get("traces", []))
     if symbol:
         traces = [t for t in traces if t.get("symbol", "").upper() == symbol.upper()]
     if status:
         traces = [t for t in traces if t.get("execution", {}).get("status") == status]
     return traces[-limit:]
+
+
+def get_trace_by_intent_id(intent_id: str) -> Optional[Dict[str, Any]]:
+    """Return the full decision trace for a given intent id, or None if missing.
+
+    Searches every persisted trace (not just the most recent window) so older
+    traces remain retrievable via GET /trace/{intent_id}.
+    """
+    with _lock:
+        traces = list(_load().get("traces", []))
+    for trace in traces:
+        if trace.get("intent_id") == intent_id:
+            return trace
+    return None
 
 
 def clear_audit():

@@ -26,6 +26,7 @@ from backend.logic.audit_store import (
     append_trace,
     append_withdrawal,
     get_audit,
+    get_trace_by_intent_id,
     get_traces,
 )
 from backend.models.decision_trace import (
@@ -873,13 +874,10 @@ def get_traces_api(
 
 @app.get("/trace/{intent_id}", dependencies=[Depends(rate_limit.rate_limit)])
 def get_trace_by_intent(intent_id: str):
-    from backend.logic.audit_store import _load, _lock
-    with _lock:
-        traces = _load().get("traces", [])
-    for t in traces:
-        if t.get("intent_id") == intent_id:
-            return t
-    raise HTTPException(status_code=404, detail="Trace not found")
+    trace = get_trace_by_intent_id(intent_id)
+    if trace is None:
+        raise HTTPException(status_code=404, detail="Trace not found")
+    return trace
 
 @app.get("/metrics")
 def get_metrics_api():
