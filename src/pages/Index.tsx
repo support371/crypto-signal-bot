@@ -15,7 +15,7 @@ import type { UserSettings } from '@/components/dashboard/SettingsModal';
 import { SignalPanel } from '@/components/dashboard/SignalPanel';
 import { SystemMetricsPanel } from '@/components/dashboard/SystemMetricsPanel';
 import { useBackendStatus, type EndpointErrors } from '@/hooks/useBackendStatus';
-import { useBackendWebSocket, type WsTickerMessage } from '@/hooks/useBackendWebSocket';
+import { useBackendWebSocket, type WsTickerMessage, type WsHealthMessage } from '@/hooks/useBackendWebSocket';
 import { useCryptoPrices } from '@/hooks/useCryptoPrices';
 import { useEarnings } from '@/hooks/useEarnings';
 import { useAuditTrail } from '@/hooks/useAuditTrail';
@@ -178,6 +178,13 @@ const Index = () => {
     systemMode,
   ]);
 
+  const handleHealthUpdate = useCallback(
+    (_msg: WsHealthMessage) => {
+      refetchStatus();
+    },
+    [refetchStatus]
+  );
+
   const handleGuardianAlert = useCallback(
     (msg: { reason: string; kill_switch_active: boolean }) => {
       toast.error(`Guardian alert: ${msg.reason}`, { duration: 8000 });
@@ -255,6 +262,7 @@ const Index = () => {
   );
 
   const { connected: wsConnected } = useBackendWebSocket({
+    onHealthUpdate: handleHealthUpdate,
     onExchangeStatus: handleExchangeStatus,
     onGuardianAlert: handleGuardianAlert,
     onKillSwitchChange: handleKillSwitchChange,
