@@ -19,7 +19,12 @@ from backend.services.monitoring.service import (
     _run_probes,
     _process_results,
 )
-from backend.services.monitoring.probes import ALL_PROBES
+from backend.services.monitoring.probes import (
+    ALL_PROBES,
+    probe_cooldown,
+    probe_external_liveness,
+)
+from backend.services.monitoring.service import REALERT_INTERVAL
 
 log = logging.getLogger(__name__)
 
@@ -42,7 +47,9 @@ async def monitor_status() -> dict:
     Returns the latest result for every registered health probe,
     plus an overall ok/failing flag.
     """
-    return get_monitor_status()
+    status = get_monitor_status()
+    status["realert_interval"] = REALERT_INTERVAL
+    return status
 
 
 @router.get("/probes", summary="List registered probe names")

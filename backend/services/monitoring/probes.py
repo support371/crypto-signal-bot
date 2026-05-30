@@ -215,6 +215,96 @@ async def probe_portfolio() -> ProbeResult:
     return ProbeResult(name="portfolio", ok=ok, latency_ms=ms, detail=detail)
 
 
+
+
+try:
+    from backend.services.guardian_bot.service import (
+        is_in_cooldown as _is_in_cooldown,
+        cooldown_remaining_seconds as _cooldown_remaining,
+        get_cooldown_seconds as _get_cooldown_seconds,
+    )
+except Exception:
+    _is_in_cooldown = None  # type: ignore[assignment]
+    _cooldown_remaining = None  # type: ignore[assignment]
+    _get_cooldown_seconds = None  # type: ignore[assignment]
+
+
+
+
+async def probe_external_liveness() -> ProbeResult:
+    """
+    External liveness probe — pings the live Render backend /health endpoint
+    from inside the process to verify the deployed service is reachable.
+
+    The URL is read from env var RENDER_EXTERNAL_URL (set automatically by
+    Render) or EXTERNAL_HEALTH_URL (manual override). Skipped gracefully
+    if neither is set (local / test environments).
+    """
+    import os as _os
+    t0 = time.perf_counter()
+
+    base_url = (
+        _os.getenv("RENDER_EXTERNAL_URL", "").rstrip("/")
+        or _os.getenv("EXTERNAL_HEALTH_URL", "").rstrip("/")
+    )
+
+    if not base_url:
+        # Not deployed externally — skip without failing
+        return ProbeResult(
+            name="external_liveness", ok=True,
+            latency_ms=0,
+            detail={"skipped": True, "reason": "RENDER_EXTERNAL_URL not set"},
+        )
+
+    url = f"{base_url}/health"
+    try:
+        import httpx as _httpx
+        async with _httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url)
+        ok = resp.status_code < 500
+        ms = int((time.perf_counter() - t0) * 1000)
+        return ProbeResult(
+            name="external_liveness", ok=ok, latency_ms=ms,
+            detail={"url": url, "status_code": resp.status_code},
+            error=None if ok else f"HTTP {resp.status_code}",
+        )
+    except Exception as exc:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return ProbeResult(
+            name="external_liveness", ok=False, latency_ms=ms,
+            error=str(exc),
+            detail={"url": url},
+        )
+
+
+async def probe_cooldown() -> ProbeResult:
+    """
+    Cooldown probe — ok when trading is NOT in post-kill-switch cooldown.
+    Failing means orders are currently blocked while the cooldown window
+    drains.  Severity is WARNING (expected transient state after a reset).
+    """
+    t0 = time.perf_counter()
+    try:
+        if _is_in_cooldown is None:
+            raise ImportError("guardian service not available")
+        in_cd = _is_in_cooldown()
+        remaining = _cooldown_remaining() if in_cd else 0
+        window = _get_cooldown_seconds()
+        ok = not in_cd
+        detail: Dict[str, Any] = {
+            "in_cooldown":       in_cd,
+            "cooldown_remaining_s": remaining,
+            "cooldown_window_s": window,
+        }
+    except Exception as exc:
+        return ProbeResult(
+            name="cooldown", ok=True,   # fallback: don't fail on import error
+            latency_ms=int((time.perf_counter() - t0) * 1000),
+            error=str(exc),
+        )
+    ms = int((time.perf_counter() - t0) * 1000)
+    return ProbeResult(name="cooldown", ok=ok, latency_ms=ms, detail=detail)
+
 # ---------------------------------------------------------------------------
 # Probe registry — ordered by severity
 # ---------------------------------------------------------------------------
@@ -226,4 +316,6 @@ ALL_PROBES = [
     probe_circuit_breakers,
     probe_signal_engine,
     probe_portfolio,
+    probe_cooldown,
+    probe_external_liveness,
 ]

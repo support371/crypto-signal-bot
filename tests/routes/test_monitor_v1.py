@@ -415,3 +415,269 @@ class TestProbeSignalEngine:
         ):
             result = await probe_signal_engine()
         assert result.ok is False
+
+
+# ---------------------------------------------------------------------------
+# probe_portfolio (direct unit tests)
+# ---------------------------------------------------------------------------
+
+class TestProbePortfolio:
+    @pytest.mark.asyncio
+    async def test_probe_portfolio_ok_when_equity_positive(self):
+        from backend.services.monitoring.probes import probe_portfolio
+        mock_summary = {
+            "equity": 10500.0,
+            "cash_balance": 9000.0,
+            "drawdown_pct": 1.2,
+        }
+        with patch(
+            "backend.services.monitoring.probes.get_portfolio_summary",
+            new_callable=AsyncMock,
+            return_value=mock_summary,
+        ):
+            result = await probe_portfolio()
+        assert result.ok is True
+        assert result.name == "portfolio"
+        assert result.detail["equity"] == 10500.0
+
+    @pytest.mark.asyncio
+    async def test_probe_portfolio_ok_with_zero_equity(self):
+        from backend.services.monitoring.probes import probe_portfolio
+        with patch(
+            "backend.services.monitoring.probes.get_portfolio_summary",
+            new_callable=AsyncMock,
+            return_value={"equity": 0.0, "cash_balance": 0.0, "drawdown_pct": 0.0},
+        ):
+            result = await probe_portfolio()
+        assert result.ok is True   # 0 equity is still valid (fresh account)
+
+    @pytest.mark.asyncio
+    async def test_probe_portfolio_fails_on_exception(self):
+        from backend.services.monitoring.probes import probe_portfolio
+        with patch(
+            "backend.services.monitoring.probes.get_portfolio_summary",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("DB unavailable"),
+        ):
+            result = await probe_portfolio()
+        assert result.ok is False
+        assert "DB unavailable" in (result.error or "")
+
+
+# ---------------------------------------------------------------------------
+# probe_cooldown (direct unit tests)
+# ---------------------------------------------------------------------------
+
+class TestProbeCooldown:
+    @pytest.mark.asyncio
+    async def test_ok_when_not_in_cooldown(self):
+        from backend.services.monitoring.probes import probe_cooldown
+        with (
+            patch("backend.services.monitoring.probes._is_in_cooldown", return_value=False),
+            patch("backend.services.monitoring.probes._cooldown_remaining", return_value=0),
+            patch("backend.services.monitoring.probes._get_cooldown_seconds", return_value=60),
+        ):
+            result = await probe_cooldown()
+        assert result.ok is True
+        assert result.name == "cooldown"
+        assert result.detail["in_cooldown"] is False
+
+    @pytest.mark.asyncio
+    async def test_failing_when_in_cooldown(self):
+        from backend.services.monitoring.probes import probe_cooldown
+        with (
+            patch("backend.services.monitoring.probes._is_in_cooldown", return_value=True),
+            patch("backend.services.monitoring.probes._cooldown_remaining", return_value=45),
+            patch("backend.services.monitoring.probes._get_cooldown_seconds", return_value=60),
+        ):
+            result = await probe_cooldown()
+        assert result.ok is False
+        assert result.detail["cooldown_remaining_s"] == 45
+        assert result.detail["cooldown_window_s"] == 60
+
+    @pytest.mark.asyncio
+    async def test_fallback_ok_when_guardian_unavailable(self):
+        from backend.services.monitoring.probes import probe_cooldown
+        with patch(
+            "backend.services.monitoring.probes._is_in_cooldown",
+            side_effect=ImportError("not available"),
+        ):
+            result = await probe_cooldown()
+        # Fallback: don't fail the probe if guardian service is unavailable
+        assert result.ok is True
+
+
+# ---------------------------------------------------------------------------
+# probe_external_liveness (direct unit tests)
+# ---------------------------------------------------------------------------
+
+class TestProbeExternalLiveness:
+    @pytest.mark.asyncio
+    async def test_skipped_when_no_env_var(self, monkeypatch):
+        from backend.services.monitoring.probes import probe_external_liveness
+        monkeypatch.delenv("RENDER_EXTERNAL_URL", raising=False)
+        monkeypatch.delenv("EXTERNAL_HEALTH_URL", raising=False)
+        result = await probe_external_liveness()
+        assert result.ok is True
+        assert result.detail.get("skipped") is True
+
+    @pytest.mark.asyncio
+    async def test_ok_when_health_returns_200(self, monkeypatch):
+        import os
+        from backend.services.monitoring.probes import probe_external_liveness
+        monkeypatch.setenv("RENDER_EXTERNAL_URL", "https://fake-render.onrender.com")
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.get = AsyncMock(return_value=mock_resp)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await probe_external_liveness()
+
+        assert result.ok is True
+        assert result.detail["status_code"] == 200
+
+    @pytest.mark.asyncio
+    async def test_failing_when_health_returns_500(self, monkeypatch):
+        from backend.services.monitoring.probes import probe_external_liveness
+        monkeypatch.setenv("RENDER_EXTERNAL_URL", "https://fake-render.onrender.com")
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 500
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.get = AsyncMock(return_value=mock_resp)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await probe_external_liveness()
+
+        assert result.ok is False
+        assert "HTTP 500" in (result.error or "")
+
+    @pytest.mark.asyncio
+    async def test_failing_on_network_error(self, monkeypatch):
+        from backend.services.monitoring.probes import probe_external_liveness
+        monkeypatch.setenv("RENDER_EXTERNAL_URL", "https://fake-render.onrender.com")
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.get = AsyncMock(side_effect=Exception("Connection refused"))
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await probe_external_liveness()
+
+        assert result.ok is False
+        assert "Connection refused" in (result.error or "")
+
+
+# ---------------------------------------------------------------------------
+# Re-alert window (monitoring service)
+# ---------------------------------------------------------------------------
+
+class TestReAlertWindow:
+    @pytest.mark.asyncio
+    async def test_no_realert_before_interval(self):
+        """alerted_down=True and last_alert_at recent → no second alert."""
+        from backend.services.monitoring import service as svc
+        from backend.services.monitoring.service import _probe_states, ProbeState
+
+        svc._probe_states.clear()
+        name = "signal_engine_realert_test"
+        state = ProbeState()
+        # Simulate: already alerted, alerted 5s ago, still failing
+        state.alerted_down = True
+        state.consecutive_failures = 3
+        state.last_alert_at = int(time.time()) - 5
+        svc._probe_states[name] = state
+
+        mock_result = ProbeResult(name=name, ok=False, error="loop stopped")
+        with patch("backend.services.monitoring.service.dispatch",
+                   new_callable=AsyncMock) as mock_dispatch:
+            await svc._process_results([mock_result])
+        mock_dispatch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_realert_fires_after_interval(self):
+        """alerted_down=True but last_alert_at is old → re-alert fires."""
+        from backend.services.monitoring import service as svc
+        from backend.services.monitoring.service import _probe_states, ProbeState, REALERT_INTERVAL
+
+        svc._probe_states.clear()
+        name = "guardian_realert_test"
+        state = ProbeState()
+        state.alerted_down = True
+        state.consecutive_failures = 10
+        # Set last_alert_at well beyond REALERT_INTERVAL
+        state.last_alert_at = int(time.time()) - (REALERT_INTERVAL + 60)
+        svc._probe_states[name] = state
+
+        mock_result = ProbeResult(name=name, ok=False, error="still down")
+        with patch("backend.services.monitoring.service.dispatch",
+                   new_callable=AsyncMock) as mock_dispatch:
+            await svc._process_results([mock_result])
+        mock_dispatch.assert_called_once()
+        call_kwargs = mock_dispatch.call_args.kwargs
+        assert "re-alert" in call_kwargs.get("title", "").lower()
+
+    @pytest.mark.asyncio
+    async def test_realert_updates_last_alert_at(self):
+        """After a re-alert, last_alert_at is refreshed so next interval starts fresh."""
+        from backend.services.monitoring import service as svc
+        from backend.services.monitoring.service import _probe_states, ProbeState, REALERT_INTERVAL
+
+        svc._probe_states.clear()
+        name = "market_data_realert_ts"
+        state = ProbeState()
+        state.alerted_down = True
+        state.consecutive_failures = 5
+        state.last_alert_at = int(time.time()) - (REALERT_INTERVAL + 300)
+        svc._probe_states[name] = state
+
+        mock_result = ProbeResult(name=name, ok=False, error="timeout")
+        with patch("backend.services.monitoring.service.dispatch",
+                   new_callable=AsyncMock):
+            await svc._process_results([mock_result])
+
+        new_ts = svc._probe_states[name].last_alert_at
+        assert new_ts > (int(time.time()) - 5)   # refreshed within last 5s
+
+
+# ---------------------------------------------------------------------------
+# Monitor /status now exposes realert_interval
+# ---------------------------------------------------------------------------
+
+class TestMonitorStatusReAlertField:
+    @pytest.mark.asyncio
+    async def test_status_includes_realert_interval(self):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as c:
+            resp = await c.get(f"{BASE}/status")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "realert_interval" in body
+        assert body["realert_interval"] > 0
+
+
+# ---------------------------------------------------------------------------
+# Probe registry now has 8 probes (added cooldown + external_liveness)
+# ---------------------------------------------------------------------------
+
+class TestProbeRegistry:
+    @pytest.mark.asyncio
+    async def test_probe_count_is_correct(self):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as c:
+            resp = await c.get(f"{BASE}/probes")
+        body = resp.json()
+        assert "cooldown" in body["probes"]
+        assert "external_liveness" in body["probes"]
+        assert body["count"] == 8

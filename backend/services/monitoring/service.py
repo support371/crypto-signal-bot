@@ -28,12 +28,17 @@ from backend.services.monitoring.alerts import Severity, dispatch
 
 log = logging.getLogger(__name__)
 
-PROBE_INTERVAL = 60          # seconds between full probe runs
-WARN_THRESHOLD = 2           # consecutive failures before WARNING alert
-CRIT_THRESHOLD = 1           # consecutive failures before CRITICAL alert
+PROBE_INTERVAL   = 60          # seconds between full probe runs
+WARN_THRESHOLD   = 2           # consecutive failures before WARNING alert
+CRIT_THRESHOLD   = 1           # consecutive failures before CRITICAL alert
+REALERT_INTERVAL = 3600        # re-alert on probes still failing after 1h
 
 # Probes that are CRITICAL (alert immediately on first failure)
-CRITICAL_PROBES = {"health", "guardian"}
+CRITICAL_PROBES  = {"health", "guardian"}
+
+# Probes that are WARNING-severity (not CRITICAL) — re-alert at REALERT_INTERVAL
+WARNING_PROBES   = {"circuit_breakers", "market_data", "signal_engine",
+                     "portfolio", "cooldown"}
 
 
 # ---------------------------------------------------------------------------
@@ -128,10 +133,27 @@ async def _process_results(results: List[ProbeResult]) -> None:
             is_critical = name in CRITICAL_PROBES
             threshold = CRIT_THRESHOLD if is_critical else WARN_THRESHOLD
 
+            should_alert = False
+            now = int(time.time())
             if state.consecutive_failures >= threshold and not state.alerted_down:
+                # First alert for this failure streak
+                should_alert = True
+            elif (
+                state.alerted_down
+                and REALERT_INTERVAL > 0
+                and (now - state.last_alert_at) >= REALERT_INTERVAL
+            ):
+                # Re-alert: probe has been failing for > REALERT_INTERVAL seconds
+                should_alert = True
+
+            if should_alert:
                 severity = Severity.CRITICAL if is_critical else Severity.WARNING
+                suffix = (
+                    f" (re-alert: down for {(now - state.last_alert_at) // 60}m)"
+                    if state.alerted_down else ""
+                )
                 await dispatch(
-                    title=f"🚨 Probe failing: {name}",
+                    title=f"🚨 Probe failing: {name}{suffix}",
                     message=(
                         f"Probe `{name}` has failed "
                         f"{state.consecutive_failures} consecutive time(s).\n"
@@ -144,7 +166,7 @@ async def _process_results(results: List[ProbeResult]) -> None:
                     },
                 )
                 state.alerted_down = True
-                state.last_alert_at = int(time.time())
+                state.last_alert_at = now
 
         log.debug(
             "[monitor] probe=%s ok=%s latency=%dms failures=%d",
