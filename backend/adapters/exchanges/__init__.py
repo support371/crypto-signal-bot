@@ -3,12 +3,13 @@
 Exchange adapter registry and factory.
 
 Usage:
-    from backend.adapters.exchanges import get_adapter
+    from backend.adapters.exchanges import get_adapter, get_market_data_adapter
     from backend.config.loader import get_exchange_config
 
     cfg     = get_exchange_config()
-    adapter = get_adapter(cfg)
-    ticker  = await adapter.fetch_ticker("BTCUSDT")
+    adapter = get_adapter(cfg)          # execution adapter (BTCC primary)
+    mda     = get_market_data_adapter(cfg)  # market data adapter (Binance primary in paper)
+    ticker  = await mda.fetch_ticker("BTCUSDT")
 """
 
 from __future__ import annotations
@@ -37,9 +38,9 @@ if TYPE_CHECKING:
 
 def get_adapter(cfg: "ExchangeConfig") -> BaseExchangeAdapter:
     """
-    Factory: return the correct adapter for the configured exchange mode.
+    Execution adapter factory.
 
-    Selection priority:
+    Selection priority (live and paper):
       1. BTCC (primary scaffold per CLAUDE.md)
       2. Binance
       3. Bitget
@@ -53,7 +54,7 @@ def get_adapter(cfg: "ExchangeConfig") -> BaseExchangeAdapter:
 
     paper = cfg.mode == "paper"
 
-    # BTCC — first choice
+    # BTCC — primary execution venue
     if cfg.btcc_api_key or paper:
         return BtccAdapter(
             api_key=cfg.btcc_api_key,
@@ -62,7 +63,7 @@ def get_adapter(cfg: "ExchangeConfig") -> BaseExchangeAdapter:
             base_url=cfg.btcc_base_url,
         )
 
-    # Binance — second choice
+    # Binance — live fallback
     if cfg.binance_api_key:
         return BinanceAdapter(
             api_key=cfg.binance_api_key,
@@ -72,7 +73,7 @@ def get_adapter(cfg: "ExchangeConfig") -> BaseExchangeAdapter:
             testnet=cfg.binance_testnet,
         )
 
-    # Bitget — third choice
+    # Bitget — live fallback
     if cfg.bitget_api_key:
         return BitgetAdapter(
             api_key=cfg.bitget_api_key,
@@ -88,8 +89,43 @@ def get_adapter(cfg: "ExchangeConfig") -> BaseExchangeAdapter:
     )
 
 
+def get_market_data_adapter(cfg: "ExchangeConfig") -> BaseExchangeAdapter:
+    """
+    Market data adapter factory.
+
+    In paper mode, Binance is preferred as the market data source because
+    it has a reliable, credential-free public REST API.
+    BTCC is the execution venue but its public market data API requires
+    additional setup — Binance provides live public prices without auth.
+
+    In live mode, the execution adapter is also the market data source.
+
+    Priority (paper): Binance > Bitget > BTCC
+    Priority (live):  same as get_adapter()
+    """
+    from backend.adapters.exchanges.btcc    import BtccAdapter
+    from backend.adapters.exchanges.binance import BinanceAdapter
+    from backend.adapters.exchanges.bitget  import BitgetAdapter
+
+    paper = cfg.mode == "paper"
+
+    if not paper:
+        # Live mode: use the execution adapter for market data too
+        return get_adapter(cfg)
+
+    # Paper mode: Binance public REST is the preferred price feed
+    return BinanceAdapter(
+        api_key=None,
+        api_secret=None,
+        paper=True,
+        base_url=cfg.binance_base_url,
+        testnet=False,   # always use mainnet for PUBLIC market data
+    )
+
+
 __all__ = [
     "get_adapter",
+    "get_market_data_adapter",
     "BaseExchangeAdapter",
     "AdapterError",
     "AdapterAuthError",

@@ -84,11 +84,16 @@ RUNTIME_CONFIG = get_runtime_config()
 TRADING_MODE = RUNTIME_CONFIG.trading_mode
 NETWORK = RUNTIME_CONFIG.network
 EXCHANGE = RUNTIME_CONFIG.exchange
-MARKET_DATA_PUBLIC_EXCHANGE = (
-    RUNTIME_CONFIG.market_data_public_exchange or RUNTIME_CONFIG.exchange
-)
+# Use CoinGecko as the public market data source.
+# Binance returns HTTP 451 (geo-blocked) on Render's servers.
+# CoinGecko is free, global, no credentials required.
+_mde_env = os.getenv("MARKET_DATA_PUBLIC_EXCHANGE", "coingecko").strip().lower()
+MARKET_DATA_PUBLIC_EXCHANGE = _mde_env if _mde_env else "coingecko"
 BACKEND_API_KEY = RUNTIME_CONFIG.backend_api_key
-PAPER_USE_LIVE_MARKET_DATA = RUNTIME_CONFIG.paper.use_live_market_data
+# Force live market data in paper mode — Binance public REST is always available.
+# The PAPER_USE_LIVE_MARKET_DATA env var is honoured only if explicitly set to "false".
+_env_paper_live = os.getenv("PAPER_USE_LIVE_MARKET_DATA", "true")
+PAPER_USE_LIVE_MARKET_DATA: bool = _env_paper_live.strip().lower() not in {"0", "false", "no", "off"}
 LIVE_MARKET_SYMBOLS = [
     "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "ADAUSDT",
     "XRPUSDT", "DOGEUSDT", "DOTUSDT", "AVAXUSDT", "LINKUSDT",
@@ -269,6 +274,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Trust X-Forwarded-For from reverse proxies (nginx, Render, Railway, Fly.io)
+# This ensures rate limiting uses real client IPs, not proxy IPs.
+try:
+    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware  # type: ignore
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+except ImportError:
+    pass  # uvicorn not installed in this env — proxy headers handled at infra level
 
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
@@ -793,6 +806,16 @@ def get_metrics_api():
 def get_signal_latest_api(symbol: Optional[str] = Query(None)):
     from backend.logic.market_state import get_signal_latest
     return get_signal_latest(symbol)
+
+
+@app.get("/exchange/circuit-breakers", dependencies=[Depends(rate_limit.rate_limit)])
+def get_circuit_breaker_statuses():
+    """Return circuit breaker state for all registered exchange adapters."""
+    try:
+        from backend.services.exchange_retry import get_all_circuit_breaker_statuses
+        return {"circuit_breakers": get_all_circuit_breaker_statuses()}
+    except Exception as exc:
+        return {"circuit_breakers": [], "error": str(exc)}
 
 @app.get("/guardian/status", dependencies=[Depends(rate_limit.rate_limit)])
 def get_guardian_status_api():
