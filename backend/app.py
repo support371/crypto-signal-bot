@@ -23,8 +23,18 @@ from backend.logic.audit_store import (
     append_intent,
     append_order,
     append_risk_event,
+    append_trace,
     append_withdrawal,
     get_audit,
+    get_traces,
+)
+from backend.models.decision_trace import (
+    DecisionTrace,
+    ExecutionSnapshot,
+    GuardianSnapshot,
+    RiskSnapshot,
+    RuleTrace,
+    SignalSnapshot,
 )
 from backend.logic.earnings import (
     get_history as earnings_get_history,
@@ -511,6 +521,31 @@ async def exchange_error_handler(request, exc: ExchangeAPIError):
     )
 
 # ---------------------------------------------------------------------------
+# Decision Trace Helpers
+# ---------------------------------------------------------------------------
+def _capture_guardian_snapshot() -> GuardianSnapshot:
+    return GuardianSnapshot(
+        kill_switch_active=context.kill_switch_active,
+        kill_switch_reason=context.kill_switch_reason,
+        guardian_triggered=context.guardian_triggered,
+        drawdown_pct=context.guardian_drawdown_pct,
+        api_error_count=context.api_error_count,
+        failed_order_count=context.failed_order_count,
+    )
+
+def _capture_signal_snapshot(symbol: str) -> SignalSnapshot:
+    cached = context.latest_signal_by_symbol.get(symbol.upper())
+    if not cached or "signal" not in cached:
+        return SignalSnapshot()
+    sig = cached["signal"]
+    return SignalSnapshot(
+        regime=sig.get("regime", "UNKNOWN"),
+        direction=sig.get("direction", "NEUTRAL"),
+        confidence=sig.get("confidence", 0.0) / 100.0 if sig.get("confidence", 0) > 1 else sig.get("confidence", 0.0),
+        horizon_minutes=sig.get("horizon", 0),
+    )
+
+# ---------------------------------------------------------------------------
 # Intent Processing
 # ---------------------------------------------------------------------------
 def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
@@ -526,16 +561,39 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
         venue_id=req.venue_id or EXCHANGE,
     )
 
+    # Initialize decision trace
+    trace = DecisionTrace(
+        intent_id=intent.id,
+        symbol=intent.symbol,
+        side=intent.side.value,
+        quantity=intent.quantity,
+        mode=mode,
+        signal=_capture_signal_snapshot(intent.symbol),
+        guardian=_capture_guardian_snapshot(),
+    )
+
+    def _finalize_trace():
+        trace.execution.status = intent.status.value
+        trace.execution.fill_price = intent.fill_price
+        trace.execution.fill_quantity = intent.fill_quantity
+        trace.execution.adapter = exchange_adapter.mode
+        trace.execution.notes = intent.notes
+        if intent.fill_price and trace.price and trace.price > 0:
+            trace.execution.slippage_pct = abs(intent.fill_price - trace.price) / trace.price
+        append_trace(trace.to_dict())
+
     # Mainnet gate: block live mainnet execution unless explicitly allowed
     try:
         assert_not_mainnet(NETWORK, mode)
     except MainnetGateError as exc:
         intent.status = IntentStatus.RISK_REJECTED
         intent.notes = str(exc)
+        trace.risk.rejection_reasons.append(f"mainnet_gate: {exc}")
         append_risk_event({"intent_id": intent.id, "reason": intent.notes, "source": "mainnet_gate"})
         intent_data = intent.model_dump()
         append_intent(intent_data)
         context.schedule_background(persist_order, intent_data, TRADING_MODE)
+        _finalize_trace()
         return IntentResponse(id=intent.id, status=intent.status.value, notes=intent.notes)
 
     try:
@@ -543,13 +601,16 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
     except TradingScopeHaltedError as exc:
         intent.status = IntentStatus.RISK_REJECTED
         intent.notes = str(exc)
+        trace.risk.rejection_reasons.append(f"guardian_scope: {exc}")
         append_risk_event({"intent_id": intent.id, "reason": intent.notes, "source": "guardian_scope"})
         intent_data = intent.model_dump()
         append_intent(intent_data)
         context.schedule_background(persist_order, intent_data, TRADING_MODE)
+        _finalize_trace()
         return IntentResponse(id=intent.id, status=intent.status.value, notes=intent.notes)
 
     current_price = req.price or _synthetic_price(intent.symbol)
+    trace.price = current_price
     total_equity = paper_portfolio.get_total_exposure(_synthetic_price)
 
     # Symbol-specific position value (not total portfolio)
@@ -574,21 +635,39 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
         current_total_exposure=non_cash_exposure,
         daily_pnl=context.guardian_drawdown_pct * context.guardian_starting_nav * -1.0,
         account_balance=total_equity,
-        volatility_24h=0.02, # Simplified
+        volatility_24h=0.02,
     )
     engine_result = risk_engine.evaluate(risk_ctx)
+
+    # Populate trace risk snapshot
+    trace.risk.approved = engine_result.approved
+    trace.risk.combined_size_multiplier = engine_result.size_multiplier
+    trace.risk.rules_evaluated = [
+        RuleTrace(
+            rule_name=r.rule_name,
+            passed=r.passed,
+            reason=r.reason,
+            size_multiplier=r.size_multiplier,
+        )
+        for r in engine_result.rule_results
+    ]
 
     if not engine_result.approved:
         intent.status = IntentStatus.RISK_REJECTED
         intent.notes = engine_result.reason
+        trace.risk.rejection_reasons = [
+            r.reason for r in engine_result.rule_results if not r.passed
+        ]
         append_risk_event({"intent_id": intent.id, "risk_engine": engine_result.to_dict(), "reason": intent.notes})
         intent_data = intent.model_dump()
         append_intent(intent_data)
         context.schedule_background(persist_order, intent_data, TRADING_MODE)
+        _finalize_trace()
         return IntentResponse(id=intent.id, status=intent.status.value, notes=intent.notes)
 
     if engine_result.size_multiplier < 1.0:
         intent.quantity = round(intent.quantity * engine_result.size_multiplier, 8)
+    trace.risk.adjusted_quantity = intent.quantity
 
     intent.status = IntentStatus.RISK_APPROVED
 
@@ -646,6 +725,7 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
         },
     )
     context.schedule_background(_guardian_check_and_broadcast)
+    _finalize_trace()
     return IntentResponse(id=intent.id, status=intent.status.value, notes=intent.notes)
 
 # ---------------------------------------------------------------------------
@@ -782,6 +862,22 @@ def get_price_api(symbol: str = Query("BTCUSDT")):
 @app.get("/audit", dependencies=[Depends(rate_limit.rate_limit)])
 def get_audit_trail_api():
     return get_audit()
+
+@app.get("/traces", dependencies=[Depends(rate_limit.rate_limit)])
+def get_traces_api(
+    symbol: Optional[str] = Query(None, description="Filter by symbol"),
+    status: Optional[str] = Query(None, description="Filter by execution status"),
+    limit: int = Query(50, ge=1, le=500, description="Max traces to return"),
+):
+    return get_traces(symbol=symbol, status=status, limit=limit)
+
+@app.get("/trace/{intent_id}", dependencies=[Depends(rate_limit.rate_limit)])
+def get_trace_by_intent(intent_id: str):
+    traces = get_traces()
+    for t in traces:
+        if t.get("intent_id") == intent_id:
+            return t
+    raise HTTPException(status_code=404, detail="Trace not found")
 
 @app.get("/metrics")
 def get_metrics_api():
