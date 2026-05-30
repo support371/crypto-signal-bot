@@ -319,4 +319,27 @@ __all__ = [
     "PositionRecord2",
     "EquitySnapshotRecord",
     "ServiceHeartbeat",
+    "DailyPnlRecord",
 ]
+
+
+class DailyPnlRecord(Base):
+    """Daily PnL aggregates — one row per account per UTC day."""
+    __tablename__ = "daily_pnl"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    account_id      = Column(String(64), nullable=False, index=True)
+    date_utc        = Column(String(10), nullable=False)        # "YYYY-MM-DD"
+    realized_pnl    = Column(Float, nullable=False, default=0.0)
+    unrealized_pnl  = Column(Float, nullable=False, default=0.0)
+    total_pnl       = Column(Float, nullable=False, default=0.0)
+    trade_count     = Column(Integer, nullable=False, default=0)
+    win_count       = Column(Integer, nullable=False, default=0)
+    loss_count      = Column(Integer, nullable=False, default=0)
+    equity_open     = Column(Float, nullable=True)
+    equity_close    = Column(Float, nullable=True)
+    updated_at      = Column(BigInteger, default=unix_timestamp, onupdate=unix_timestamp)
+
+    __table_args__ = (
+        Index("ix_daily_pnl_account_date", "account_id", "date_utc", unique=True),
+    )

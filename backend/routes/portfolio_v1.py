@@ -15,9 +15,12 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, field_validator
 
 from backend.services.portfolio.service import (
+    get_daily_pnl,
+    get_equity_history,
     get_order,
     get_orders,
     get_portfolio_summary,
+    get_positions_detail,
     get_trades,
     submit_order,
 )
@@ -148,3 +151,78 @@ async def portfolio_trades(
     limit: int = Query(50, ge=1, le=500),
 ) -> List[TradeOut]:
     return [TradeOut(**t) for t in get_trades(limit=limit, symbol=symbol)]
+
+
+# ─── Daily PnL models ────────────────────────────────────────────
+
+class DailyPnlOut(BaseModel):
+    date_utc:        str
+    account_id:      str
+    realized_pnl:    float
+    unrealized_pnl:  float
+    total_pnl:       float
+    trade_count:     int
+    win_count:       int
+    loss_count:      int
+
+
+class EquityPointOut(BaseModel):
+    timestamp:    int
+    equity:       float
+    cash:         float
+    unrealized:   float
+    drawdown_pct: float
+    max_equity:   float
+
+
+class PositionDetailOut(BaseModel):
+    symbol:               str
+    qty:                  float
+    avg_entry_price:      float
+    mark_price:           float
+    notional_value:       float
+    unrealized_pnl:       float
+    unrealized_pnl_pct:   float
+    realized_pnl:         float
+    total_pnl:            float
+    lots:                 int
+    oldest_lot_ts:        int
+
+
+# ─── New routes ───────────────────────────────────────────────────
+
+@router.get("/portfolio/positions", response_model=List[PositionDetailOut],
+            summary="Open positions with full PnL breakdown")
+async def positions_detail() -> List[PositionDetailOut]:
+    """
+    Returns each open position with unrealized PnL, realized PnL,
+    notional value, PnL %, and lot count — sorted by notional value descending.
+    """
+    return [PositionDetailOut(**p) for p in await get_positions_detail()]
+
+
+@router.get("/portfolio/pnl/daily", response_model=List[DailyPnlOut],
+            summary="Daily realized + unrealized PnL aggregates")
+async def daily_pnl(
+    days: int = Query(30, ge=1, le=365, description="Lookback window in days"),
+) -> List[DailyPnlOut]:
+    """
+    Returns per-day PnL aggregated from trade history.
+    Today's unrealized PnL is computed live.
+    Sorted newest-first.
+    """
+    rows = await get_daily_pnl(days=days)
+    return [DailyPnlOut(**r) for r in rows]
+
+
+@router.get("/portfolio/equity-history", response_model=List[EquityPointOut],
+            summary="Equity snapshot time series")
+async def equity_history(
+    hours: int = Query(24, ge=1, le=720, description="Lookback window in hours (max 720 = 30d)"),
+) -> List[EquityPointOut]:
+    """
+    Returns equity snapshots from the DB for charting.
+    Snapshots are written every 5 minutes by the background loop.
+    """
+    rows = await get_equity_history(hours=hours)
+    return [EquityPointOut(**r) for r in rows]

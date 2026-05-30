@@ -571,3 +571,198 @@ def start_portfolio_service(app) -> None:
     # Direct task creation — called from lifespan() which is already async
     asyncio.create_task(_snapshot_loop())
     asyncio.create_task(_limit_fill_loop())
+
+
+# ─────────────────────────────────────────────────────────────────
+# Daily PnL aggregation
+# ─────────────────────────────────────────────────────────────────
+
+import datetime as _dt
+
+_DEFAULT_DAILY_LOOKBACK = 30   # days returned by default
+
+
+def _utc_date(ts: int) -> str:
+    """Return 'YYYY-MM-DD' for a unix timestamp in UTC."""
+    return _dt.datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d")
+
+
+def _today_utc() -> str:
+    return _dt.datetime.utcnow().strftime("%Y-%m-%d")
+
+
+async def get_daily_pnl(
+    days: int = _DEFAULT_DAILY_LOOKBACK,
+    account_id: str = _DEFAULT_ACCOUNT_ID,
+) -> List[dict]:
+    """
+    Return daily PnL aggregates for the last `days` days.
+    Builds from in-process trade history + live equity for today's unrealized.
+    Falls back to DB equity snapshots when memory is empty.
+    """
+    from collections import defaultdict as _dd
+
+    today = _today_utc()
+    cutoff_ts = int(time.time()) - days * 86400
+
+    # Aggregate realized trades by date
+    by_date: dict = _dd(lambda: {
+        "realized_pnl": 0.0, "unrealized_pnl": 0.0, "total_pnl": 0.0,
+        "trade_count": 0, "win_count": 0, "loss_count": 0,
+        "equity_open": None, "equity_close": None,
+    })
+
+    for trade in _trades:
+        if trade.executed_at < cutoff_ts:
+            continue
+        date_key = _utc_date(trade.executed_at)
+        row = by_date[date_key]
+        if trade.realized_pnl is not None:
+            pnl = float(trade.realized_pnl)
+            row["realized_pnl"] += pnl
+            if trade.side == "SELL":
+                row["trade_count"] += 1
+                if pnl > 0:
+                    row["win_count"] += 1
+                else:
+                    row["loss_count"] += 1
+
+    # Attach today's live unrealized
+    if today in by_date or True:
+        try:
+            equity = await _compute_equity()
+            unrealized_today = float(equity - _cash)
+        except Exception:
+            unrealized_today = 0.0
+        by_date[today]["unrealized_pnl"] = unrealized_today
+
+    # Fill total_pnl and sort
+    result = []
+    for date_key in sorted(by_date.keys(), reverse=True)[:days]:
+        row = dict(by_date[date_key])
+        row["date_utc"] = date_key
+        row["account_id"] = account_id
+        row["total_pnl"] = row["realized_pnl"] + row["unrealized_pnl"]
+        result.append(row)
+
+    # Persist / upsert today's row best-effort
+    if result:
+        await _upsert_daily_pnl(result[0])
+
+    return result
+
+
+async def get_equity_history(
+    hours: int = 24,
+    account_id: str = _DEFAULT_ACCOUNT_ID,
+) -> List[dict]:
+    """
+    Return equity snapshot time series from DB for the past `hours` hours.
+    """
+    try:
+        from backend.db.session import get_session
+        from backend.db.models import EquitySnapshotRecord
+        from sqlalchemy import select
+
+        cutoff = int(time.time()) - hours * 3600
+        async with get_session() as session:
+            rows = (await session.execute(
+                select(EquitySnapshotRecord)
+                .where(EquitySnapshotRecord.account_id == account_id)
+                .where(EquitySnapshotRecord.timestamp >= cutoff)
+                .order_by(EquitySnapshotRecord.timestamp.asc())
+            )).scalars().all()
+        return [
+            {
+                "timestamp":   r.timestamp,
+                "equity":      r.equity,
+                "cash":        r.cash,
+                "unrealized":  r.unrealized,
+                "drawdown_pct": r.drawdown_pct,
+                "max_equity":  r.max_equity,
+            }
+            for r in rows
+        ]
+    except Exception as exc:
+        log.debug("equity_history query error (non-fatal): %s", exc)
+        return []
+
+
+async def get_positions_detail() -> List[dict]:
+    """
+    Return open positions with full PnL breakdown (unrealized + realized).
+    """
+    positions = []
+    for symbol, lots in _lots.items():
+        if not lots:
+            continue
+        total_qty  = sum(l.qty for l in lots)
+        total_cost = sum(l.qty * l.entry_price for l in lots)
+        avg_entry  = total_cost / total_qty if total_qty else Decimal("0")
+
+        try:
+            snap = await get_price(symbol)
+            mark = _qty(snap.price)
+        except Exception:
+            mark = avg_entry
+
+        unrealized = (mark - avg_entry) * total_qty
+        realized   = sum(
+            t.realized_pnl for t in _trades
+            if t.symbol == symbol and t.realized_pnl is not None
+        ) or Decimal("0")
+        notional   = mark * total_qty
+        pnl_pct    = float(unrealized / (avg_entry * total_qty) * 100) \
+                     if avg_entry * total_qty != 0 else 0.0
+
+        positions.append({
+            "symbol":           symbol,
+            "qty":              float(total_qty),
+            "avg_entry_price":  float(avg_entry.quantize(Decimal("0.01"))),
+            "mark_price":       float(mark),
+            "notional_value":   float(notional.quantize(Decimal("0.01"))),
+            "unrealized_pnl":   float(unrealized.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+            "unrealized_pnl_pct": round(pnl_pct, 4),
+            "realized_pnl":     float(realized.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+            "total_pnl":        float((unrealized + realized).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+            "lots":             len(lots),
+            "oldest_lot_ts":    min(l.opened_at for l in lots),
+        })
+
+    return sorted(positions, key=lambda p: abs(p["notional_value"]), reverse=True)
+
+
+async def _upsert_daily_pnl(row: dict) -> None:
+    try:
+        from backend.db.session import get_session
+        from backend.db.models import DailyPnlRecord
+        from sqlalchemy import select
+
+        async with get_session() as session:
+            existing = (await session.execute(
+                select(DailyPnlRecord)
+                .where(DailyPnlRecord.account_id == row["account_id"])
+                .where(DailyPnlRecord.date_utc == row["date_utc"])
+            )).scalar_one_or_none()
+
+            if existing:
+                existing.realized_pnl   = row["realized_pnl"]
+                existing.unrealized_pnl = row["unrealized_pnl"]
+                existing.total_pnl      = row["total_pnl"]
+                existing.trade_count    = row["trade_count"]
+                existing.win_count      = row["win_count"]
+                existing.loss_count     = row["loss_count"]
+            else:
+                session.add(DailyPnlRecord(
+                    account_id=row["account_id"],
+                    date_utc=row["date_utc"],
+                    realized_pnl=row["realized_pnl"],
+                    unrealized_pnl=row["unrealized_pnl"],
+                    total_pnl=row["total_pnl"],
+                    trade_count=row["trade_count"],
+                    win_count=row["win_count"],
+                    loss_count=row["loss_count"],
+                ))
+            await session.commit()
+    except Exception as exc:
+        log.debug("daily_pnl upsert error (non-fatal): %s", exc)
