@@ -93,19 +93,17 @@ def get_market_data_adapter(cfg: "ExchangeConfig") -> BaseExchangeAdapter:
     """
     Market data adapter factory.
 
-    In paper mode, Binance is preferred as the market data source because
-    it has a reliable, credential-free public REST API.
-    BTCC is the execution venue but its public market data API requires
-    additional setup — Binance provides live public prices without auth.
+    In paper mode, CoinGecko is used as the public market data source.
+    Binance returns HTTP 451 (geo-blocked) from Render server regions.
+    CoinGecko is globally accessible, no auth required, 50 req/min free.
+
+    Override via MARKET_DATA_PUBLIC_EXCHANGE env var:
+      - "binance"    — use Binance (may be geo-blocked on some hosts)
+      - "coingecko"  — use CoinGecko (default, globally accessible)
 
     In live mode, the execution adapter is also the market data source.
-
-    Priority (paper): Binance > Bitget > BTCC
-    Priority (live):  same as get_adapter()
     """
-    from backend.adapters.exchanges.btcc    import BtccAdapter
-    from backend.adapters.exchanges.binance import BinanceAdapter
-    from backend.adapters.exchanges.bitget  import BitgetAdapter
+    import os
 
     paper = cfg.mode == "paper"
 
@@ -113,14 +111,33 @@ def get_market_data_adapter(cfg: "ExchangeConfig") -> BaseExchangeAdapter:
         # Live mode: use the execution adapter for market data too
         return get_adapter(cfg)
 
-    # Paper mode: Binance public REST is the preferred price feed
-    return BinanceAdapter(
-        api_key=None,
-        api_secret=None,
-        paper=True,
-        base_url=cfg.binance_base_url,
-        testnet=False,   # always use mainnet for PUBLIC market data
-    )
+    # Paper mode: resolve from env, default to coingecko
+    exchange_override = os.getenv("MARKET_DATA_PUBLIC_EXCHANGE", "coingecko").strip().lower()
+
+    if exchange_override in ("coingecko", ""):
+        from backend.adapters.exchanges.coingecko import CoinGeckoAdapter
+        return CoinGeckoAdapter(paper=True)
+
+    if exchange_override == "binance":
+        from backend.adapters.exchanges.binance import BinanceAdapter
+        return BinanceAdapter(
+            api_key=None,
+            api_secret=None,
+            paper=True,
+            base_url=cfg.binance_base_url,
+            testnet=False,
+        )
+
+    if exchange_override == "bitget":
+        from backend.adapters.exchanges.bitget import BitgetAdapter
+        return BitgetAdapter(
+            api_key=None, api_secret=None, passphrase=None,
+            paper=True, base_url=cfg.bitget_base_url
+        )
+
+    # Fallback: coingecko
+    from backend.adapters.exchanges.coingecko import CoinGeckoAdapter
+    return CoinGeckoAdapter(paper=True)
 
 
 __all__ = [
@@ -139,4 +156,5 @@ __all__ = [
     "Order",
     "OhlcvCandle",
     "ExchangeStatus",
+    "CoinGeckoAdapter",
 ]

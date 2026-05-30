@@ -121,46 +121,38 @@ class CoinGeckoMarketDataService:
             await asyncio.sleep(_POLL_INTERVAL)
 
     async def _fetch_all(self) -> None:
-        gecko_ids = [_SYMBOL_TO_GECKO[s] for s in self._symbols]
-        ids_param = ",".join(gecko_ids)
+        # Use the shared adapter-level cache to avoid double-hitting CoinGecko
+        from backend.adapters.exchanges.coingecko import _fetch_all_cached
+        data, err = await _fetch_all_cached()
 
-        resp = await self._client.get(
-            f"{_BASE_URL}/simple/price",
-            params={
-                "ids": ids_param,
-                "vs_currencies": "usd",
-                "include_24hr_change": "true",
-                "include_24hr_vol": "true",
-            },
-        )
-        if resp.status_code == 429:
-            raise RuntimeError("CoinGecko rate limit exceeded")
-        if not resp.is_success:
-            raise RuntimeError(f"CoinGecko HTTP {resp.status_code}")
+        if err and not data:
+            raise RuntimeError(err)
+        if err:
+            logger.warning("CoinGecko cache warning: %s", err)
 
-        data: Dict[str, Any] = resp.json()
         now = time.time()
-
+        updated = 0
         for gecko_id, values in data.items():
             symbol = _GECKO_TO_SYMBOL.get(gecko_id)
-            if not symbol:
+            if not symbol or symbol not in self._symbols:
                 continue
 
-            price      = float(values.get("usd", 0))
-            change24h  = float(values.get("usd_24h_change", 0))
-            volume24h  = float(values.get("usd_24h_vol", 0))
+            price     = float(values.get("usd",            0))
+            change24h = float(values.get("usd_24h_change", 0))
+            volume24h = float(values.get("usd_24h_vol",    0))
 
             snap: Dict[str, Any] = {
                 "symbol":    symbol,
                 "price":     price,
                 "change24h": round(change24h, 4),
                 "volume24h": round(volume24h, 2),
-                "marketCap": 0.0,      # not included in free simple/price
+                "marketCap": 0.0,
                 "timestamp": now,
                 "source":    "coingecko-rest",
                 "exchange":  "coingecko",
             }
             self._snapshots[symbol] = snap
+            updated += 1
 
             if self._on_market_update:
                 try:
@@ -169,6 +161,6 @@ class CoinGeckoMarketDataService:
                     logger.warning("on_market_update callback error: %s", cb_exc)
 
         self._connected = True
-        self._last_error = None
+        self._last_error = err
         self._last_update_ts = now
-        logger.debug("CoinGecko poll OK — %d symbols updated", len(data))
+        logger.debug("CoinGecko poll OK — %d symbols updated", updated)
