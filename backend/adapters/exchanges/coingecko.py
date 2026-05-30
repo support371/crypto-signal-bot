@@ -5,18 +5,17 @@ CoinGecko exchange adapter — public market data only, no execution.
 Used as the primary market data adapter in paper mode when Binance is
 geo-blocked (HTTP 451) on the host's server region (e.g. Render US/EU).
 
-CoinGecko's /simple/price endpoint:
-  - No API key required
-  - No geo-restrictions
-  - 50 req/min on the free tier
-  - Covers all 10 symbols used by this bot
+CoinGecko free tier: 50 req/min.
+We use a module-level shared cache (TTL=15s) so ALL callers — market data
+service, guardian, price endpoint — share a single batch response and never
+exceed ~4 req/min.
 """
 from __future__ import annotations
 
 import asyncio
 import time
 from decimal import Decimal
-from typing import List, Optional, Sequence
+from typing import Dict, List, Optional, Tuple
 
 import httpx
 
@@ -32,10 +31,11 @@ from backend.adapters.exchanges.base import (
     Ticker,
 )
 
-_BASE_URL = "https://api.coingecko.com/api/v3"
+_BASE_URL  = "https://api.coingecko.com/api/v3"
+_CACHE_TTL = 15.0   # seconds — refresh at most once every 15s
 
 # USDT-quoted symbol → CoinGecko coin ID
-_SYMBOL_MAP: dict[str, str] = {
+_SYMBOL_MAP: Dict[str, str] = {
     "BTCUSDT":  "bitcoin",
     "ETHUSDT":  "ethereum",
     "SOLUSDT":  "solana",
@@ -47,16 +47,81 @@ _SYMBOL_MAP: dict[str, str] = {
     "AVAXUSDT": "avalanche-2",
     "LINKUSDT": "chainlink",
 }
+_GECKO_TO_SYMBOL: Dict[str, str] = {v: k for k, v in _SYMBOL_MAP.items()}
 
-# Reverse map: gecko id → symbol
-_GECKO_MAP: dict[str, str] = {v: k for k, v in _SYMBOL_MAP.items()}
+# ---------------------------------------------------------------------------
+# Module-level shared cache — all CoinGeckoAdapter instances share this
+# so we hit the API at most once per _CACHE_TTL seconds
+# ---------------------------------------------------------------------------
+_cache_lock:      asyncio.Lock | None = None
+_cache_data:      Dict[str, dict]    = {}   # gecko_id → raw price payload
+_cache_ts:        float               = 0.0
+_cache_last_error: Optional[str]     = None
+_shared_client:   Optional[httpx.AsyncClient] = None
+
+
+def _get_lock() -> asyncio.Lock:
+    global _cache_lock
+    if _cache_lock is None:
+        _cache_lock = asyncio.Lock()
+    return _cache_lock
+
+
+def _get_shared_client() -> httpx.AsyncClient:
+    global _shared_client
+    if _shared_client is None or _shared_client.is_closed:
+        _shared_client = httpx.AsyncClient(timeout=10.0)
+    return _shared_client
+
+
+async def _fetch_all_cached(client: Optional[httpx.AsyncClient] = None) -> Tuple[Dict[str, dict], Optional[str]]:
+    """Return shared cached price data, refreshing if stale.
+    Uses a module-level singleton client — all callers share one connection pool.
+    The optional `client` arg is ignored (kept for backward compat).
+    """
+    global _cache_data, _cache_ts, _cache_last_error
+    _client_to_use = _get_shared_client()
+
+    async with _get_lock():
+        if time.time() - _cache_ts < _CACHE_TTL and _cache_data:
+            return _cache_data, None
+
+        # Need a refresh
+        ids = ",".join(_SYMBOL_MAP.values())
+        try:
+            resp = await _client_to_use.get(
+                f"{_BASE_URL}/simple/price",
+                params={
+                    "ids": ids,
+                    "vs_currencies": "usd",
+                    "include_24hr_change": "true",
+                    "include_24hr_vol": "true",
+                },
+            )
+            if resp.status_code == 429:
+                _cache_last_error = "CoinGecko rate limit (429) — using cached data"
+                # Return stale cache rather than raising
+                return _cache_data, _cache_last_error
+            if not resp.is_success:
+                _cache_last_error = f"CoinGecko HTTP {resp.status_code}"
+                return _cache_data, _cache_last_error
+
+            _cache_data      = resp.json()
+            _cache_ts        = time.time()
+            _cache_last_error = None
+        except Exception as exc:
+            _cache_last_error = str(exc)
+            # Return stale cache on transient errors
+            return _cache_data, _cache_last_error
+
+    return _cache_data, None
 
 
 class CoinGeckoAdapter(BaseExchangeAdapter):
     """
     Read-only adapter backed by CoinGecko public REST.
-    Execution methods raise AdapterUnavailableError — CoinGecko is a
-    price-feed only, not a trading venue.
+    Uses a shared module-level cache to stay well within the 50 req/min limit.
+    Execution methods raise AdapterUnavailableError.
     """
 
     exchange_name = "coingecko"
@@ -64,8 +129,6 @@ class CoinGeckoAdapter(BaseExchangeAdapter):
     def __init__(self, *, paper: bool = True, **kwargs: object) -> None:
         super().__init__(api_key=None, api_secret=None, paper=paper)
         self._http: Optional[httpx.AsyncClient] = None
-        self._last_ping: Optional[float] = None
-        self._last_error: Optional[str] = None
 
     # ------------------------------------------------------------------
     # Helpers
@@ -76,14 +139,6 @@ class CoinGeckoAdapter(BaseExchangeAdapter):
             self._http = httpx.AsyncClient(timeout=10.0)
         return self._http
 
-    async def _get(self, path: str, params: dict | None = None) -> dict:
-        resp = await self._client().get(f"{_BASE_URL}{path}", params=params or {})
-        if resp.status_code == 429:
-            raise AdapterError("CoinGecko rate limit exceeded")
-        if not resp.is_success:
-            raise AdapterError(f"CoinGecko HTTP {resp.status_code}: {path}")
-        return resp.json()
-
     def _gecko_id(self, symbol: str) -> str:
         key = symbol.upper().replace("-", "")
         gecko_id = _SYMBOL_MAP.get(key)
@@ -92,26 +147,23 @@ class CoinGeckoAdapter(BaseExchangeAdapter):
         return gecko_id
 
     # ------------------------------------------------------------------
-    # fetch_ticker — public
+    # fetch_ticker — shared cache, no extra HTTP calls
     # ------------------------------------------------------------------
 
     async def fetch_ticker(self, symbol: str) -> Ticker:
         gecko_id = self._gecko_id(symbol)
-        data = await self._get(
-            "/simple/price",
-            params={
-                "ids": gecko_id,
-                "vs_currencies": "usd",
-                "include_24hr_change": "true",
-                "include_24hr_vol": "true",
-            },
-        )
-        entry = data.get(gecko_id, {})
-        price     = float(entry.get("usd",             0))
-        change24h = float(entry.get("usd_24h_change",  0))
-        volume24h = float(entry.get("usd_24h_vol",     0))
+        data, err = await _fetch_all_cached()
 
-        # Approximate bid/ask from price (CoinGecko doesn't provide orderbook)
+        entry = data.get(gecko_id)
+        if not entry:
+            if err:
+                raise AdapterError(f"CoinGecko unavailable: {err}")
+            raise AdapterError(f"CoinGecko: no data for '{symbol}'")
+
+        price     = float(entry.get("usd",            0))
+        change24h = float(entry.get("usd_24h_change", 0))
+        volume24h = float(entry.get("usd_24h_vol",    0))
+
         spread = price * 0.0005
         return Ticker(
             symbol=symbol.upper(),
@@ -125,20 +177,18 @@ class CoinGeckoAdapter(BaseExchangeAdapter):
         )
 
     # ------------------------------------------------------------------
-    # fetch_ohlcv — approximate from 24h range (best-effort for paper)
+    # fetch_ohlcv — synthetic single candle (CoinGecko free has no OHLCV)
     # ------------------------------------------------------------------
 
     async def fetch_ohlcv(
         self,
-        symbol: str,
+        symbol:   str,
         interval: str = "1h",
         limit:    int = 50,
     ) -> List[OhlcvCandle]:
-        # CoinGecko free tier doesn't expose OHLCV per-minute — return
-        # a synthetic single candle from current price to satisfy callers.
         ticker = await self.fetch_ticker(symbol)
-        price = float(ticker.last)
-        now = time.time()
+        price  = float(ticker.last)
+        now    = time.time()
         candle = OhlcvCandle(
             timestamp=now,
             open=price,
@@ -150,29 +200,26 @@ class CoinGeckoAdapter(BaseExchangeAdapter):
         return [candle] * min(limit, 50)
 
     # ------------------------------------------------------------------
-    # exchange_status — required, used by guardian
+    # exchange_status — uses the same shared cache (no extra HTTP req)
     # ------------------------------------------------------------------
 
     async def exchange_status(self) -> ExchangeStatus:
         try:
-            # Lightweight ping: single coin price check
-            await self._get("/simple/price", params={"ids": "bitcoin", "vs_currencies": "usd"})
-            self._last_ping  = time.time()
-            self._last_error = None
+            data, err = await _fetch_all_cached()
+            connected = bool(data) and err is None
             return ExchangeStatus(
-                connected=True,
+                connected=connected,
                 mode="paper",
                 exchange_name=self.exchange_name,
-                market_data_available=True,
-                market_data_mode="live_public_paper",
-                connection_state="connected",
+                market_data_available=connected,
+                market_data_mode="live_public_paper" if connected else "unavailable",
+                connection_state="connected" if connected else "degraded",
                 fallback_active=False,
-                stale=False,
+                stale=not connected,
                 source="https://api.coingecko.com",
-                error=None,
+                error=err,
             )
         except Exception as exc:
-            self._last_error = str(exc)
             return ExchangeStatus(
                 connected=False,
                 mode="paper",
@@ -187,14 +234,14 @@ class CoinGeckoAdapter(BaseExchangeAdapter):
             )
 
     # ------------------------------------------------------------------
-    # Execution methods — not supported (read-only adapter)
+    # Execution stubs — not supported
     # ------------------------------------------------------------------
 
     async def fetch_balance(self) -> List[Balance]:
-        raise AdapterUnavailableError("CoinGecko is a read-only price feed — no balance info")
+        raise AdapterUnavailableError("CoinGecko is a read-only price feed")
 
     async def fetch_positions(self) -> List[Position]:
-        raise AdapterUnavailableError("CoinGecko is a read-only price feed — no positions")
+        raise AdapterUnavailableError("CoinGecko is a read-only price feed")
 
     async def create_order(
         self,
@@ -206,10 +253,10 @@ class CoinGeckoAdapter(BaseExchangeAdapter):
         price:      Optional[Decimal] = None,
         client_order_id: Optional[str] = None,
     ) -> Order:
-        raise AdapterUnavailableError("CoinGecko is a read-only price feed — no order execution")
+        raise AdapterUnavailableError("CoinGecko is a read-only price feed")
 
     async def cancel_order(self, symbol: str, order_id: str) -> Order:
-        raise AdapterUnavailableError("CoinGecko is a read-only price feed — no order execution")
+        raise AdapterUnavailableError("CoinGecko is a read-only price feed")
 
     async def fetch_order(self, symbol: str, order_id: str) -> Order:
-        raise AdapterUnavailableError("CoinGecko is a read-only price feed — no order execution")
+        raise AdapterUnavailableError("CoinGecko is a read-only price feed")
