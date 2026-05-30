@@ -88,7 +88,10 @@ MARKET_DATA_PUBLIC_EXCHANGE = (
     RUNTIME_CONFIG.market_data_public_exchange or RUNTIME_CONFIG.exchange
 )
 BACKEND_API_KEY = RUNTIME_CONFIG.backend_api_key
-PAPER_USE_LIVE_MARKET_DATA = RUNTIME_CONFIG.paper.use_live_market_data
+# Force live market data in paper mode — Binance public REST is always available.
+# The PAPER_USE_LIVE_MARKET_DATA env var is honoured only if explicitly set to "false".
+_env_paper_live = os.getenv("PAPER_USE_LIVE_MARKET_DATA", "true")
+PAPER_USE_LIVE_MARKET_DATA: bool = _env_paper_live.strip().lower() not in {"0", "false", "no", "off"}
 LIVE_MARKET_SYMBOLS = [
     "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "ADAUSDT",
     "XRPUSDT", "DOGEUSDT", "DOTUSDT", "AVAXUSDT", "LINKUSDT",
