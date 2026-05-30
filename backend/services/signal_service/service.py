@@ -30,7 +30,58 @@ _last_eval:    Dict[str, float]        = {}
 _running = False
 
 
+# Module-level singleton for OHLCV fetching
+_ohlcv_adapter = None
+_ohlcv_adapter_lock = None
+
+
+def _get_ohlcv_lock():
+    global _ohlcv_adapter_lock
+    if _ohlcv_adapter_lock is None:
+        _ohlcv_adapter_lock = asyncio.Lock()
+    return _ohlcv_adapter_lock
+
+
+async def _get_ohlcv_adapter():
+    """
+    Return a BinanceUsOhlcvAdapter singleton.
+    Falls back to the generic market-data adapter chain on import failure.
+    """
+    global _ohlcv_adapter
+    async with _get_ohlcv_lock():
+        if _ohlcv_adapter is None:
+            try:
+                from backend.adapters.exchanges.binance_us_ohlcv import BinanceUsOhlcvAdapter
+                _ohlcv_adapter = BinanceUsOhlcvAdapter(paper=True)
+                log.info("[signal_service] OHLCV adapter: BinanceUsOhlcvAdapter")
+            except Exception as exc:
+                log.warning("[signal_service] BinanceUsOhlcvAdapter unavailable (%s) — using generic chain", exc)
+                _ohlcv_adapter = None
+    return _ohlcv_adapter
+
+
 async def _fetch_candles(symbol: str, limit: int = _CANDLE_LIMIT):
+    """
+    Fetch OHLCV candles with a priority chain:
+      1. BinanceUsOhlcvAdapter  — real historical candles (preferred)
+      2. Generic market-data adapter chain  — fallback
+    """
+    # 1. Try Binance.US dedicated OHLCV adapter first
+    try:
+        adapter = await _get_ohlcv_adapter()
+        if adapter is not None:
+            candles = await adapter.fetch_ohlcv(symbol, _TIMEFRAME, limit)
+            if candles and len(candles) >= 2:
+                log.debug("[signal_service] %s: %d candles from BinanceUsOhlcvAdapter",
+                          symbol, len(candles))
+                return candles
+            elif candles:
+                log.debug("[signal_service] %s: only %d candles — trying fallback",
+                          symbol, len(candles))
+    except Exception as exc:
+        log.debug("[signal_service] BinanceUsOhlcvAdapter failed for %s: %s — trying fallback", symbol, exc)
+
+    # 2. Fallback: generic adapter chain (CoinGecko synthetic candles)
     try:
         from backend.services.market_data.service import _get_adapters
         adapters = await _get_adapters()
