@@ -32,7 +32,7 @@ log = logging.getLogger(__name__)
 
 EXECUTOR_INTERVAL: int   = 65
 MIN_CONFIDENCE:    float = float(os.getenv("EXECUTOR_MIN_CONFIDENCE", "0.60"))
-POSITION_PCT:      float = float(os.getenv("EXECUTOR_POSITION_PCT",   "0.10"))
+POSITION_PCT:      float = float(os.getenv("EXECUTOR_POSITION_PCT",   "0.05"))
 
 _last_acted: Dict[str, tuple] = {}   # symbol -> (side, strategy_id)
 _running:    bool = False

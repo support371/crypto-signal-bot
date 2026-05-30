@@ -117,7 +117,7 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
 
     guardian_max_drawdown_pct: float = Field(
-        default=5.0,
+        default=15.0,
         gt=0.0,
         description="Guardian kills trading when drawdown exceeds this percentage.",
     )
