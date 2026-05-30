@@ -79,6 +79,12 @@ jobs:
       - name: Verify backend import surface
         run: python -m py_compile backend/app.py backend/public_app.py
 
+      - name: Lint backend (ruff)
+        run: python -m ruff check backend/ --select E,W,F --ignore E402,F401,E501,E741 --exit-zero
+
+      - name: Run full backend test suite
+        run: python -m pytest backend/tests/ -x -q
+
       - name: Run structural repository audit
         run: python scripts/repo_audit.py
 
