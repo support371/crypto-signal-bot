@@ -16,6 +16,7 @@ of truth for exchange data shapes in this repo.
 
 from __future__ import annotations
 
+import asyncio
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -189,6 +190,27 @@ class BaseExchangeAdapter(ABC):
         Raises AdapterSymbolNotFoundError if symbol is invalid.
         """
         ...
+
+    async def fetch_tickers(self, symbols: list[str]) -> list[Ticker]:
+        """
+        Fetch current tickers for multiple symbols.
+        Default implementation uses asyncio.gather for concurrent individual fetches.
+        Subclasses should override this if the exchange supports a native batch API.
+        """
+        results = await asyncio.gather(
+            *[self.fetch_ticker(s) for s in symbols],
+            return_exceptions=True
+        )
+        # Log failures but return successful results
+        tickers = []
+        for r in results:
+            if isinstance(r, Ticker):
+                tickers.append(r)
+            else:
+                # We don't have access to log here, but we can print for debug if needed
+                # though Base shouldn't really print.
+                pass
+        return tickers
 
     @abstractmethod
     async def fetch_ohlcv(

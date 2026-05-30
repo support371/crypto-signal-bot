@@ -11,6 +11,7 @@ Set BINANCE_TESTNET=true to use testnet (safe default from settings.py).
 
 from __future__ import annotations
 
+import json
 import time
 from decimal import Decimal
 from typing import Optional
@@ -97,16 +98,37 @@ class BinanceAdapter(BaseExchangeAdapter):
     # ------------------------------------------------------------------
 
     async def fetch_ticker(self, symbol: str) -> Ticker:
-        symbol = self._normalize_symbol(symbol)
+        normalized = self._normalize_symbol(symbol)
         # Use /api/v3/ticker/24hr as it already contains bidPrice/askPrice in the FULL response.
         # This eliminates the redundant /api/v3/ticker/bookTicker call, reducing latency.
-        stats = await self._get_public("/api/v3/ticker/24hr", {"symbol": symbol})
+        stats = await self._get_public("/api/v3/ticker/24hr", {"symbol": normalized})
         assert isinstance(stats, dict)
+        # Use the normalized symbol to preserve consistency with Phase 5 expectations
+        return self._parse_ticker(stats, normalized)
+
+    async def fetch_tickers(self, symbols: list[str]) -> list[Ticker]:
+        """
+        Fetch current tickers for multiple symbols in a single batch call.
+        Binance supports this via the 'symbols' parameter on /api/v3/ticker/24hr.
+        """
+        if not symbols:
+            return []
+
+        # Map normalized symbol -> original-normalized symbol
+        # to ensure the returned Ticker.symbol matches what fetch_ticker(s) would return.
+        mapping = {self._normalize_symbol(s): self._normalize_symbol(s) for s in symbols}
+
+        # format: ["BTCUSDT","BNBUSDT"]
+        resp = await self._get_public("/api/v3/ticker/24hr", {"symbols": json.dumps(list(mapping.keys()))})
+        assert isinstance(resp, list)
+        return [self._parse_ticker(s, mapping.get(s["symbol"])) for s in resp]
+
+    def _parse_ticker(self, stats: dict, symbol: Optional[str] = None) -> Ticker:
         price = Decimal(str(stats["lastPrice"]))
         bid   = Decimal(str(stats["bidPrice"]))
         ask   = Decimal(str(stats["askPrice"]))
         return Ticker(
-            symbol=symbol,
+            symbol=symbol or stats["symbol"],
             price=price,
             bid=bid,
             ask=ask,

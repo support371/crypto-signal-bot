@@ -27,6 +27,7 @@ ORDERING:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from dataclasses import dataclass
@@ -42,7 +43,7 @@ from backend.adapters.exchanges.base import (
     OhlcvCandle,
     Ticker,
 )
-from backend.config.loader import get_exchange_config, get_redis_config
+from backend.config.loader import ExchangeConfig, RedisConfig, get_exchange_config, get_redis_config
 
 log = logging.getLogger(__name__)
 
@@ -281,6 +282,32 @@ async def _fetch_ticker_with_failover(symbol: str) -> tuple[Ticker, str]:
     )
 
 
+async def _fetch_tickers_with_failover(symbols: list[str]) -> list[tuple[Ticker, str]]:
+    """
+    Try to fetch multiple tickers in batch.
+    If an adapter fails or only returns partial results, we proceed
+    to the next adapter for the REMAINING symbols.
+    Returns a list of (Ticker, source_name) tuples.
+    """
+    adapters = await _get_adapters()
+    remaining = list(symbols)
+    results: list[tuple[Ticker, str]] = []
+
+    for adapter in adapters:
+        if not remaining:
+            break
+        try:
+            batch = await adapter.fetch_tickers(remaining)
+            for ticker in batch:
+                results.append((ticker, adapter.exchange_name))
+                if ticker.symbol in remaining:
+                    remaining.remove(ticker.symbol)
+        except Exception as exc:
+            log.warning("Batch fetch failed for %s: %s", adapter.exchange_name, exc)
+
+    return results
+
+
 async def _fetch_ohlcv_with_failover(
     symbol: str, interval: str, limit: int
 ) -> tuple[list[OhlcvCandle], str]:
@@ -306,6 +333,71 @@ async def _fetch_ohlcv_with_failover(
 # Public API
 # ---------------------------------------------------------------------------
 
+async def _process_ticker_payload(
+    ticker: Ticker,
+    source_name: str,
+    now: int,
+    cfg: Optional[ExchangeConfig] = None,
+    redis_cfg: Optional[RedisConfig] = None,
+    requested_symbol: Optional[str] = None,
+) -> PriceSnapshot:
+    """
+    Internal helper to process a raw Ticker into a PriceSnapshot,
+    updating local caches, Redis, and broadcasting updates.
+    """
+    if cfg is None:
+        cfg = get_exchange_config()
+    if redis_cfg is None:
+        redis_cfg = get_redis_config()
+
+    symbol = requested_symbol or ticker.symbol
+    cache_key = f"price:snapshot:{symbol}"
+
+    snapshot = PriceSnapshot(
+        symbol=symbol,
+        price=ticker.price,
+        bid=ticker.bid,
+        ask=ticker.ask,
+        spread_pct=ticker.spread_pct,
+        change24h=ticker.change24h,
+        volume24h=ticker.volume24h,
+        market_data_mode="live" if cfg.mode == "live" else "paper_live",
+        source=source_name,
+        fetched_at=now,
+        stale=False,
+    )
+
+    # Update in-process cache
+    _last_known[symbol] = (ticker, now)
+
+    # Update Redis
+    await _redis_set(cache_key, json.dumps({
+        "symbol": symbol,
+        "price": str(ticker.price),
+        "bid": str(ticker.bid),
+        "ask": str(ticker.ask),
+        "spread_pct": ticker.spread_pct,
+        "change24h": ticker.change24h,
+        "volume24h": str(ticker.volume24h),
+        "market_data_mode": snapshot.market_data_mode,
+        "source": source_name,
+        "fetched_at": now,
+    }), ttl=redis_cfg.price_ttl_seconds)
+
+    # Publish to WebSocket broadcaster
+    await _redis_publish("market_updates", json.dumps({
+        "type": "market_update",
+        "symbol": symbol,
+        "price": float(ticker.price),
+        "change24h": ticker.change24h,
+        "source": source_name,
+        "mode": snapshot.market_data_mode,
+        "ts": now,
+    }))
+
+    return snapshot
+
+
 async def get_price(symbol: str) -> PriceSnapshot:
     """
     Fetch current price for a symbol.
@@ -316,60 +408,12 @@ async def get_price(symbol: str) -> PriceSnapshot:
 
     NEVER returns synthetic/fabricated price data.
     """
-    import json
-    cfg = get_exchange_config()
-    redis_cfg = get_redis_config()
-    cache_key = f"price:snapshot:{symbol}"
     now = int(time.time())
 
     # --- Attempt live fetch ---
     try:
         ticker, source_name = await _fetch_ticker_with_failover(symbol)
-
-        # Cache the good result
-        snapshot = PriceSnapshot(
-            symbol=symbol,
-            price=ticker.price,
-            bid=ticker.bid,
-            ask=ticker.ask,
-            spread_pct=ticker.spread_pct,
-            change24h=ticker.change24h,
-            volume24h=ticker.volume24h,
-            market_data_mode="live" if cfg.mode == "live" else "paper_live",
-            source=source_name,
-            fetched_at=now,
-            stale=False,
-        )
-
-        # Update in-process cache
-        _last_known[symbol] = (ticker, now)
-
-        # Update Redis
-        await _redis_set(cache_key, json.dumps({
-            "symbol": symbol,
-            "price": str(ticker.price),
-            "bid": str(ticker.bid),
-            "ask": str(ticker.ask),
-            "spread_pct": ticker.spread_pct,
-            "change24h": ticker.change24h,
-            "volume24h": str(ticker.volume24h),
-            "market_data_mode": snapshot.market_data_mode,
-            "source": source_name,
-            "fetched_at": now,
-        }), ttl=redis_cfg.price_ttl_seconds)
-
-        # Publish to WebSocket broadcaster
-        await _redis_publish("market_updates", json.dumps({
-            "type": "market_update",
-            "symbol": symbol,
-            "price": float(ticker.price),
-            "change24h": ticker.change24h,
-            "source": source_name,
-            "mode": snapshot.market_data_mode,
-            "ts": now,
-        }))
-
-        return snapshot
+        return await _process_ticker_payload(ticker, source_name, now, requested_symbol=symbol)
 
     except MarketDataUnavailable:
         # Check in-process cache for staleness reporting
@@ -400,25 +444,42 @@ async def get_price(symbol: str) -> PriceSnapshot:
 
 async def get_price_batch(symbols: list[str]) -> list[PriceSnapshot]:
     """
-    Fetch prices for multiple symbols concurrently.
-    Partial results are NOT returned — if any symbol fails, the exception propagates.
-    Callers that want partial results should call get_price() individually.
-    """
-    results = await asyncio.gather(
-        *[get_price(s) for s in symbols],
-        return_exceptions=True,
-    )
-    snapshots: list[PriceSnapshot] = []
-    errors: list[str] = []
-    for symbol, result in zip(symbols, results):
-        if isinstance(result, PriceSnapshot):
-            snapshots.append(result)
-        else:
-            errors.append(f"{symbol}: {result}")
+    Fetch prices for multiple symbols concurrently, utilizing batch
+    exchange endpoints where available.
 
-    if errors:
-        log.warning("Batch price fetch partial failures: %s", errors)
-    return [r for r in results if isinstance(r, PriceSnapshot)]
+    Performance: This significantly reduces network round-trips for dashboard
+    updates by consolidating N individual requests into 1 batch request.
+    """
+    now = int(time.time())
+    cfg = get_exchange_config()
+    redis_cfg = get_redis_config()
+
+    # 1. Attempt batch fetch with failover
+    batch_results = await _fetch_tickers_with_failover(symbols)
+
+    found_symbols = {t.symbol for t, _ in batch_results}
+    remaining = [s for s in symbols if s not in found_symbols]
+
+    # 2. Process batch results
+    snapshots = await asyncio.gather(*[
+        _process_ticker_payload(t, source, now, cfg=cfg, redis_cfg=redis_cfg, requested_symbol=t.symbol)
+        for t, source in batch_results
+    ])
+
+    # 3. Fall back to individual fetches for anything missed by batching
+    if remaining:
+        log.info("Batch fetch incomplete, falling back to individual fetches for: %s", remaining)
+        individual_results = await asyncio.gather(
+            *[get_price(s) for s in remaining],
+            return_exceptions=True,
+        )
+        for symbol, result in zip(remaining, individual_results):
+            if isinstance(result, PriceSnapshot):
+                snapshots.append(result)
+            else:
+                log.warning("Failed to fetch %s in batch fallback: %s", symbol, result)
+
+    return list(snapshots)
 
 
 async def get_ohlcv(symbol: str, interval: str = "1h", limit: int = 24) -> OhlcvSnapshot:
