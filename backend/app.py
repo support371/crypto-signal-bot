@@ -573,6 +573,13 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
         guardian=_capture_guardian_snapshot(),
     )
 
+    # Populate price up-front so even early-rejected traces (mainnet gate,
+    # guardian scope) carry the price context that downstream debugging needs.
+    try:
+        trace.price = req.price or _synthetic_price(intent.symbol)
+    except Exception:
+        trace.price = req.price or 0.0
+
     def _finalize_trace():
         trace.execution.status = intent.status.value
         trace.execution.fill_price = intent.fill_price
@@ -581,8 +588,33 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
         trace.execution.notes = intent.notes
         if intent.fill_price and trace.price and trace.price > 0:
             trace.execution.slippage_pct = abs(intent.fill_price - trace.price) / trace.price
-        append_trace(trace.to_dict())
+        try:
+            append_trace(trace.to_dict())
+        except Exception as exc:
+            logger.warning("append_trace failed for intent %s: %s", intent.id, exc)
 
+    try:
+        return _process_intent_inner(req, mode, intent, trace)
+    except Exception as exc:
+        # CLAUDE.md: every decision must emit a structured trace. Make sure an
+        # unhandled exception in the pipeline still produces an audit record.
+        logger.exception("Unhandled error in _process_intent for %s: %s", intent.id, exc)
+        if intent.status not in (IntentStatus.FILLED, IntentStatus.RISK_REJECTED):
+            intent.status = IntentStatus.FAILED
+        if not intent.notes:
+            intent.notes = f"unhandled_error: {exc}"
+        trace.risk.rejection_reasons.append(f"unhandled_error: {exc}")
+        raise
+    finally:
+        _finalize_trace()
+
+
+def _process_intent_inner(
+    req: IntentRequest,
+    mode: str,
+    intent: ExecutionIntent,
+    trace: DecisionTrace,
+) -> IntentResponse:
     # Mainnet gate: block live mainnet execution unless explicitly allowed
     try:
         assert_not_mainnet(NETWORK, mode)
@@ -594,7 +626,6 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
         intent_data = intent.model_dump()
         append_intent(intent_data)
         context.schedule_background(persist_order, intent_data, TRADING_MODE)
-        _finalize_trace()
         return IntentResponse(id=intent.id, status=intent.status.value, notes=intent.notes)
 
     try:
@@ -607,10 +638,9 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
         intent_data = intent.model_dump()
         append_intent(intent_data)
         context.schedule_background(persist_order, intent_data, TRADING_MODE)
-        _finalize_trace()
         return IntentResponse(id=intent.id, status=intent.status.value, notes=intent.notes)
 
-    current_price = req.price or _synthetic_price(intent.symbol)
+    current_price = trace.price or req.price or _synthetic_price(intent.symbol)
     trace.price = current_price
     total_equity = paper_portfolio.get_total_exposure(_synthetic_price)
 
@@ -663,7 +693,6 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
         intent_data = intent.model_dump()
         append_intent(intent_data)
         context.schedule_background(persist_order, intent_data, TRADING_MODE)
-        _finalize_trace()
         return IntentResponse(id=intent.id, status=intent.status.value, notes=intent.notes)
 
     if engine_result.size_multiplier < 1.0:
@@ -726,7 +755,6 @@ def _process_intent(req: IntentRequest, mode: str) -> IntentResponse:
         },
     )
     context.schedule_background(_guardian_check_and_broadcast)
-    _finalize_trace()
     return IntentResponse(id=intent.id, status=intent.status.value, notes=intent.notes)
 
 # ---------------------------------------------------------------------------
