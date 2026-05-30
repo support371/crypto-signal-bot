@@ -37,7 +37,6 @@ from dataclasses import dataclass
 from typing import Iterable, Optional
 
 from backend.config.loader import get_redis_config, get_risk_config
-from backend.logic import context
 
 log = logging.getLogger(__name__)
 
@@ -141,13 +140,6 @@ async def activate_kill_switch(reason: str, source: str = "guardian") -> None:
     _triggered = True
     _trigger_reason = reason
     _kill_switch_at = int(time.time())
-    # Mirror into shared context so /guardian/status (which now reads
-    # context.*) reflects guardian-initiated auto-halts.
-    context.kill_switch_active = True
-    context.kill_switch_reason = reason
-    context.guardian_triggered = True
-    context.guardian_trigger_reason = reason
-    context.guardian_trigger_ts = float(_kill_switch_at)
     await _set_kill_switch_redis(True, reason)
     await _publish_guardian_event("kill_switch", reason=reason, active=True, source=source)
     await _publish_guardian_event("guardian_alert", reason=f"Kill switch activated: {reason}", source=source)
@@ -158,9 +150,6 @@ async def deactivate_kill_switch(reason: str = "Manual operator reset") -> None:
     log.info("[guardian] Kill switch deactivated: %s", reason)
     _kill_switch_active = False
     _kill_switch_reason = None
-    # Mirror into shared context.
-    context.kill_switch_active = False
-    context.kill_switch_reason = None
     await _set_kill_switch_redis(False, "")
     await _publish_guardian_event("kill_switch", reason=reason, active=False)
 
@@ -226,8 +215,6 @@ def assert_scope_allowed(strategy_id: str | None = None, venue_id: str | None = 
 async def on_api_error() -> None:
     global _api_error_count
     _api_error_count += 1
-    # Mirror into shared context so /guardian/status reflects the count.
-    context.api_error_count = _api_error_count
     cfg = get_risk_config()
     if _api_error_count >= cfg.max_api_errors:
         await activate_kill_switch(
@@ -239,8 +226,6 @@ async def on_api_error() -> None:
 async def on_failed_order() -> None:
     global _failed_order_count
     _failed_order_count += 1
-    # Mirror into shared context so /guardian/status reflects the count.
-    context.failed_order_count = _failed_order_count
     cfg = get_risk_config()
     if _failed_order_count >= cfg.max_failed_orders:
         await activate_kill_switch(
@@ -252,8 +237,6 @@ async def on_failed_order() -> None:
 async def update_drawdown(drawdown_pct: float) -> None:
     global _drawdown_pct
     _drawdown_pct = drawdown_pct
-    # Mirror into shared context so /guardian/status reflects the drawdown.
-    context.guardian_drawdown_pct = drawdown_pct
     cfg = get_risk_config()
     if drawdown_pct >= cfg.max_drawdown_pct and not _kill_switch_active:
         await activate_kill_switch(
@@ -276,9 +259,6 @@ def reset_counters() -> None:
     global _api_error_count, _failed_order_count
     _api_error_count = 0
     _failed_order_count = 0
-    # Mirror into shared context so /guardian/status reflects the reset.
-    context.api_error_count = 0
-    context.failed_order_count = 0
 
 
 def _normalize_open_order_ids(order_ids: Iterable[str]) -> set[str]:
@@ -363,18 +343,15 @@ async def get_guardian_status() -> GuardianStatus:
         _last_heartbeat_at is not None
         and (int(time.time()) - _last_heartbeat_at) < thresholds.heartbeat_timeout_s
     )
-    # Read from context.* (the live state updated by app.py) for fields
-    # that the main app flow maintains, falling back to service-local vars
-    # for fields only the guardian service manages.
     return GuardianStatus(
-        kill_switch_active=context.kill_switch_active,
-        triggered=context.guardian_triggered,
-        kill_switch_reason=context.kill_switch_reason,
-        trigger_reason=context.guardian_trigger_reason,
-        drawdown_pct=context.guardian_drawdown_pct,
+        kill_switch_active=_kill_switch_active,
+        triggered=_triggered,
+        kill_switch_reason=_kill_switch_reason,
+        trigger_reason=_trigger_reason,
+        drawdown_pct=_drawdown_pct,
         daily_loss_pct=_daily_loss_pct,
-        api_error_count=context.api_error_count,
-        failed_order_count=context.failed_order_count,
+        api_error_count=_api_error_count,
+        failed_order_count=_failed_order_count,
         thresholds=thresholds,
         market_data=market_data,
         last_heartbeat_at=_last_heartbeat_at,

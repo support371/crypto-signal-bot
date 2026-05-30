@@ -69,16 +69,14 @@ def _load() -> Dict[str, List[Any]]:
     _ensure_dir()
     store_path = _store_path()
     if not os.path.exists(store_path):
-        _cache = {"intents": [], "orders": [], "withdrawals": [], "risk_events": [], "traces": []}
+        _cache = {"intents": [], "orders": [], "withdrawals": [], "risk_events": []}
         return _cache
     try:
         with open(store_path, "r") as f:
             _cache = json.load(f)
-            if "traces" not in _cache:
-                _cache["traces"] = []
             return _cache
     except (json.JSONDecodeError, IOError):
-        _cache = {"intents": [], "orders": [], "withdrawals": [], "risk_events": [], "traces": []}
+        _cache = {"intents": [], "orders": [], "withdrawals": [], "risk_events": []}
         return _cache
 
 
@@ -133,40 +131,6 @@ def get_audit() -> Dict[str, List[Any]]:
         return _load()
 
 
-def append_trace(trace_data: Dict[str, Any]):
-    with _lock:
-        data = _load()
-        data["traces"].append(trace_data)
-        _save(data)
-        _copy_to_event_log("audit.trace", trace_data)
-
-
-def get_traces(symbol: Optional[str] = None, status: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
-    with _lock:
-        # Copy the list while holding the lock so subsequent appends cannot
-        # mutate the slice we hand back to the caller.
-        traces = list(_load().get("traces", []))
-    if symbol:
-        traces = [t for t in traces if t.get("symbol", "").upper() == symbol.upper()]
-    if status:
-        traces = [t for t in traces if t.get("execution", {}).get("status") == status]
-    return traces[-limit:]
-
-
-def get_trace_by_intent_id(intent_id: str) -> Optional[Dict[str, Any]]:
-    """Return the full decision trace for a given intent id, or None if missing.
-
-    Searches every persisted trace (not just the most recent window) so older
-    traces remain retrievable via GET /trace/{intent_id}.
-    """
-    with _lock:
-        traces = list(_load().get("traces", []))
-    for trace in traces:
-        if trace.get("intent_id") == intent_id:
-            return trace
-    return None
-
-
 def clear_audit():
     with _lock:
-        _save({"intents": [], "orders": [], "withdrawals": [], "risk_events": [], "traces": []})
+        _save({"intents": [], "orders": [], "withdrawals": [], "risk_events": []})

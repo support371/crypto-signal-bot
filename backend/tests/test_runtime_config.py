@@ -18,7 +18,7 @@ class TestRuntimeConfig:
         assert config.network == "testnet"
         assert config.exchange == "binance"
         assert config.market_data_public_exchange == "binance"
-        assert config.paper.use_live_market_data is True
+        assert config.paper.use_live_market_data is False
         assert config.guardian.max_api_errors == 10
         assert "http://localhost:5173" in config.server.cors_origins
 

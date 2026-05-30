@@ -7,11 +7,6 @@ but routes order execution to the paper ledger (Rule 9).
 
 Live mode submits orders to the real Binance REST API.
 Set BINANCE_TESTNET=true to use testnet (safe default from settings.py).
-
-Production hardening (added):
-  - Retry with exponential backoff on transient failures
-  - Circuit breaker: trips after 5 consecutive failures, recovers after 60s
-  - Guardian notification on persistent failure
 """
 
 from __future__ import annotations
@@ -37,7 +32,6 @@ from backend.adapters.exchanges.base import (
     Position,
     Ticker,
 )
-from backend.adapters.exchanges.retry import with_retry, CircuitBreaker
 
 _INTERVAL_MAP = {
     "1m": "1m", "5m": "5m", "15m": "15m",
@@ -71,11 +65,6 @@ class BinanceAdapter(BaseExchangeAdapter):
             base_url = "https://testnet.binance.vision"
         self._base_url = base_url.rstrip("/")
         self._client: Optional[httpx.AsyncClient] = None
-        self._circuit_breaker = CircuitBreaker(
-            failure_threshold=5,
-            recovery_timeout=60.0,
-            name=f"binance-{'paper' if paper else 'live'}",
-        )
 
     async def _http(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -86,29 +75,23 @@ class BinanceAdapter(BaseExchangeAdapter):
             )
         return self._client
 
-    @with_retry(max_attempts=3, base_delay=0.5)
     async def _get_public(self, path: str, params: dict | None = None) -> object:
-        async with self._circuit_breaker:
-            client = await self._http()
-            try:
-                resp = await client.get(path, params=params)
-            except httpx.ConnectError as exc:
-                raise AdapterUnavailableError(f"Binance unreachable: {exc}") from exc
-            except httpx.TimeoutException as exc:
-                raise AdapterUnavailableError(f"Binance timeout: {exc}") from exc
-            if resp.status_code == 429:
-                raise AdapterRateLimitError("Binance rate limit exceeded.")
-            if resp.status_code == 400:
-                data = resp.json()
-                msg = data.get("msg", str(data))
-                if "-1121" in str(data):
-                    raise AdapterSymbolNotFoundError(f"Binance: invalid symbol — {msg}")
-                raise AdapterOrderError(f"Binance bad request: {msg}")
-            if resp.status_code == 401 or resp.status_code == 403:
-                raise AdapterAuthError(f"Binance auth error: HTTP {resp.status_code}")
-            if not resp.is_success:
-                raise AdapterUnavailableError(f"Binance HTTP {resp.status_code}")
-            return resp.json()
+        client = await self._http()
+        try:
+            resp = await client.get(path, params=params)
+        except httpx.ConnectError as exc:
+            raise AdapterUnavailableError(f"Binance unreachable: {exc}") from exc
+        if resp.status_code == 429:
+            raise AdapterRateLimitError("Binance rate limit exceeded.")
+        if resp.status_code == 400:
+            data = resp.json()
+            msg = data.get("msg", str(data))
+            if "-1121" in str(data):
+                raise AdapterSymbolNotFoundError(f"Binance: invalid symbol — {msg}")
+            raise AdapterOrderError(f"Binance bad request: {msg}")
+        if not resp.is_success:
+            raise AdapterUnavailableError(f"Binance HTTP {resp.status_code}")
+        return resp.json()
 
     # ------------------------------------------------------------------
     # Market data
@@ -170,7 +153,7 @@ class BinanceAdapter(BaseExchangeAdapter):
         assert isinstance(data, list)
         return [
             OhlcvCandle(
-                time=int(candle[0]) // 1000,
+                time=int(candle[0]) // 1000,  # ms → seconds
                 open=Decimal(str(candle[1])),
                 high=Decimal(str(candle[2])),
                 low=Decimal(str(candle[3])),
@@ -181,20 +164,23 @@ class BinanceAdapter(BaseExchangeAdapter):
         ]
 
     # ------------------------------------------------------------------
-    # Account
+    # Account — paper mode reads from paper ledger; live reads Binance
     # ------------------------------------------------------------------
 
     async def fetch_balance(self) -> list[Balance]:
         if self.paper:
+            # Paper mode: caller injects paper ledger dependency
+            # Return empty — paper balance is owned by the reconciliation service
             return []
         self._assert_live_credentials()
         raise NotImplementedError(
-            "Live Binance balance requires signed request implementation."
+            "Live Binance balance requires signed request implementation. "
+            "Wire in the signed HTTP helper and implement here."
         )
 
     async def fetch_positions(self) -> list[Position]:
         if self.paper:
-            return []
+            return []  # Paper positions owned by reconciliation service
         self._assert_live_credentials()
         raise NotImplementedError("Live Binance positions require signed request.")
 
@@ -214,6 +200,7 @@ class BinanceAdapter(BaseExchangeAdapter):
         now    = int(time.time())
 
         if self.paper:
+            # Paper mode: get current price and simulate an immediate fill
             ticker = await self.fetch_ticker(symbol)
             fill_price = ticker.price if order_type == "MARKET" else (price or ticker.price)
             return Order(
@@ -240,7 +227,7 @@ class BinanceAdapter(BaseExchangeAdapter):
             return Order(
                 id=order_id,
                 symbol=self._normalize_symbol(symbol),
-                side="BUY",
+                side="BUY",  # unknown at cancel time in paper mode
                 order_type="MARKET",
                 quantity=Decimal("0"),
                 price=None,
@@ -281,7 +268,3 @@ class BinanceAdapter(BaseExchangeAdapter):
             source=self._base_url,
             error=error,
         )
-
-    def get_circuit_breaker_status(self) -> dict:
-        """Return circuit breaker status for observability."""
-        return self._circuit_breaker.get_status()

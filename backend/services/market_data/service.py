@@ -34,7 +34,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Optional
 
-from backend.adapters.exchanges import get_adapter, get_market_data_adapter
+from backend.adapters.exchanges import get_adapter
 from backend.adapters.exchanges.base import (
     AdapterUnavailableError,
     AdapterRateLimitError,
@@ -216,8 +216,8 @@ async def _get_adapters() -> list[BaseExchangeAdapter]:
         paper = cfg.mode == "paper"
         adapters: list[BaseExchangeAdapter] = []
 
-        # Primary — use market data adapter (Binance in paper mode for reliable public prices)
-        adapters.append(get_market_data_adapter(cfg))
+        # Primary — from Phase 5 factory
+        adapters.append(get_adapter(cfg))
 
         # Secondaries — remaining adapters that have credentials (or paper mode)
         seen_types = {type(adapters[0])}

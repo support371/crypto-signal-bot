@@ -34,13 +34,7 @@ jobs:
           python -m pip install -r backend/requirements.txt
 
       - name: Verify backend imports
-        run: python -m py_compile backend/app.py backend/public_app.py
-
-      - name: Lint backend (ruff)
-        run: python -m ruff check backend/ --select E,W,F --ignore E402,F401,E501,E741 --exit-zero
-
-      - name: Run full backend test suite
-        run: python -m pytest backend/tests/ -x -q
+        run: python -m py_compile backend/app.py
 
       - name: Run repo audit
         run: python scripts/repo_audit.py

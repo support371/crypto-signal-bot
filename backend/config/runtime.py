@@ -183,7 +183,7 @@ def get_runtime_config() -> RuntimeConfig:
             _get_nested(defaults, "paper", "starting_balance_usdt", default=10000.0)
         ),
         use_live_market_data=bool(
-            _get_nested(defaults, "paper", "use_live_market_data", default=True)
+            _get_nested(defaults, "paper", "use_live_market_data", default=False)
         ),
     )
 
