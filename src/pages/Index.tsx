@@ -24,6 +24,10 @@ import { useGuardianStatus } from '@/hooks/useGuardianStatus';
 import { usePersistedSettings } from '@/hooks/usePersistedSettings';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { useSignalEngine } from '@/hooks/useSignalEngine';
+import { useConsole } from '@/hooks/useConsole';
+import { useMonitoring } from '@/hooks/useMonitoring';
+import { CommandConsolePanel } from '@/components/dashboard/CommandConsolePanel';
+import { MonitoringPanel } from '@/components/dashboard/MonitoringPanel';
 import { fetchBackendJson } from '@/lib/backend';
 import { useAuth } from '@/context/AuthContext';
 
@@ -100,6 +104,12 @@ const Index = () => {
   const { portfolio, isLoading: portfolioLoading, refetch: refetchPortfolio } = usePortfolio();
   const { summary: earningsSummary, trades: earningsTrades, isLoading: earningsLoading, refetch: refetchEarnings } = useEarnings();
   const { audit, isLoading: auditLoading, refetch: refetchAudit } = useAuditTrail();
+  const {
+    status: consoleStatus, isLoading: consoleLoading, refetch: refetchConsole,
+    submitTrade, toggleKillSwitch, setSignalOverride, cancelSignalOverride,
+    reEvalSignals, resetGuardian,
+  } = useConsole();
+  const { status: monitorStatus, isLoading: monitorLoading, runNow, refetch: refetchMonitor } = useMonitoring();
   const { metrics, isLoading: metricsLoading, error: metricsError, refetch: refetchMetrics } = useBackendMetrics();
   const selectedCoin = prices.find((price) => price.id === selectedSymbol) || null;
 
@@ -411,6 +421,26 @@ const Index = () => {
               onRefetch={refetchAudit}
             />
           </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+          <CommandConsolePanel
+            status={consoleStatus}
+            isLoading={consoleLoading}
+            onSubmitTrade={submitTrade}
+            onToggleKillSwitch={toggleKillSwitch}
+            onSetSignalOverride={setSignalOverride}
+            onCancelSignalOverride={cancelSignalOverride}
+            onReEvalSignals={reEvalSignals}
+            onResetGuardian={resetGuardian}
+            onRefetch={refetchConsole}
+          />
+          <MonitoringPanel
+            status={monitorStatus}
+            isLoading={monitorLoading}
+            onRunNow={runNow}
+            onRefetch={refetchMonitor}
+          />
         </div>
       </main>
 
