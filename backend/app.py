@@ -399,12 +399,23 @@ def _warm_ticker_cache() -> None:
     logger.info("Ticker cache warmed: %s", list(_ticker_cache.keys()))
 
 def _get_live_price_for_ticker(symbol: str) -> Optional[float]:
-    """Try to get a live/cached price for the ticker broadcast."""
-    # Check context signal cache first
+    """Try to get a live/cached price for the ticker broadcast.
+
+    Resolution order:
+    1. Live market data service snapshot (Binance public feed)
+    2. Signal cache from prior market data updates
+    3. Synthetic price simulation fallback
+    """
+    # Check live market data service first (most current)
+    if PAPER_USE_LIVE_MARKET_DATA and context.market_data_service is not None:
+        snap = context.market_data_service.get_snapshot(symbol)
+        if snap and "price" in snap:
+            return float(snap["price"])
+    # Check context signal cache
     cached = context.latest_signal_by_symbol.get(symbol)
     if cached and "price" in cached:
         return float(cached["price"])
-    # Try synthetic price
+    # Fall back to synthetic price
     try:
         return _synthetic_price(symbol)
     except Exception:
