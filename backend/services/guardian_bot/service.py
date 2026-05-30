@@ -72,6 +72,8 @@ class GuardianStatus:
     reconciliation_drift_reason: Optional[str] = None
     strategy_kill_switches: tuple[str, ...] = ()
     venue_kill_switches: tuple[str, ...] = ()
+    in_cooldown: bool = False
+    cooldown_remaining_s: int = 0
 
 
 class TradingScopeHaltedError(Exception):
@@ -88,6 +90,7 @@ _api_error_count: int = 0
 _failed_order_count: int = 0
 _last_heartbeat_at: Optional[int] = None
 _kill_switch_at: Optional[int] = None
+_kill_switch_deactivated_at: Optional[int] = None   # timestamp of last deactivation
 _reconciliation_drift_count: int = 0
 _reconciliation_drift_reason: Optional[str] = None
 _strategy_kill_switches: set[str] = set()
@@ -154,15 +157,41 @@ async def activate_kill_switch(reason: str, source: str = "guardian") -> None:
 
 
 async def deactivate_kill_switch(reason: str = "Manual operator reset") -> None:
-    global _kill_switch_active, _kill_switch_reason
+    global _kill_switch_active, _kill_switch_reason, _kill_switch_deactivated_at
     log.info("[guardian] Kill switch deactivated: %s", reason)
     _kill_switch_active = False
     _kill_switch_reason = None
+    _kill_switch_deactivated_at = int(time.time())  # start cooldown window
     # Mirror into shared context.
     context.kill_switch_active = False
     context.kill_switch_reason = None
     await _set_kill_switch_redis(False, "")
     await _publish_guardian_event("kill_switch", reason=reason, active=False)
+
+
+def get_cooldown_seconds() -> int:
+    """Cooldown window (seconds) after kill switch deactivation before trading resumes."""
+    try:
+        from backend.config.loader import get_settings
+        return int(getattr(get_settings(), "cooldown_seconds", 60))
+    except Exception:
+        return 60
+
+
+def is_in_cooldown() -> bool:
+    """Return True if we are inside the post-kill-switch cooldown window."""
+    if _kill_switch_deactivated_at is None:
+        return False
+    elapsed = int(time.time()) - _kill_switch_deactivated_at
+    return elapsed < get_cooldown_seconds()
+
+
+def cooldown_remaining_seconds() -> int:
+    """Seconds remaining in cooldown, or 0 if not in cooldown."""
+    if _kill_switch_deactivated_at is None:
+        return 0
+    remaining = get_cooldown_seconds() - (int(time.time()) - _kill_switch_deactivated_at)
+    return max(remaining, 0)
 
 
 async def is_kill_switch_active() -> bool:
@@ -386,6 +415,8 @@ async def get_guardian_status() -> GuardianStatus:
         reconciliation_drift_reason=_reconciliation_drift_reason,
         strategy_kill_switches=tuple(sorted(_strategy_kill_switches)),
         venue_kill_switches=tuple(sorted(_venue_kill_switches)),
+        in_cooldown=is_in_cooldown(),
+        cooldown_remaining_s=cooldown_remaining_seconds(),
     )
 
 

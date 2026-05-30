@@ -78,6 +78,8 @@ class GuardianStatusOut(BaseModel):
     venue_kill_switches:         List[str]
     thresholds:                  Dict[str, Any]
     computed_at:                 int
+    in_cooldown:                 bool = False
+    cooldown_remaining_s:        int  = 0
 
 
 class GuardianResetRequest(BaseModel):
@@ -130,6 +132,8 @@ async def guardian_status_v1() -> GuardianStatusOut:
             "heartbeat_timeout_s": s.thresholds.heartbeat_timeout_s,
         },
         computed_at=s.computed_at,
+        in_cooldown=s.in_cooldown,
+        cooldown_remaining_s=s.cooldown_remaining_s,
     )
 
 

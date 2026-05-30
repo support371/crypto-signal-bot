@@ -72,6 +72,7 @@ async def _evaluate(
 ) -> RiskGateDecision:
     from backend.services.guardian_bot.service import (
         is_kill_switch_active, is_strategy_killed, is_venue_killed,
+        is_in_cooldown, cooldown_remaining_seconds,
     )
     from backend.engine.risk_rules import RiskRuleEngine
     from backend.models.risk import RiskContext
@@ -85,6 +86,17 @@ async def _evaluate(
             size_multiplier=0.0, kill_switch=True,
             rules_passed=[], rules_failed=["KillSwitch"],
             reasons=["Global kill switch is active — all execution blocked"],
+            risk_score=100.0,
+        )
+
+    # ── 1b. Post-kill-switch cooldown ────────────────────────
+    if is_in_cooldown():
+        remaining = cooldown_remaining_seconds()
+        return RiskGateDecision(
+            approved=False, order_qty=0.0, original_qty=qty,
+            size_multiplier=0.0, kill_switch=False,
+            rules_passed=[], rules_failed=["CooldownActive"],
+            reasons=[f"Post-kill-switch cooldown active — {remaining}s remaining before trading resumes"],
             risk_score=100.0,
         )
 
@@ -153,6 +165,18 @@ async def _evaluate(
         pass
 
     nav = cash + total_exp  # Net Asset Value
+
+    # ── Drawdown-aware daily loss feedback ────────────────────
+    # Pull live drawdown_pct from the guardian so the MaxDailyLossRule
+    # scales down position sizes automatically as losses accumulate —
+    # no manual trigger required.
+    try:
+        from backend.services.guardian_bot.service import _drawdown_pct as _gd_pct
+        guardian_drawdown_loss = -nav * (_gd_pct / 100.0)
+        # Use whichever is more conservative (larger negative number)
+        daily_pnl = min(daily_pnl, guardian_drawdown_loss)
+    except Exception:
+        pass  # fallback: use trade-derived daily_pnl as-is
 
     ctx = RiskContext(
         symbol=sym, side=side.upper(), quantity=qty, price=mark,
