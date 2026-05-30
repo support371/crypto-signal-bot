@@ -128,6 +128,12 @@ async def console_status() -> dict:
         for r in get_all_cached_signals()
     ]
 
+    try:
+        from backend.services.signal_executor.service import get_executor_status
+        executor_status = get_executor_status()
+    except Exception:
+        executor_status = {}
+
     return {
         "ts": int(time.time()),
         "guardian": {
@@ -153,6 +159,7 @@ async def console_status() -> dict:
             "symbols":  signals,
             "overrides": get_all_overrides(),
         },
+        "executor": executor_status,
         "market": guardian.market_data,
     }
 

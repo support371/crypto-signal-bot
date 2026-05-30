@@ -309,6 +309,37 @@ async def probe_cooldown() -> ProbeResult:
 # Probe registry — ordered by severity
 # ---------------------------------------------------------------------------
 
+
+
+try:
+    from backend.services.signal_executor.service import get_executor_status as _get_exec_status
+except Exception:
+    _get_exec_status = None  # type: ignore[assignment]
+
+
+async def probe_executor() -> ProbeResult:
+    """Check the signal executor loop is running."""
+    t0 = time.perf_counter()
+    try:
+        if _get_exec_status is None:
+            raise ImportError("signal executor not available")
+        status = _get_exec_status()
+        running = status.get("running", False)
+        ok = running
+        detail: Dict[str, Any] = {
+            "running":     running,
+            "run_count":   status.get("run_count", 0),
+            "last_run_at": status.get("last_run_at", 0),
+            "min_confidence": status.get("min_confidence"),
+            "position_pct":   status.get("position_pct"),
+        }
+    except Exception as exc:
+        return ProbeResult(name="executor", ok=False,
+                           latency_ms=int((time.perf_counter() - t0) * 1000),
+                           error=str(exc))
+    ms = int((time.perf_counter() - t0) * 1000)
+    return ProbeResult(name="executor", ok=ok, latency_ms=ms, detail=detail)
+
 ALL_PROBES = [
     probe_health,
     probe_guardian,
@@ -318,4 +349,5 @@ ALL_PROBES = [
     probe_portfolio,
     probe_cooldown,
     probe_external_liveness,
+    probe_executor,
 ]

@@ -680,4 +680,5 @@ class TestProbeRegistry:
         body = resp.json()
         assert "cooldown" in body["probes"]
         assert "external_liveness" in body["probes"]
-        assert body["count"] == 8
+        assert "executor" in body["probes"]
+        assert body["count"] == 9

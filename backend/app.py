@@ -206,6 +206,11 @@ async def lifespan(application):
         _start_mon(app)
     except Exception as _exc:
         logger.warning("Monitoring service start skipped: %s", _exc)
+    try:
+        from backend.services.signal_executor.service import start_signal_executor as _start_exec
+        _start_exec(app)
+    except Exception as _exc:
+        logger.warning("Signal executor start skipped: %s", _exc)
     logger.info("All background services registered.")
 
     try:
