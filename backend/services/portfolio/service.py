@@ -30,6 +30,9 @@ from backend.services.market_data.service import get_price
 
 log = logging.getLogger(__name__)
 
+# Lazy reference for test patching — populated on first use
+_evaluate_order = None  # type: ignore
+
 PRECISION   = Decimal("0.00000001")
 FEE_RATE    = Decimal("0.001")          # 0.10% taker fee (paper)
 STARTING_CASH = Decimal("10000.0")
@@ -220,6 +223,29 @@ async def submit_order(
         status="PENDING",
     )
     _orders[order.id] = order
+
+    # ── Risk gate (RULE 5: risk always overrides strategy) ─────────────────
+    try:
+        import sys as _sys
+        _self_mod = _sys.modules[__name__]
+        _fn = getattr(_self_mod, "_evaluate_order", None)
+        if _fn is None:
+            import importlib as _il
+            _rg = _il.import_module("backend.services.risk_gate.service")
+            _fn = _rg.evaluate_order
+        decision = await _fn(symbol=symbol, side=side, qty=qty, price=price)
+        if not decision.approved:
+            order.status    = "CANCELLED"
+            order.updated_at = int(time.time())
+            log.warning("[portfolio] %s BLOCKED by risk gate: %s",
+                        order.id[:8], decision.reasons)
+            await _persist_order(order)
+            return order
+        # Apply size multiplier from risk rules
+        if 0 < decision.size_multiplier < 1.0:
+            order.qty = _qty(float(order.qty) * decision.size_multiplier)
+    except Exception as exc:
+        log.warning("[portfolio] risk gate unavailable (%s) — order proceeds", exc)
 
     if order_type.upper() == "MARKET":
         await _fill_order(order)

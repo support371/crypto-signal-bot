@@ -51,9 +51,21 @@ def run(coro):
 
 @pytest.fixture(autouse=True)
 def fresh_portfolio():
-    """Reset in-process state before every test."""
+    """Reset in-process state and bypass risk gate for portfolio unit tests."""
     reset_portfolio(STARTING_CASH)
-    yield
+    # Bypass risk gate so portfolio tests focus on portfolio mechanics only
+    from backend.services.risk_gate.service import RiskGateDecision
+    # Return approved with size_multiplier=1.0 so portfolio uses original qty
+    approved_decision = RiskGateDecision(
+        approved=True, order_qty=0.0, original_qty=0.0,
+        size_multiplier=1.0, kill_switch=False,
+        rules_passed=["all"], rules_failed=[],
+        reasons=["test bypass"], risk_score=0.0,
+    )
+    from unittest.mock import AsyncMock, patch as _patch
+    with _patch("backend.services.portfolio.service._evaluate_order",
+                AsyncMock(return_value=approved_decision)):
+        yield
     reset_portfolio(STARTING_CASH)
 
 
