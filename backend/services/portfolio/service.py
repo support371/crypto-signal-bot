@@ -568,7 +568,6 @@ async def _persist_snapshot(snap: EquitySnapshot) -> None:
 # ─────────────────────────────────────────────────────────────────
 
 def start_portfolio_service(app) -> None:
-    @app.on_event("startup")
-    async def _start():
-        asyncio.create_task(_snapshot_loop())
-        asyncio.create_task(_limit_fill_loop())
+    # Direct task creation — called from lifespan() which is already async
+    asyncio.create_task(_snapshot_loop())
+    asyncio.create_task(_limit_fill_loop())

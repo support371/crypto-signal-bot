@@ -140,6 +140,5 @@ async def _eval_loop() -> None:
 
 
 def start_signal_service(app) -> None:
-    @app.on_event("startup")
-    async def _start():
-        asyncio.create_task(_eval_loop())
+    # Direct task creation — called from lifespan() which is already async
+    asyncio.create_task(_eval_loop())

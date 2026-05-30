@@ -185,6 +185,29 @@ async def lifespan(application):
     )
     logger.info("Background tasks started: heartbeat + ticker broadcast")
 
+    # ── Background services (must start after app is fully initialised) ──
+    try:
+        from backend.services.signal_service.service import start_signal_service as _start_ss
+        _start_ss(app)
+    except Exception as _exc:
+        logger.warning("Signal service start skipped: %s", _exc)
+    try:
+        from backend.services.portfolio.service import start_portfolio_service as _start_ps
+        _start_ps(app)
+    except Exception as _exc:
+        logger.warning("Portfolio service start skipped: %s", _exc)
+    try:
+        from backend.services.guardian_bot.monitor import start_guardian_monitor as _start_gm
+        _start_gm(app)
+    except Exception as _exc:
+        logger.warning("Guardian monitor start skipped: %s", _exc)
+    try:
+        from backend.services.monitoring.service import start_monitoring_service as _start_mon
+        _start_mon(app)
+    except Exception as _exc:
+        logger.warning("Monitoring service start skipped: %s", _exc)
+    logger.info("All background services registered.")
+
     try:
         yield
     finally:
@@ -1159,17 +1182,4 @@ async def serve_spa(path: str):
     raise HTTPException(status_code=404, detail="Not Found")
 
 
-# Start signal evaluation loop
-try:
-    start_signal_service(app)
-    start_portfolio_service(app)
-    start_guardian_monitor(app)
-except Exception:
-    pass
-
-# Start monitoring service (probes + alert dispatch)
-try:
-    from backend.services.monitoring.service import start_monitoring_service
-    start_monitoring_service(app)
-except Exception:
-    pass
+# Background services are started inside lifespan() — see above.

@@ -52,6 +52,5 @@ async def _monitor_loop() -> None:
 
 
 def start_guardian_monitor(app) -> None:
-    @app.on_event("startup")
-    async def _start():
-        asyncio.create_task(_monitor_loop())
+    # Direct task creation — called from lifespan() which is already async
+    asyncio.create_task(_monitor_loop())
