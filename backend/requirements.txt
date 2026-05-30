@@ -12,6 +12,15 @@ sqlalchemy>=2.0
 aiosqlite
 asyncpg
 
+# Production server
+gunicorn
+
+# Redis (rate limiting, kill-switch, pub/sub)
+aioredis>=2.0
+
+# DB migrations
+alembic
+
 # Testing (also needed in CI)
 pytest
 pytest-asyncio

@@ -270,6 +270,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Trust X-Forwarded-For from reverse proxies (nginx, Render, Railway, Fly.io)
+# This ensures rate limiting uses real client IPs, not proxy IPs.
+try:
+    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware  # type: ignore
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+except ImportError:
+    pass  # uvicorn not installed in this env — proxy headers handled at infra level
+
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 def require_auth(api_key: Optional[str] = Security(_api_key_header)):
@@ -782,6 +790,16 @@ def get_metrics_api():
 def get_signal_latest_api(symbol: Optional[str] = Query(None)):
     from backend.logic.market_state import get_signal_latest
     return get_signal_latest(symbol)
+
+
+@app.get("/exchange/circuit-breakers", dependencies=[Depends(rate_limit.rate_limit)])
+def get_circuit_breaker_statuses():
+    """Return circuit breaker state for all registered exchange adapters."""
+    try:
+        from backend.services.exchange_retry import get_all_circuit_breaker_statuses
+        return {"circuit_breakers": get_all_circuit_breaker_statuses()}
+    except Exception as exc:
+        return {"circuit_breakers": [], "error": str(exc)}
 
 @app.get("/guardian/status", dependencies=[Depends(rate_limit.rate_limit)])
 def get_guardian_status_api():

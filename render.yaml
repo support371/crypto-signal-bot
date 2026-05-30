@@ -18,7 +18,7 @@ services:
       - key: EXCHANGE
         value: binance
       - key: PAPER_USE_LIVE_MARKET_DATA
-        value: "false"
+        value: "true"
       - key: MARKET_DATA_PUBLIC_EXCHANGE
         value: binance
       - key: CORS_ORIGINS
