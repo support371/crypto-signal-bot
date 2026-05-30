@@ -38,6 +38,13 @@ def build_public_market_data_service(
     on_status_change: Optional[StatusHandler] = None,
 ):
     selected_exchange = normalize_exchange_name(exchange)
+    if selected_exchange == "coingecko":
+        from backend.logic.coingecko_market_data import CoinGeckoMarketDataService
+        return CoinGeckoMarketDataService(
+            symbols=symbols,
+            on_market_update=on_market_update,
+            on_status_change=on_status_change,
+        )
     service_cls = {
         "binance": BinancePublicMarketDataService,
         "bitget": BitgetPublicMarketDataService,

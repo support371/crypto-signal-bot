@@ -12,9 +12,19 @@ sqlalchemy>=2.0
 aiosqlite
 asyncpg
 
-# Testing (also needed in CI)
+# Production server
+gunicorn
+
+# Redis (rate limiting, kill-switch, pub/sub)
+aioredis>=2.0
+
+# DB migrations
+alembic
+
+# Testing & linting (also needed in CI)
 pytest
 pytest-asyncio
+ruff>=0.4
 
 # Optional: required only when TRADING_MODE=live
 # Install with: pip install ccxt

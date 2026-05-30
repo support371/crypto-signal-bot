@@ -31,6 +31,7 @@ from backend.adapters.exchanges.base import (
     Position,
     Ticker,
 )
+from backend.adapters.exchanges.retry import with_retry, CircuitBreaker
 
 _INTERVAL_MAP = {
     "1m": "1min", "5m": "5min", "15m": "15min",
@@ -61,6 +62,11 @@ class BitgetAdapter(BaseExchangeAdapter):
         self._passphrase = passphrase
         self._base_url   = base_url.rstrip("/")
         self._client: Optional[httpx.AsyncClient] = None
+        self._circuit_breaker = CircuitBreaker(
+            failure_threshold=5,
+            recovery_timeout=60.0,
+            name=f"bitget-{'paper' if paper else 'live'}",
+        )
 
     def _assert_live_credentials(self) -> None:
         """Override to also check for passphrase."""
@@ -91,24 +97,28 @@ class BitgetAdapter(BaseExchangeAdapter):
             )
         return self._client
 
+    @with_retry(max_attempts=3, base_delay=0.5)
     async def _get_public(self, path: str, params: dict | None = None) -> object:
-        client = await self._http()
-        try:
-            resp = await client.get(path, params=params)
-        except httpx.ConnectError as exc:
-            raise AdapterUnavailableError(f"Bitget unreachable: {exc}") from exc
-        if resp.status_code == 429:
-            raise AdapterRateLimitError("Bitget rate limit exceeded.")
-        if not resp.is_success:
-            raise AdapterUnavailableError(f"Bitget HTTP {resp.status_code}")
-        data = resp.json()
-        # Bitget wraps responses in {code, msg, data}
-        if isinstance(data, dict) and data.get("code") not in (None, "00000", 0):
-            msg = data.get("msg", str(data))
-            if "symbol" in msg.lower() or "not found" in msg.lower():
-                raise AdapterSymbolNotFoundError(f"Bitget: {msg}")
-            raise AdapterUnavailableError(f"Bitget API error: {msg}")
-        return data.get("data", data) if isinstance(data, dict) and "data" in data else data
+        async with self._circuit_breaker:
+            client = await self._http()
+            try:
+                resp = await client.get(path, params=params)
+            except httpx.ConnectError as exc:
+                raise AdapterUnavailableError(f"Bitget unreachable: {exc}") from exc
+            except httpx.TimeoutException as exc:
+                raise AdapterUnavailableError(f"Bitget timeout: {exc}") from exc
+            if resp.status_code == 429:
+                raise AdapterRateLimitError("Bitget rate limit exceeded.")
+            if not resp.is_success:
+                raise AdapterUnavailableError(f"Bitget HTTP {resp.status_code}")
+            data = resp.json()
+            # Bitget wraps responses in {code, msg, data}
+            if isinstance(data, dict) and data.get("code") not in (None, "00000", 0):
+                msg = data.get("msg", str(data))
+                if "symbol" in msg.lower() or "not found" in msg.lower():
+                    raise AdapterSymbolNotFoundError(f"Bitget: {msg}")
+                raise AdapterUnavailableError(f"Bitget API error: {msg}")
+            return data.get("data", data) if isinstance(data, dict) and "data" in data else data
 
     async def _get_signed(self, path: str, params: dict | None = None) -> object:
         self._assert_live_credentials()
