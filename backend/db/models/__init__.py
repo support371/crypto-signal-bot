@@ -185,6 +185,29 @@ class ServiceHeartbeat(Base):
     updated_at = Column(BigInteger, default=unix_timestamp, onupdate=unix_timestamp)
 
 
+class SignalRecord(Base):
+    """Persisted signal records — one row per evaluated signal."""
+    __tablename__ = "signals"
+
+    id          = Column(String(64), primary_key=True)
+    symbol      = Column(String(20), nullable=False, index=True)
+    timeframe   = Column(String(8),  nullable=False)
+    side        = Column(String(8),  nullable=False, index=True)  # BUY|SELL|FLAT
+    entry_price = Column(Float, nullable=False)
+    stop_loss   = Column(Float, nullable=True)
+    take_profit = Column(Float, nullable=True)
+    confidence  = Column(Float, nullable=False)
+    strategy_id = Column(String(64), nullable=False)
+    created_at  = Column(BigInteger, default=unix_timestamp, index=True)
+    valid_until = Column(BigInteger, nullable=False)
+    metadata_json = Column(Text, nullable=True)    # JSON blob
+
+    __table_args__ = (
+        Index("ix_signals_symbol_created", "symbol", "created_at"),
+        Index("ix_signals_side_created",   "side",   "created_at"),
+    )
+
+
 __all__ = [
     "Base",
     "unix_timestamp",
@@ -197,5 +220,6 @@ __all__ = [
     "AuditLogRecord",
     "PortfolioStateRecord",
     "ReconciliationReport",
+    "SignalRecord",
     "ServiceHeartbeat",
 ]

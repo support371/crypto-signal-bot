@@ -307,13 +307,15 @@ from backend.routes.compatibility import compatibility_router
 from backend.routes.integrations import integrations_router
 from backend.routes.kill_switch import router as kill_switch_router
 from backend.routes.waitlist import waitlist_router
+from backend.routes.signals_v1 import router as signals_v1_router
+from backend.services.signal_service.service import start_signal_service
 
 # Track already registered paths to avoid duplicates
 # NOTE: price_router excluded — app.py defines /price and /exchange/status
 # with synthetic fallback; the routes/price.py router requires a live
 # MarketDataService and would shadow the synthetic-safe defaults.
 _registered_paths = {getattr(route, "path", None) for route in app.routes}
-for _router in (compatibility_router, integrations_router, waitlist_router, kill_switch_router):
+for _router in (compatibility_router, integrations_router, waitlist_router, kill_switch_router, signals_v1_router):
     _router_paths = {getattr(route, "path", None) for route in _router.routes}
     if not _router_paths.issubset(_registered_paths):
         app.include_router(_router)
@@ -1149,3 +1151,10 @@ async def serve_spa(path: str):
         }
 
     raise HTTPException(status_code=404, detail="Not Found")
+
+
+# Start signal evaluation loop
+try:
+    start_signal_service(app)
+except Exception:
+    pass
