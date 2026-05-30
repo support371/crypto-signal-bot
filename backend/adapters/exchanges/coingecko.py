@@ -206,18 +206,23 @@ class CoinGeckoAdapter(BaseExchangeAdapter):
     async def exchange_status(self) -> ExchangeStatus:
         try:
             data, err = await _fetch_all_cached()
-            connected = bool(data) and err is None
+            # connected=True if we have price data, even if last refresh hit 429
+            # (stale cache is still usable market data)
+            has_data   = bool(data)
+            hard_fail  = err is not None and not has_data
+            connected  = has_data
+            conn_state = "connected" if (has_data and not err) else ("degraded" if has_data else "offline")
             return ExchangeStatus(
                 connected=connected,
                 mode="paper",
                 exchange_name=self.exchange_name,
                 market_data_available=connected,
                 market_data_mode="live_public_paper" if connected else "unavailable",
-                connection_state="connected" if connected else "degraded",
+                connection_state=conn_state,
                 fallback_active=False,
                 stale=not connected,
                 source="https://api.coingecko.com",
-                error=err,
+                error=err if hard_fail else None,
             )
         except Exception as exc:
             return ExchangeStatus(
