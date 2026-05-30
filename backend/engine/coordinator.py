@@ -45,6 +45,7 @@ from backend.services.guardian_bot.service import (
     record_heartbeat,
 )
 from backend.config.loader import get_exchange_config
+from backend.services.signal_service.service import get_cached_signal
 
 log = logging.getLogger(__name__)
 
@@ -60,6 +61,13 @@ class KillSwitchActive(Exception):
 
 class RiskGateDenied(Exception):
     """Execution blocked: risk gate did not approve this intent."""
+    def __init__(self, reason: str):
+        self.reason = reason
+        super().__init__(reason)
+
+
+class SignalGateDenied(Exception):
+    """Execution blocked: live signal contradicts the requested side."""
     def __init__(self, reason: str):
         self.reason = reason
         super().__init__(reason)
@@ -258,6 +266,37 @@ async def execute_intent(intent: ExecutionIntent) -> ExecutionResult:
         )
         await _append_audit_entry(result, reason="kill_switch_active")
         raise KillSwitchActive("Kill switch is active — trading halted")
+
+    # --- 2.5. Signal gate — block when live signal contradicts the side ---
+    signal_rec = get_cached_signal(intent.symbol.upper())
+    if signal_rec is not None:
+        sig_side = signal_rec.side  # "BUY" | "SELL" | "FLAT"
+        intent_side = intent.side.upper()
+        # A FLAT signal or a directly opposing signal blocks execution.
+        # No cached signal (cold start) → pass through (fail open).
+        contradicts = (
+            sig_side == "FLAT"
+            or (intent_side == "BUY"  and sig_side == "SELL")
+            or (intent_side == "SELL" and sig_side == "BUY")
+        )
+        if contradicts:
+            reason = (
+                f"Signal gate: signal={sig_side}, intent={intent_side} "
+                f"(strategy={signal_rec.strategy_id}, "
+                f"confidence={signal_rec.confidence:.2f})"
+            )
+            log.warning("Intent BLOCKED by signal gate: %s %s — %s",
+                        intent.side, intent.symbol, reason)
+            result = ExecutionResult(
+                intent=intent, order_id="", status="RISK_REJECTED",
+                fill_price=None, filled_qty=Decimal("0"),
+                venue="signal_gate", realized_pnl=None, created_at=now,
+                elapsed_ms=int(time.time() * 1000) - t0_ms,
+                error=reason,
+            )
+            await _append_audit_entry(result, reason=reason)
+            await _publish_order_update(result)
+            raise SignalGateDenied(reason)
 
     # --- 3. Risk gate ---
     approved, risk_reason = await _check_risk_approval(intent.symbol, intent.side)

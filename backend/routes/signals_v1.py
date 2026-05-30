@@ -14,6 +14,7 @@ from backend.services.signal_service.service import (
     get_all_cached_signals,
     get_cached_signal,
     get_signal_service_status,
+    evaluate_signal,
 )
 
 router = APIRouter(prefix="/api/v1/signals", tags=["signals_v1"])
@@ -71,4 +72,24 @@ async def signal_for_symbol(symbol: str) -> SignalOut:
     rec = get_cached_signal(symbol.upper())
     if rec is None:
         raise HTTPException(status_code=404, detail=f"No signal cached for {symbol.upper()}")
+    return _to_out(rec)
+
+class EvaluateRequest(BaseModel):
+    symbol: str
+    timeframe: str = "1h"
+
+
+@router.post("/evaluate", response_model=SignalOut,
+             summary="On-demand signal evaluation for a symbol")
+async def evaluate_symbol_now(req: EvaluateRequest) -> SignalOut:
+    """
+    Force an immediate signal evaluation for the requested symbol,
+    bypassing the background eval loop cache.  Useful for the Command
+    Console or any trigger-on-demand workflow.
+    """
+    symbol = req.symbol.upper()
+    try:
+        rec = await evaluate_signal(symbol)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
     return _to_out(rec)
