@@ -23,6 +23,7 @@ from backend.services.audit.service import (
     append_kill_switch_deactivate,
 )
 from backend.logic import context
+from backend.config.loader import get_auth_config  # imported for test-patching
 
 router = APIRouter(tags=["kill-switch"])
 
@@ -30,7 +31,10 @@ router = APIRouter(tags=["kill-switch"])
 def require_operator_key(
     x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
 ) -> None:
-    key = context.BACKEND_API_KEY
+    # Prefer context.BACKEND_API_KEY (set at startup from env) so existing
+    # tests that mutate that module-level var continue to work.
+    # get_auth_config is imported above so test patches on this module resolve.
+    key = context.BACKEND_API_KEY or (get_auth_config().api_key if get_auth_config().auth_enabled else None)
     if not key:
         return
     if not x_api_key or x_api_key != key:
