@@ -53,8 +53,16 @@ from backend.services.guardian_bot.service import (
     deactivate_kill_switch,
     get_guardian_status,
     reset_counters,
+    get_runtime_thresholds,
+    set_runtime_thresholds,
+    reset_runtime_thresholds,
 )
-from backend.services.portfolio.service import get_portfolio_summary
+from backend.services.portfolio.service import (
+    get_portfolio_summary,
+    close_position,
+    close_all_positions,
+    cancel_pending_order,
+)
 from backend.services.signal_service.service import (
     evaluate_signal,
     get_all_cached_signals,
@@ -424,3 +432,149 @@ async def console_guardian_status() -> dict:
         "market": g.market_data,
         "computed_at": g.computed_at,
     }
+
+
+# ---------------------------------------------------------------------------
+# POST /positions/close — force-close a single position
+# ---------------------------------------------------------------------------
+
+class ClosePositionRequest(BaseModel):
+    symbol: str
+
+    @field_validator("symbol")
+    @classmethod
+    def upper_symbol(cls, v: str) -> str:
+        return v.upper()
+
+
+@router.post("/positions/close", summary="Force-close a single open position",
+             dependencies=[Depends(_require_operator)])
+async def console_close_position(body: ClosePositionRequest) -> dict:
+    """
+    Submits a MARKET SELL for the full open lot quantity on the given symbol.
+    Returns 404 if there is no open position for the symbol.
+    """
+    result = await close_position(body.symbol)
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No open position found for {body.symbol}",
+        )
+    log.warning(
+        "[console] Force-close: symbol=%s qty=%.6f order_id=%s",
+        result["symbol"], result["qty_closed"], result["order_id"],
+    )
+    return result
+
+
+# ---------------------------------------------------------------------------
+# POST /positions/close-all — force-close all open positions
+# ---------------------------------------------------------------------------
+
+@router.post("/positions/close-all", summary="Force-close all open positions",
+             dependencies=[Depends(_require_operator)])
+async def console_close_all_positions() -> dict:
+    """
+    Iterates every symbol with open lots and submits a MARKET SELL for each.
+    Returns the list of close results and a count.
+    """
+    results = await close_all_positions()
+    log.warning(
+        "[console] Force-close ALL: %d position(s) closed",
+        len(results),
+    )
+    return {
+        "closed": len(results),
+        "results": results,
+        "ts": int(time.time()),
+    }
+
+
+# ---------------------------------------------------------------------------
+# POST /positions/cancel-order — cancel a pending limit order
+# ---------------------------------------------------------------------------
+
+class CancelOrderRequest(BaseModel):
+    order_id: str
+
+
+@router.post("/positions/cancel-order",
+             summary="Cancel a pending limit order",
+             dependencies=[Depends(_require_operator)])
+async def console_cancel_order(body: CancelOrderRequest) -> dict:
+    cancelled = cancel_pending_order(body.order_id)
+    if not cancelled:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Order {body.order_id} not found or not in PENDING state",
+        )
+    return {"order_id": body.order_id, "cancelled": True, "ts": int(time.time())}
+
+
+# ---------------------------------------------------------------------------
+# POST /guardian/thresholds — update guardian thresholds at runtime
+# ---------------------------------------------------------------------------
+
+class ThresholdUpdateRequest(BaseModel):
+    max_drawdown_pct:   Optional[float] = Field(
+        None, gt=0, le=100, description="Max drawdown % before kill switch fires"
+    )
+    max_daily_loss_pct: Optional[float] = Field(
+        None, gt=0, le=100, description="Max daily loss % before halt"
+    )
+    max_api_errors:     Optional[int]   = Field(
+        None, ge=1, description="Max consecutive API errors before halt"
+    )
+    max_failed_orders:  Optional[int]   = Field(
+        None, ge=1, description="Max failed orders before halt"
+    )
+    reset_to_defaults:  bool = Field(
+        False, description="If True, clear all overrides and revert to config defaults"
+    )
+
+
+@router.post("/guardian/thresholds",
+             summary="Update guardian risk thresholds at runtime",
+             dependencies=[Depends(_require_operator)])
+async def console_update_thresholds(body: ThresholdUpdateRequest) -> dict:
+    """
+    Override one or more guardian thresholds without restarting the service.
+    All thresholds are validated server-side.  Set reset_to_defaults=True to
+    revert all overrides back to config file values.
+    """
+    if body.reset_to_defaults:
+        thresholds = reset_runtime_thresholds()
+        log.warning("[console] Guardian thresholds reset to config defaults")
+        return {"updated": False, "reset": True, "thresholds": thresholds}
+
+    if all(v is None for v in (
+        body.max_drawdown_pct, body.max_daily_loss_pct,
+        body.max_api_errors, body.max_failed_orders,
+    )):
+        raise HTTPException(
+            status_code=422,
+            detail="Provide at least one threshold to update, or set reset_to_defaults=true",
+        )
+
+    try:
+        thresholds = set_runtime_thresholds(
+            max_drawdown_pct=body.max_drawdown_pct,
+            max_daily_loss_pct=body.max_daily_loss_pct,
+            max_api_errors=body.max_api_errors,
+            max_failed_orders=body.max_failed_orders,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    log.warning("[console] Guardian thresholds updated: %s", thresholds)
+    return {"updated": True, "reset": False, "thresholds": thresholds}
+
+
+# ---------------------------------------------------------------------------
+# GET /guardian/thresholds — read current effective thresholds
+# ---------------------------------------------------------------------------
+
+@router.get("/guardian/thresholds",
+            summary="Read current effective guardian thresholds")
+async def console_get_thresholds() -> dict:
+    return get_runtime_thresholds()

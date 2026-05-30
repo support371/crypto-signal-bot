@@ -401,3 +401,269 @@ class TestGuardianStatus:
         for key in ("kill_switch_active", "drawdown_pct", "api_error_count",
                     "thresholds", "computed_at"):
             assert key in data, f"Missing key: {key}"
+
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 helpers
+# ---------------------------------------------------------------------------
+
+_CLOSE_POS   = "backend.routes.console_v1.close_position"
+_CLOSE_ALL   = "backend.routes.console_v1.close_all_positions"
+_CANCEL_ORD  = "backend.routes.console_v1.cancel_pending_order"
+_GET_RT      = "backend.routes.console_v1.get_runtime_thresholds"
+_SET_RT      = "backend.routes.console_v1.set_runtime_thresholds"
+_RESET_RT    = "backend.routes.console_v1.reset_runtime_thresholds"
+
+
+def _close_result(symbol="BTCUSDT", qty=0.1, status="FILLED"):
+    return {
+        "order_id":   str(uuid.uuid4()),
+        "symbol":     symbol,
+        "qty_closed": qty,
+        "status":     status,
+        "created_at": int(time.time()),
+    }
+
+
+def _rt_thresholds(overridden=False):
+    return {
+        "max_drawdown_pct":   10.0,
+        "max_daily_loss_pct": 5.0,
+        "max_api_errors":     10,
+        "max_failed_orders":  5,
+        "overridden":         overridden,
+    }
+
+
+# ---------------------------------------------------------------------------
+# POST /positions/close
+# ---------------------------------------------------------------------------
+
+class TestClosePosition:
+    @pytest.mark.asyncio
+    async def test_closes_open_position(self):
+        with patch(_CLOSE_POS, new_callable=AsyncMock,
+                   return_value=_close_result("BTCUSDT")):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                resp = await c.post(f"{BASE}/positions/close", json={"symbol": "BTCUSDT"})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["symbol"] == "BTCUSDT"
+        assert body["qty_closed"] > 0
+        assert "order_id" in body
+
+    @pytest.mark.asyncio
+    async def test_returns_404_when_no_position(self):
+        with patch(_CLOSE_POS, new_callable=AsyncMock, return_value=None):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                resp = await c.post(f"{BASE}/positions/close", json={"symbol": "ETHUSDT"})
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_symbol_uppercased(self):
+        with patch(_CLOSE_POS, new_callable=AsyncMock,
+                   return_value=_close_result("SOLUSDT")) as mock_fn:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                await c.post(f"{BASE}/positions/close", json={"symbol": "solusdt"})
+        mock_fn.assert_called_once_with("SOLUSDT")
+
+
+# ---------------------------------------------------------------------------
+# POST /positions/close-all
+# ---------------------------------------------------------------------------
+
+class TestCloseAllPositions:
+    @pytest.mark.asyncio
+    async def test_closes_multiple_positions(self):
+        results = [_close_result("BTCUSDT"), _close_result("ETHUSDT")]
+        with patch(_CLOSE_ALL, new_callable=AsyncMock, return_value=results):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                resp = await c.post(f"{BASE}/positions/close-all")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["closed"] == 2
+        assert len(body["results"]) == 2
+        assert "ts" in body
+
+    @pytest.mark.asyncio
+    async def test_returns_zero_when_no_positions(self):
+        with patch(_CLOSE_ALL, new_callable=AsyncMock, return_value=[]):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                resp = await c.post(f"{BASE}/positions/close-all")
+        assert resp.status_code == 200
+        assert resp.json()["closed"] == 0
+
+
+# ---------------------------------------------------------------------------
+# POST /positions/cancel-order
+# ---------------------------------------------------------------------------
+
+class TestCancelOrder:
+    @pytest.mark.asyncio
+    async def test_cancels_pending_order(self):
+        with patch(_CANCEL_ORD, return_value=True):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                resp = await c.post(f"{BASE}/positions/cancel-order",
+                                    json={"order_id": "abc123"})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["cancelled"] is True
+        assert body["order_id"] == "abc123"
+
+    @pytest.mark.asyncio
+    async def test_returns_404_for_unknown_order(self):
+        with patch(_CANCEL_ORD, return_value=False):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                resp = await c.post(f"{BASE}/positions/cancel-order",
+                                    json={"order_id": "nonexistent"})
+        assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# POST /guardian/thresholds
+# ---------------------------------------------------------------------------
+
+class TestUpdateThresholds:
+    @pytest.mark.asyncio
+    async def test_update_single_threshold(self):
+        updated = _rt_thresholds(overridden=True)
+        updated["max_drawdown_pct"] = 7.5
+        with patch(_SET_RT, return_value=updated):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                resp = await c.post(f"{BASE}/guardian/thresholds",
+                                    json={"max_drawdown_pct": 7.5})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["updated"] is True
+        assert body["thresholds"]["max_drawdown_pct"] == 7.5
+
+    @pytest.mark.asyncio
+    async def test_update_multiple_thresholds(self):
+        with patch(_SET_RT, return_value=_rt_thresholds(overridden=True)):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                resp = await c.post(f"{BASE}/guardian/thresholds",
+                                    json={"max_drawdown_pct": 8.0, "max_api_errors": 15})
+        assert resp.status_code == 200
+        assert resp.json()["updated"] is True
+
+    @pytest.mark.asyncio
+    async def test_reset_to_defaults(self):
+        defaults = _rt_thresholds(overridden=False)
+        with patch(_RESET_RT, return_value=defaults):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                resp = await c.post(f"{BASE}/guardian/thresholds",
+                                    json={"reset_to_defaults": True})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["reset"] is True
+        assert body["updated"] is False
+        assert body["thresholds"]["overridden"] is False
+
+    @pytest.mark.asyncio
+    async def test_empty_update_returns_422(self):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.post(f"{BASE}/guardian/thresholds", json={})
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_invalid_drawdown_pct_returns_422(self):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.post(f"{BASE}/guardian/thresholds",
+                                json={"max_drawdown_pct": 150.0})
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_zero_max_api_errors_returns_422(self):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.post(f"{BASE}/guardian/thresholds",
+                                json={"max_api_errors": 0})
+        assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# GET /guardian/thresholds
+# ---------------------------------------------------------------------------
+
+class TestGetThresholds:
+    @pytest.mark.asyncio
+    async def test_returns_threshold_fields(self):
+        with patch(_GET_RT, return_value=_rt_thresholds()):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                resp = await c.get(f"{BASE}/guardian/thresholds")
+        assert resp.status_code == 200
+        body = resp.json()
+        for key in ("max_drawdown_pct", "max_daily_loss_pct",
+                    "max_api_errors", "max_failed_orders", "overridden"):
+            assert key in body
+
+    @pytest.mark.asyncio
+    async def test_overridden_flag_false_by_default(self):
+        with patch(_GET_RT, return_value=_rt_thresholds(overridden=False)):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                resp = await c.get(f"{BASE}/guardian/thresholds")
+        assert resp.json()["overridden"] is False
+
+
+# ---------------------------------------------------------------------------
+# Unit: Guardian runtime threshold functions
+# ---------------------------------------------------------------------------
+
+class TestGuardianRuntimeThresholds:
+    def setup_method(self):
+        import backend.services.guardian_bot.service as svc
+        svc._rt_max_drawdown_pct   = None
+        svc._rt_max_daily_loss_pct = None
+        svc._rt_max_api_errors     = None
+        svc._rt_max_failed_orders  = None
+
+    def test_get_returns_config_defaults_when_no_overrides(self):
+        from backend.services.guardian_bot.service import get_runtime_thresholds
+        t = get_runtime_thresholds()
+        assert t["max_drawdown_pct"] > 0
+        assert t["overridden"] is False
+
+    def test_set_single_override(self):
+        from backend.services.guardian_bot.service import (
+            set_runtime_thresholds, get_runtime_thresholds
+        )
+        set_runtime_thresholds(max_drawdown_pct=7.5)
+        t = get_runtime_thresholds()
+        assert t["max_drawdown_pct"] == 7.5
+        assert t["overridden"] is True
+
+    def test_set_all_overrides(self):
+        from backend.services.guardian_bot.service import (
+            set_runtime_thresholds, get_runtime_thresholds
+        )
+        set_runtime_thresholds(
+            max_drawdown_pct=8.0, max_daily_loss_pct=4.0,
+            max_api_errors=12, max_failed_orders=6,
+        )
+        t = get_runtime_thresholds()
+        assert t["max_drawdown_pct"] == 8.0
+        assert t["max_daily_loss_pct"] == 4.0
+        assert t["max_api_errors"] == 12
+        assert t["max_failed_orders"] == 6
+        assert t["overridden"] is True
+
+    def test_reset_clears_all_overrides(self):
+        from backend.services.guardian_bot.service import (
+            set_runtime_thresholds, reset_runtime_thresholds, get_runtime_thresholds
+        )
+        set_runtime_thresholds(max_drawdown_pct=5.0)
+        reset_runtime_thresholds()
+        t = get_runtime_thresholds()
+        assert t["overridden"] is False
+
+    def test_invalid_drawdown_raises_value_error(self):
+        from backend.services.guardian_bot.service import set_runtime_thresholds
+        with pytest.raises(ValueError):
+            set_runtime_thresholds(max_drawdown_pct=0)
+        with pytest.raises(ValueError):
+            set_runtime_thresholds(max_drawdown_pct=101)
+
+    def test_invalid_api_errors_raises_value_error(self):
+        from backend.services.guardian_bot.service import set_runtime_thresholds
+        with pytest.raises(ValueError):
+            set_runtime_thresholds(max_api_errors=0)

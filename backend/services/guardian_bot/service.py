@@ -100,6 +100,12 @@ _loop_task: Optional[asyncio.Task] = None
 _loop_running: bool = False
 _redis_client = None
 
+# Runtime threshold overrides — None means use config value
+_rt_max_drawdown_pct:   Optional[float] = None
+_rt_max_daily_loss_pct: Optional[float] = None
+_rt_max_api_errors:     Optional[int]   = None
+_rt_max_failed_orders:  Optional[int]   = None
+
 
 async def _get_redis():
     global _redis_client
@@ -381,11 +387,12 @@ async def _check_exchange_health() -> dict:
 
 async def get_guardian_status() -> GuardianStatus:
     cfg = get_risk_config()
+    rt = get_runtime_thresholds()
     thresholds = GuardianThresholds(
-        max_drawdown_pct=cfg.max_drawdown_pct,
-        max_daily_loss_pct=10.0,
-        max_api_errors=cfg.max_api_errors,
-        max_failed_orders=cfg.max_failed_orders,
+        max_drawdown_pct=rt["max_drawdown_pct"],
+        max_daily_loss_pct=rt["max_daily_loss_pct"],
+        max_api_errors=rt["max_api_errors"],
+        max_failed_orders=rt["max_failed_orders"],
     )
     market_data = await _check_exchange_health()
     heartbeat_ok = (
@@ -429,11 +436,12 @@ async def _guardian_loop() -> None:
     while _loop_running:
         try:
             cfg = get_risk_config()
+            rt = get_runtime_thresholds()
             thresholds = GuardianThresholds(
-                max_drawdown_pct=cfg.max_drawdown_pct,
-                max_daily_loss_pct=10.0,
-                max_api_errors=cfg.max_api_errors,
-                max_failed_orders=cfg.max_failed_orders,
+                max_drawdown_pct=rt["max_drawdown_pct"],
+                max_daily_loss_pct=rt["max_daily_loss_pct"],
+                max_api_errors=rt["max_api_errors"],
+                max_failed_orders=rt["max_failed_orders"],
             )
             await _check_heartbeat(thresholds)
         except Exception as exc:
@@ -461,3 +469,80 @@ async def stop_guardian() -> None:
         except asyncio.CancelledError:
             pass
     log.info("[guardian] Stopped cleanly.")
+
+
+# ─────────────────────────────────────────────────────────────────
+# Runtime threshold management (console layer)
+# ─────────────────────────────────────────────────────────────────
+
+def get_runtime_thresholds() -> dict:
+    """
+    Return current effective thresholds — merging config defaults with
+    any operator overrides set via set_runtime_thresholds().
+    """
+    cfg = get_risk_config()
+    return {
+        "max_drawdown_pct":   _rt_max_drawdown_pct   if _rt_max_drawdown_pct   is not None else cfg.max_drawdown_pct,
+        "max_daily_loss_pct": _rt_max_daily_loss_pct if _rt_max_daily_loss_pct is not None else 10.0,
+        "max_api_errors":     _rt_max_api_errors     if _rt_max_api_errors     is not None else cfg.max_api_errors,
+        "max_failed_orders":  _rt_max_failed_orders  if _rt_max_failed_orders  is not None else cfg.max_failed_orders,
+        "overridden": any(v is not None for v in (
+            _rt_max_drawdown_pct, _rt_max_daily_loss_pct,
+            _rt_max_api_errors, _rt_max_failed_orders,
+        )),
+    }
+
+
+def set_runtime_thresholds(
+    max_drawdown_pct:   Optional[float] = None,
+    max_daily_loss_pct: Optional[float] = None,
+    max_api_errors:     Optional[int]   = None,
+    max_failed_orders:  Optional[int]   = None,
+) -> dict:
+    """
+    Override one or more guardian thresholds at runtime.
+    Pass None for a field to leave it unchanged.
+    Returns the new effective thresholds.
+    """
+    global _rt_max_drawdown_pct, _rt_max_daily_loss_pct
+    global _rt_max_api_errors, _rt_max_failed_orders
+
+    if max_drawdown_pct is not None:
+        if max_drawdown_pct <= 0 or max_drawdown_pct > 100:
+            raise ValueError("max_drawdown_pct must be in (0, 100]")
+        _rt_max_drawdown_pct = float(max_drawdown_pct)
+
+    if max_daily_loss_pct is not None:
+        if max_daily_loss_pct <= 0 or max_daily_loss_pct > 100:
+            raise ValueError("max_daily_loss_pct must be in (0, 100]")
+        _rt_max_daily_loss_pct = float(max_daily_loss_pct)
+
+    if max_api_errors is not None:
+        if max_api_errors < 1:
+            raise ValueError("max_api_errors must be >= 1")
+        _rt_max_api_errors = int(max_api_errors)
+
+    if max_failed_orders is not None:
+        if max_failed_orders < 1:
+            raise ValueError("max_failed_orders must be >= 1")
+        _rt_max_failed_orders = int(max_failed_orders)
+
+    log.info(
+        "[guardian] Runtime thresholds updated: drawdown=%.1f%% daily_loss=%.1f%% "
+        "api_errors=%s failed_orders=%s",
+        _rt_max_drawdown_pct or -1, _rt_max_daily_loss_pct or -1,
+        _rt_max_api_errors, _rt_max_failed_orders,
+    )
+    return get_runtime_thresholds()
+
+
+def reset_runtime_thresholds() -> dict:
+    """Clear all runtime overrides — revert to config defaults."""
+    global _rt_max_drawdown_pct, _rt_max_daily_loss_pct
+    global _rt_max_api_errors, _rt_max_failed_orders
+    _rt_max_drawdown_pct = None
+    _rt_max_daily_loss_pct = None
+    _rt_max_api_errors = None
+    _rt_max_failed_orders = None
+    log.info("[guardian] Runtime thresholds cleared — reverted to config defaults")
+    return get_runtime_thresholds()

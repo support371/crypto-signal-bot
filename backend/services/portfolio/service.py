@@ -766,3 +766,64 @@ async def _upsert_daily_pnl(row: dict) -> None:
             await session.commit()
     except Exception as exc:
         log.debug("daily_pnl upsert error (non-fatal): %s", exc)
+
+
+# ─────────────────────────────────────────────────────────────────
+# Force-close helpers (console layer)
+# ─────────────────────────────────────────────────────────────────
+
+async def close_position(symbol: str) -> Optional[dict]:
+    """
+    Force-close an open position for `symbol` by submitting a MARKET SELL
+    for the full lot quantity.  Returns the resulting order dict, or None
+    if there is no open position to close.
+    """
+    sym = symbol.upper()
+    lots = _lots.get(sym, [])
+    if not lots:
+        return None
+
+    total_qty = float(sum(l.qty for l in lots))
+    order = await submit_order(
+        symbol=sym, side="SELL", order_type="MARKET", qty=total_qty,
+    )
+    return {
+        "order_id":   order.id,
+        "symbol":     sym,
+        "qty_closed": total_qty,
+        "status":     order.status,
+        "created_at": order.created_at,
+    }
+
+
+async def close_all_positions() -> List[dict]:
+    """
+    Force-close every open position.  Returns a list of close results.
+    """
+    symbols_with_lots = [s for s, lots in _lots.items() if lots]
+    results = []
+    for sym in symbols_with_lots:
+        result = await close_position(sym)
+        if result:
+            results.append(result)
+    return results
+
+
+def cancel_pending_order(order_id: str) -> bool:
+    """
+    Cancel a PENDING limit order.  Returns True if cancelled, False if
+    the order was not found or was not in PENDING state.
+    """
+    order = _orders.get(order_id)
+    if not order or order.status != "PENDING":
+        return False
+    order.status = "CANCELLED"
+    order.updated_at = int(time.time())
+    import asyncio as _asyncio
+    try:
+        loop = _asyncio.get_event_loop()
+        if loop.is_running():
+            _asyncio.ensure_future(_persist_order(order))
+    except Exception:
+        pass
+    return True
