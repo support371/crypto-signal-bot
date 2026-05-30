@@ -46,6 +46,8 @@ from backend.services.guardian_bot.service import (
 )
 from backend.config.loader import get_exchange_config
 from backend.services.signal_service.service import get_cached_signal
+from backend.engine.signal_override import consume_override as _is_signal_overridden
+
 
 log = logging.getLogger(__name__)
 
@@ -280,23 +282,30 @@ async def execute_intent(intent: ExecutionIntent) -> ExecutionResult:
             or (intent_side == "SELL" and sig_side == "BUY")
         )
         if contradicts:
-            reason = (
-                f"Signal gate: signal={sig_side}, intent={intent_side} "
-                f"(strategy={signal_rec.strategy_id}, "
-                f"confidence={signal_rec.confidence:.2f})"
-            )
-            log.warning("Intent BLOCKED by signal gate: %s %s — %s",
-                        intent.side, intent.symbol, reason)
-            result = ExecutionResult(
-                intent=intent, order_id="", status="RISK_REJECTED",
-                fill_price=None, filled_qty=Decimal("0"),
-                venue="signal_gate", realized_pnl=None, created_at=now,
-                elapsed_ms=int(time.time() * 1000) - t0_ms,
-                error=reason,
-            )
-            await _append_audit_entry(result, reason=reason)
-            await _publish_order_update(result)
-            raise SignalGateDenied(reason)
+            # Check for operator console one-shot override before blocking
+            if _is_signal_overridden(intent.symbol.upper()):
+                log.info(
+                    "Signal gate BYPASSED via console override: %s %s (signal=%s)",
+                    intent.side, intent.symbol, sig_side,
+                )
+            else:
+                reason = (
+                    f"Signal gate: signal={sig_side}, intent={intent_side} "
+                    f"(strategy={signal_rec.strategy_id}, "
+                    f"confidence={signal_rec.confidence:.2f})"
+                )
+                log.warning("Intent BLOCKED by signal gate: %s %s — %s",
+                            intent.side, intent.symbol, reason)
+                result = ExecutionResult(
+                    intent=intent, order_id="", status="RISK_REJECTED",
+                    fill_price=None, filled_qty=Decimal("0"),
+                    venue="signal_gate", realized_pnl=None, created_at=now,
+                    elapsed_ms=int(time.time() * 1000) - t0_ms,
+                    error=reason,
+                )
+                await _append_audit_entry(result, reason=reason)
+                await _publish_order_update(result)
+                raise SignalGateDenied(reason)
 
     # --- 3. Risk gate ---
     approved, risk_reason = await _check_risk_approval(intent.symbol, intent.side)

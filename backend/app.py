@@ -312,6 +312,7 @@ from backend.services.signal_service.service import start_signal_service
 from backend.routes.portfolio_v1 import router as portfolio_v1_router
 from backend.services.portfolio.service import start_portfolio_service
 from backend.routes.risk_v1 import router as risk_v1_router
+from backend.routes.console_v1 import router as console_v1_router
 from backend.services.guardian_bot.monitor import start_guardian_monitor
 
 # Track already registered paths to avoid duplicates
@@ -319,7 +320,7 @@ from backend.services.guardian_bot.monitor import start_guardian_monitor
 # with synthetic fallback; the routes/price.py router requires a live
 # MarketDataService and would shadow the synthetic-safe defaults.
 _registered_paths = {getattr(route, "path", None) for route in app.routes}
-for _router in (compatibility_router, integrations_router, waitlist_router, kill_switch_router, signals_v1_router, portfolio_v1_router, risk_v1_router):
+for _router in (compatibility_router, integrations_router, waitlist_router, kill_switch_router, signals_v1_router, portfolio_v1_router, risk_v1_router, console_v1_router):
     _router_paths = {getattr(route, "path", None) for route in _router.routes}
     if not _router_paths.issubset(_registered_paths):
         app.include_router(_router)
