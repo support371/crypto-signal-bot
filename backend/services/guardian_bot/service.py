@@ -37,6 +37,7 @@ from dataclasses import dataclass
 from typing import Iterable, Optional
 
 from backend.config.loader import get_redis_config, get_risk_config
+from backend.logic import context
 
 log = logging.getLogger(__name__)
 
@@ -343,15 +344,18 @@ async def get_guardian_status() -> GuardianStatus:
         _last_heartbeat_at is not None
         and (int(time.time()) - _last_heartbeat_at) < thresholds.heartbeat_timeout_s
     )
+    # Read from context.* (the live state updated by app.py) for fields
+    # that the main app flow maintains, falling back to service-local vars
+    # for fields only the guardian service manages.
     return GuardianStatus(
-        kill_switch_active=_kill_switch_active,
-        triggered=_triggered,
-        kill_switch_reason=_kill_switch_reason,
-        trigger_reason=_trigger_reason,
-        drawdown_pct=_drawdown_pct,
+        kill_switch_active=context.kill_switch_active,
+        triggered=context.guardian_triggered,
+        kill_switch_reason=context.kill_switch_reason,
+        trigger_reason=context.guardian_trigger_reason,
+        drawdown_pct=context.guardian_drawdown_pct,
         daily_loss_pct=_daily_loss_pct,
-        api_error_count=_api_error_count,
-        failed_order_count=_failed_order_count,
+        api_error_count=context.api_error_count,
+        failed_order_count=context.failed_order_count,
         thresholds=thresholds,
         market_data=market_data,
         last_heartbeat_at=_last_heartbeat_at,
