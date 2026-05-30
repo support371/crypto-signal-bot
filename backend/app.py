@@ -84,9 +84,11 @@ RUNTIME_CONFIG = get_runtime_config()
 TRADING_MODE = RUNTIME_CONFIG.trading_mode
 NETWORK = RUNTIME_CONFIG.network
 EXCHANGE = RUNTIME_CONFIG.exchange
-MARKET_DATA_PUBLIC_EXCHANGE = (
-    RUNTIME_CONFIG.market_data_public_exchange or RUNTIME_CONFIG.exchange
-)
+# Use CoinGecko as the public market data source.
+# Binance returns HTTP 451 (geo-blocked) on Render's servers.
+# CoinGecko is free, global, no credentials required.
+_mde_env = os.getenv("MARKET_DATA_PUBLIC_EXCHANGE", "coingecko").strip().lower()
+MARKET_DATA_PUBLIC_EXCHANGE = _mde_env if _mde_env else "coingecko"
 BACKEND_API_KEY = RUNTIME_CONFIG.backend_api_key
 # Force live market data in paper mode — Binance public REST is always available.
 # The PAPER_USE_LIVE_MARKET_DATA env var is honoured only if explicitly set to "false".

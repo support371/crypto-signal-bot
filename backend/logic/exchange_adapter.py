@@ -17,7 +17,7 @@ logger = logging.getLogger("backend.exchange_adapter")
 
 from backend.engine.mainnet_gate import MainnetGateError, assert_not_mainnet
 
-SUPPORTED_EXCHANGES = {"binance", "bitget", "btcc"}
+SUPPORTED_EXCHANGES = {"binance", "bitget", "btcc", "coingecko"}
 _CREDENTIAL_ENV_MAP = {
     "binance": ("BINANCE_API_KEY", "BINANCE_API_SECRET", None),
     "bitget": ("BITGET_API_KEY", "BITGET_API_SECRET", "BITGET_API_PASSPHRASE"),

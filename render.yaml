@@ -20,7 +20,7 @@ services:
       - key: PAPER_USE_LIVE_MARKET_DATA
         value: "true"
       - key: MARKET_DATA_PUBLIC_EXCHANGE
-        value: binance
+        value: coingecko
       - key: CORS_ORIGINS
         value: https://crypto-signal-bot-indol.vercel.app,https://crypto-signal-bot-admin-25521151s-projects.vercel.app,http://localhost:5173,http://localhost:8080,http://localhost:3000,https://*.base44.app,https://app.base44.com,https://*.onrender.com
       - key: EVENT_LOG_ENABLED
