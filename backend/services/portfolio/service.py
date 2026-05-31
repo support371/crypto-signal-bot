@@ -365,8 +365,9 @@ async def get_portfolio_summary(account_id: str = _DEFAULT_ACCOUNT_ID) -> dict:
             mark, unrealized = Decimal("0"), Decimal("0")
 
         realized = sum(
-            t.realized_pnl for t in _trades
-            if t.symbol == symbol and t.realized_pnl is not None
+            (t.realized_pnl for t in _trades
+             if t.symbol == symbol and t.realized_pnl is not None),
+            Decimal("0"),
         )
         positions.append({
             "symbol":          symbol,

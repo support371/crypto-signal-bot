@@ -170,3 +170,52 @@ async def guardian_thresholds() -> dict:
         "volatility_threshold_pct": 15.0,
         "fee_rate_pct":           0.10,
     }
+
+
+# ---------------------------------------------------------------------------
+# Paper Portfolio Reset
+# ---------------------------------------------------------------------------
+
+class PaperResetOut(BaseModel):
+    reset: bool
+    starting_cash: float
+    reason: str
+
+class PaperResetRequest(BaseModel):
+    reason: Optional[str] = None
+    starting_cash: float = 10000.0
+
+
+@router.post("/paper/reset",
+             summary="Reset paper portfolio to starting state",
+             response_model=PaperResetOut)
+async def paper_reset(body: PaperResetRequest) -> PaperResetOut:
+    """
+    Wipes all paper positions, orders, trades and resets cash to
+    starting_cash (default $10 000). Also resets guardian counters
+    and deactivates the kill switch if active.
+    """
+    from decimal import Decimal
+    from backend.services.portfolio.service import reset_portfolio
+    from backend.services.guardian_bot.service import reset_counters, deactivate_kill_switch, get_guardian_status
+    from backend.services.signal_executor.service import _last_acted
+
+    reason = body.reason or "Paper portfolio manual reset"
+
+    # 1) reset portfolio in-memory state
+    reset_portfolio(starting_cash=Decimal(str(body.starting_cash)))
+
+    # 2) reset guardian
+    reset_counters()
+    status = await get_guardian_status()
+    if status.kill_switch_active:
+        await deactivate_kill_switch(reason=reason)
+
+    # 3) clear executor last-acted cache so it re-evaluates all signals
+    _last_acted.clear()
+
+    return PaperResetOut(
+        reset=True,
+        starting_cash=body.starting_cash,
+        reason=reason,
+    )
