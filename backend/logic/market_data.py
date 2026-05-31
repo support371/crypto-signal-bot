@@ -181,6 +181,23 @@ class BasePublicMarketDataService(ABC):
             )
 
     async def _poll_once(self) -> None:
+        """
+        Poll market data for all symbols.
+
+        Optimization: Consolidates N sequential REST calls into a single batch request,
+        reducing network round-trips from O(N) to O(1) and lowering API weight usage.
+        """
+        # Try batch fetch first
+        try:
+            batch_payloads = await self._fetch_rest_tickers_batch(self.symbols)
+            if batch_payloads:
+                for payload in batch_payloads:
+                    await self._handle_ticker_payload(payload, source=self.rest_source)
+                return
+        except Exception as exc:
+            logger.debug("%s batch poll failed, falling back to sequential: %s", self.exchange, exc)
+
+        # Fallback to sequential polling
         for symbol in self.symbols:
             payload = await self._fetch_rest_ticker(symbol)
             await self._handle_ticker_payload(payload, source=self.rest_source)
@@ -259,6 +276,13 @@ class BasePublicMarketDataService(ABC):
     async def _fetch_rest_ticker(self, symbol: str) -> Dict[str, Any]:
         pass
 
+    async def _fetch_rest_tickers_batch(self, symbols: list[str]) -> list[Dict[str, Any]]:
+        """
+        Optional: Fetch multiple tickers in one request.
+        Subclasses should override this if the exchange supports batching.
+        """
+        return []
+
     async def _run_websocket(self) -> None:
         raise RuntimeError(f"{self.exchange} websocket feed is not supported")
 
@@ -303,8 +327,20 @@ class BinancePublicMarketDataService(BasePublicMarketDataService):
             f"{self._rest_base_url}/api/v3/ticker/24hr",
             params={"symbol": symbol},
         )
+        return self._parse_binance_ticker(payload, symbol)
+
+    async def _fetch_rest_tickers_batch(self, symbols: list[str]) -> list[Dict[str, Any]]:
+        if not symbols:
+            return []
+        payloads = await self._http_get_json(
+            f"{self._rest_base_url}/api/v3/ticker/24hr",
+            params={"symbols": json.dumps(symbols)},
+        )
+        return [self._parse_binance_ticker(p, p.get("symbol")) for p in payloads]
+
+    def _parse_binance_ticker(self, payload: Dict[str, Any], symbol: Optional[str]) -> Dict[str, Any]:
         return {
-            "symbol": str(payload.get("s", symbol)).upper(),
+            "symbol": str(payload.get("s", symbol or "")).upper(),
             "price": float(payload.get("c") or payload.get("lastPrice") or 0.0),
             "change24h": float(payload.get("P") or payload.get("priceChangePercent") or 0.0),
             "volume24h": float(payload.get("q") or payload.get("quoteVolume") or 0.0),
@@ -385,6 +421,22 @@ class BitgetPublicMarketDataService(BasePublicMarketDataService):
         )
         data = payload.get("data") or []
         item = data[0] if data else {}
+        return self._parse_bitget_ticker(item, symbol)
+
+    async def _fetch_rest_tickers_batch(self, symbols: list[str]) -> list[Dict[str, Any]]:
+        # Bitget's /tickers returns all tickers if no symbol is provided.
+        # We can then filter for our tracked symbols.
+        payload = await self._http_get_json(f"{self._rest_base_url}/api/v2/spot/market/tickers")
+        data = payload.get("data") or []
+        tracked = set(symbols)
+        results = []
+        for item in data:
+            sym = str(item.get("symbol") or item.get("instId") or "").upper()
+            if sym in tracked:
+                results.append(self._parse_bitget_ticker(item, sym))
+        return results
+
+    def _parse_bitget_ticker(self, item: Dict[str, Any], symbol: str) -> Dict[str, Any]:
         open24h = _safe_float(item.get("open24h"))
         last_price = _safe_float(item.get("lastPr"))
         change_pct = _safe_float(item.get("change24h"))
@@ -487,6 +539,18 @@ class BTCCPublicMarketDataService(BasePublicMarketDataService):
         item = data[0] if isinstance(data, list) and data else data
         if not isinstance(item, dict):
             item = {}
+        return self._parse_btcc_ticker(item, symbol)
+
+    async def _fetch_rest_tickers_batch(self, symbols: list[str]) -> list[Dict[str, Any]]:
+        # BTCC /ticker with no symbol returns all symbols.
+        payload = await self._http_get_json(f"{self._rest_base_url}/v1/market/ticker")
+        data = payload.get("data") or payload.get("result") or payload
+        if not isinstance(data, list):
+            return []
+        tracked = set(symbols)
+        return [self._parse_btcc_ticker(item, item.get("symbol", "")) for item in data if item.get("symbol", "").upper() in tracked]
+
+    def _parse_btcc_ticker(self, item: Dict[str, Any], symbol: str) -> Dict[str, Any]:
         return {
             "symbol": str(item.get("symbol") or item.get("s") or symbol).upper(),
             "price": _safe_float(item.get("last") or item.get("lastPrice") or item.get("c")),

@@ -164,16 +164,20 @@ class CoinGeckoAdapter(BaseExchangeAdapter):
         change24h = float(entry.get("usd_24h_change", 0))
         volume24h = float(entry.get("usd_24h_vol",    0))
 
-        spread = price * 0.0005
+        spread_val = Decimal(str(price * 0.0005))
+        price_dec = Decimal(str(price))
+        bid_dec = price_dec - spread_val
+        ask_dec = price_dec + spread_val
+
         return Ticker(
             symbol=symbol.upper(),
-            bid=Decimal(str(round(price - spread, 8))),
-            ask=Decimal(str(round(price + spread, 8))),
-            last=Decimal(str(price)),
-            volume=Decimal(str(round(volume24h, 2))),
-            change_24h=Decimal(str(round(change24h, 6))),
-            timestamp=time.time(),
-            exchange=self.exchange_name,
+            price=price_dec,
+            bid=bid_dec,
+            ask=ask_dec,
+            spread=spread_val * 2,
+            change24h=float(change24h),
+            volume24h=Decimal(str(round(volume24h, 2))),
+            timestamp=int(time.time()),
         )
 
     # ------------------------------------------------------------------
@@ -187,15 +191,15 @@ class CoinGeckoAdapter(BaseExchangeAdapter):
         limit:    int = 50,
     ) -> List[OhlcvCandle]:
         ticker = await self.fetch_ticker(symbol)
-        price  = float(ticker.last)
-        now    = time.time()
+        price  = float(ticker.price)
+        now    = int(time.time())
         candle = OhlcvCandle(
-            timestamp=now,
-            open=price,
-            high=price * 1.001,
-            low=price  * 0.999,
-            close=price,
-            volume=float(ticker.volume),
+            time=now,
+            open=Decimal(str(price)),
+            high=Decimal(str(price * 1.001)),
+            low=Decimal(str(price * 0.999)),
+            close=Decimal(str(price)),
+            volume=ticker.volume24h,
         )
         return [candle] * min(limit, 50)
 
