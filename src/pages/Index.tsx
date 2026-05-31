@@ -107,7 +107,7 @@ const Index = () => {
   const {
     status: consoleStatus, isLoading: consoleLoading, refetch: refetchConsole,
     submitTrade, toggleKillSwitch, setSignalOverride, cancelSignalOverride,
-    reEvalSignals, resetGuardian,
+    reEvalSignals, resetGuardian, resetPortfolio,
   } = useConsole();
   const { status: monitorStatus, isLoading: monitorLoading, runNow, refetch: refetchMonitor } = useMonitoring();
   const { metrics, isLoading: metricsLoading, error: metricsError, refetch: refetchMetrics } = useBackendMetrics();
@@ -433,6 +433,7 @@ const Index = () => {
             onCancelSignalOverride={cancelSignalOverride}
             onReEvalSignals={reEvalSignals}
             onResetGuardian={resetGuardian}
+            onResetPortfolio={resetPortfolio}
             onRefetch={refetchConsole}
           />
           <MonitoringPanel
