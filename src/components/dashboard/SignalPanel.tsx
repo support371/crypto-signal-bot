@@ -1,4 +1,6 @@
 import { Signal } from '@/types/crypto';
+import { useState } from 'react';
+import { IndicatorToggles, type IndicatorState } from '@/components/dashboard/IndicatorToggles';
 import { ArrowUp, ArrowDown, Circle, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Progress } from '@/components/ui/progress';
@@ -9,6 +11,16 @@ interface SignalPanelProps {
 }
 
 export function SignalPanel({ signal, isLoading }: SignalPanelProps) {
+  const [indicators, setIndicators] = useState<IndicatorState>({
+    rsi: true,
+    macd: true,
+    bollinger: false,
+  });
+
+  const handleToggle = (key: keyof IndicatorState) => {
+    setIndicators(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
   if (isLoading) {
     return (
       <div className="cyber-card p-6 animate-pulse">
@@ -99,6 +111,12 @@ export function SignalPanel({ signal, isLoading }: SignalPanelProps) {
               {signal?.horizon ?? 0}m
             </div>
           </div>
+        </div>
+
+        {/* Indicator Toggles */}
+        <div className="pt-3 border-t border-border/50 space-y-2">
+          <div className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Active Indicators</div>
+          <IndicatorToggles indicators={indicators} onToggle={handleToggle} />
         </div>
       </div>
     </div>

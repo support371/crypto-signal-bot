@@ -23,6 +23,7 @@ interface CommandConsolePanelProps {
   onCancelSignalOverride: (symbol: string) => Promise<unknown>;
   onReEvalSignals: (symbol?: string) => Promise<unknown>;
   onResetGuardian: () => Promise<unknown>;
+  onResetPortfolio: () => Promise<unknown>;
   onRefetch: () => void;
 }
 
@@ -37,6 +38,7 @@ export function CommandConsolePanel({
   onCancelSignalOverride,
   onReEvalSignals,
   onResetGuardian,
+  onResetPortfolio,
   onRefetch,
 }: CommandConsolePanelProps) {
   const [activeAction, setActiveAction] = useState<ActiveAction>(null);
@@ -432,20 +434,45 @@ export function CommandConsolePanel({
         </div>
       )}
 
-      {/* Guardian reset */}
-      <div className="pt-1 border-t border-border flex justify-between items-center">
-        <span className="text-[10px] font-mono text-muted-foreground">
-          {status ? `${status.portfolio.trade_count} trades · ${status.portfolio.win_rate?.toFixed(1)}% WR` : '—'}
-        </span>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 text-[10px] font-mono text-muted-foreground hover:text-destructive"
-          onClick={handleResetGuardian}
-          disabled={busy}
-        >
-          <RotateCcw className="w-3 h-3 mr-1" />RESET GUARDIAN
-        </Button>
+      {/* Footer: Guardian + Portfolio reset */}
+      <div className="pt-1 border-t border-border space-y-1">
+        <div className="flex justify-between items-center">
+          <span className="text-[10px] font-mono text-muted-foreground">
+            {status ? `${status.portfolio.trade_count} trades · ${status.portfolio.win_rate != null ? status.portfolio.win_rate.toFixed(1) : '—'}% WR` : '—'}
+          </span>
+          <div className="flex gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 text-[10px] font-mono text-muted-foreground hover:text-amber-400"
+              onClick={handleResetGuardian}
+              disabled={busy}
+              title="Reset guardian error counters only"
+            >
+              <RotateCcw className="w-3 h-3 mr-1" />RESET GUARDIAN
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 text-[10px] font-mono text-muted-foreground hover:text-destructive"
+              onClick={async () => {
+                if (!window.confirm('Hard reset paper portfolio to $10,000? All positions and trades will be cleared.')) return;
+                setBusy(true);
+                try {
+                  await onResetPortfolio();
+                  toast.success('Portfolio reset to $10,000');
+                  onRefetch();
+                } catch (err: unknown) {
+                  toast.error((err as { message?: string })?.message ?? 'Reset failed');
+                } finally { setBusy(false); }
+              }}
+              disabled={busy}
+              title="Hard reset paper portfolio to $10,000"
+            >
+              <RotateCcw className="w-3 h-3 mr-1" />RESET PORTFOLIO
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );

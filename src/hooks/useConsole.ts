@@ -111,6 +111,14 @@ export function useConsole(pollIntervalMs = 10_000) {
     });
   }, []);
 
+  const resetPortfolio = useCallback(async (startingCash = 10000) => {
+    return fetchBackendJson('/api/v1/console/portfolio/reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm: true, starting_cash: startingCash }),
+    });
+  }, []);
+
   useEffect(() => {
     fetchStatus();
     const id = window.setInterval(fetchStatus, pollIntervalMs);
@@ -126,5 +134,6 @@ export function useConsole(pollIntervalMs = 10_000) {
     cancelSignalOverride,
     reEvalSignals,
     resetGuardian,
+    resetPortfolio,
   };
 }

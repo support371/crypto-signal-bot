@@ -3,8 +3,8 @@
 Guardian Monitor — background loop bridging Portfolio → Guardian.
 
 Every MONITOR_INTERVAL seconds:
-  1. Read equity/peak from portfolio (cash-only, no live price call)
-  2. Compute drawdown → feed update_drawdown() → auto kill-switch if breached
+  1. Read total equity (cash + unrealized P&L) from portfolio service
+  2. Compute drawdown vs peak_equity → feed update_drawdown() → auto kill-switch if breached
   3. Compute today's realized loss → feed update_daily_loss()
   4. Record heartbeat
 """
@@ -29,9 +29,11 @@ async def _monitor_loop() -> None:
     while True:
         await asyncio.sleep(MONITOR_INTERVAL)
         try:
-            cash  = port_svc._cash
-            peak  = port_svc._peak_equity
-            dd    = float((peak - cash) / peak * 100) if float(peak) > 0 else 0.0
+            # Use full equity (cash + unrealized P&L), not just cash.
+            # This prevents false drawdown triggers when capital is deployed into positions.
+            equity = await port_svc._compute_equity()
+            peak   = port_svc._peak_equity
+            dd     = float((peak - equity) / peak * 100) if float(peak) > 0 else 0.0
 
             now       = int(time.time())
             day_start = now - (now % 86400)
@@ -46,7 +48,8 @@ async def _monitor_loop() -> None:
             await update_daily_loss(daily_loss_pct)
             record_heartbeat()
 
-            log.debug("[guardian_monitor] dd=%.2f%% daily_loss=%.2f%%", dd, daily_loss_pct)
+            log.debug("[guardian_monitor] equity=%.2f peak=%.2f dd=%.2f%% daily_loss=%.2f%%",
+                      equity, peak, dd, daily_loss_pct)
         except Exception as exc:
             log.warning("[guardian_monitor] error: %s", exc)
 

@@ -585,3 +585,48 @@ async def console_update_thresholds(body: ThresholdUpdateRequest) -> dict:
             summary="Read current effective guardian thresholds")
 async def console_get_thresholds() -> dict:
     return get_runtime_thresholds()
+
+
+# ---------------------------------------------------------------------------
+# POST /portfolio/reset — Hard reset paper portfolio to starting cash
+# ---------------------------------------------------------------------------
+
+class PortfolioResetRequest(BaseModel):
+    confirm: bool = Field(..., description="Must be True to proceed")
+    starting_cash: float = Field(default=10000.0, ge=100.0, le=1000000.0)
+
+
+@router.post("/portfolio/reset", summary="Reset paper portfolio to starting cash",
+             dependencies=[Depends(_require_operator)])
+async def console_portfolio_reset(body: PortfolioResetRequest) -> dict:
+    """
+    Hard resets the paper portfolio: zeroes all positions, restores cash,
+    resets guardian drawdown counters, and clears executor last-acted state.
+    """
+    if not body.confirm:
+        raise HTTPException(status_code=400, detail="Set confirm=true to reset the portfolio")
+
+    from decimal import Decimal
+    from backend.services.portfolio.service import reset_portfolio
+    from backend.services.guardian_bot.service import deactivate_kill_switch, reset_counters
+
+    # 1. Reset portfolio
+    reset_portfolio(Decimal(str(body.starting_cash)))
+
+    # 2. Deactivate kill switch & reset guardian counters
+    await deactivate_kill_switch("Portfolio reset by operator")
+    reset_counters()
+
+    # 3. Clear executor state so it re-evaluates all symbols cleanly
+    try:
+        from backend.services.signal_executor.service import _last_acted
+        _last_acted.clear()
+    except Exception:
+        pass
+
+    log.warning("[console] Portfolio reset to $%.2f by operator", body.starting_cash)
+    return {
+        "reset": True,
+        "starting_cash": body.starting_cash,
+        "ts": int(time.time()),
+    }
