@@ -106,9 +106,20 @@ async def _close_position(symbol: str, qty: float) -> None:
 
 async def _open_position(symbol: str, side: str, equity: float) -> None:
     try:
-        from backend.services.market_data.service import get_price
-        snap = await get_price(symbol)
-        price = float(snap.price)
+        from backend.services.market_data.service import get_price, MarketDataStale
+        try:
+            snap = await get_price(symbol)
+            price = float(snap.price)
+        except MarketDataStale as stale_exc:
+            # CoinGecko rate-limited — use the stale cached price for paper trading.
+            # A few-minute-old price is perfectly acceptable for paper order sizing.
+            if stale_exc.stale_ticker and stale_exc.stale_ticker.price > 0:
+                price = float(stale_exc.stale_ticker.price)
+                log.info("[executor] using stale price for %s: %.4f (%s)",
+                         symbol, price, stale_exc.reason)
+            else:
+                log.warning("[executor] stale price unavailable for %s: %s", symbol, stale_exc)
+                return
         if price <= 0:
             return
     except Exception as exc:
