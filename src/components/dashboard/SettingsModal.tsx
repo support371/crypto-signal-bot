@@ -9,9 +9,10 @@ import {
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { Settings, Shield, Activity, Wallet, Volume2 } from 'lucide-react';
+import { Settings, Shield, Activity, Wallet, Volume2, KeyRound } from 'lucide-react';
 import { DEFAULT_SETTINGS } from '@/components/dashboard/settingsDefaults';
 
 export interface UserSettings {
@@ -21,6 +22,7 @@ export interface UserSettings {
   spreadStressThreshold: number;
   autoTradeEnabled: boolean;
   soundAlertsEnabled: boolean;
+  operatorApiKey: string;
 }
 
 interface SettingsModalProps {
@@ -45,7 +47,10 @@ export function SettingsModal({
   }, [settings]);
 
   const handleSave = () => {
-    onSettingsChange(localSettings);
+    onSettingsChange({
+      ...localSettings,
+      operatorApiKey: localSettings.operatorApiKey.trim(),
+    });
     onOpenChange(false);
   };
 
@@ -74,7 +79,7 @@ export function SettingsModal({
             Risk Agent Settings
           </DialogTitle>
           <DialogDescription className="text-muted-foreground">
-            Configure your trading parameters and risk preferences
+            Configure your trading parameters, risk preferences, and operator access
           </DialogDescription>
         </DialogHeader>
 
@@ -202,6 +207,40 @@ export function SettingsModal({
               <p className="text-xs text-muted-foreground">
                 Spread percentage above which stress is flagged
               </p>
+            </div>
+          </div>
+
+          <Separator className="bg-border" />
+
+          {/* Operator Access */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <KeyRound className="w-4 h-4 text-primary" />
+              <Label className="text-sm font-semibold">Operator API Key</Label>
+            </div>
+            <div className="space-y-2 pl-6">
+              <Input
+                type="password"
+                value={localSettings.operatorApiKey}
+                onChange={event => setLocalSettings(s => ({ ...s, operatorApiKey: event.target.value }))}
+                placeholder="Enter backend X-API-Key"
+                autoComplete="current-password"
+                className="font-mono text-xs"
+              />
+              <p className="text-xs text-muted-foreground">
+                Used only by this browser to unlock protected operator actions when backend auth is enabled.
+              </p>
+              {localSettings.operatorApiKey && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs font-mono text-muted-foreground hover:text-destructive"
+                  onClick={() => setLocalSettings(s => ({ ...s, operatorApiKey: '' }))}
+                >
+                  Clear operator key
+                </Button>
+              )}
             </div>
           </div>
 
