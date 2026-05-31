@@ -68,8 +68,9 @@ async def _get_equity() -> float:
 async def _get_open_positions() -> list:
     """Return list of open positions [{symbol, qty}]."""
     try:
-        from backend.services.portfolio.service import get_positions
-        return await get_positions()
+        from backend.services.portfolio.service import get_portfolio_summary
+        summary = await get_portfolio_summary()
+        return summary.get("open_positions", [])
     except Exception:
         return []
 
@@ -198,7 +199,7 @@ async def _executor_loop() -> None:
                 try:
                     from backend.services.portfolio.service import get_portfolio_summary
                     summary = await get_portfolio_summary()
-                    if summary.get("trade_count", 0) == 0 and not summary.get("positions"):
+                    if summary.get("trade_count", 0) == 0 and not summary.get("open_positions"):
                         log.warning(
                             "[executor] state desync detected (last_acted=%d symbols, "
                             "but portfolio has 0 trades). Clearing last_acted for fresh sweep.",
