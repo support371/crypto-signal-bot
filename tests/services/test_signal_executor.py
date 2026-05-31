@@ -215,9 +215,9 @@ class TestFlipBuyToSell:
         ):
             await svc._execute_symbol("BTCUSDT", sig)
 
-        # First order = SELL (close), second order = SELL (new short)
+        # Long-only paper mode: SELL signal closes the long, does NOT open a short.
         assert orders[0] == "SELL"    # close long
-        assert orders[1] == "SELL"    # open new SELL position
+        assert len(orders) == 1       # no naked short opened
         assert svc._last_acted["BTCUSDT"] == ("SELL", "combined")
 
 

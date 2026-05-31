@@ -175,16 +175,23 @@ async def _execute_symbol(symbol: str, signal, open_count: int = 0) -> int:
             closed = True
 
     # Open new directional position — respect MAX_POSITIONS cap
-    if new_side in ("BUY", "SELL"):
+    # Paper mode is LONG-ONLY: BUY opens a new long; SELL only closes existing longs (above).
+    # Never submit a naked SELL order with no underlying position — it will cancel immediately.
+    if new_side == "BUY":
         if open_count < MAX_POSITIONS:
             await _open_position(symbol, new_side, equity)
             open_count += 1
         else:
-            log.info("[executor] MAX_POSITIONS cap (%d) reached — skipping new %s %s",
-                     MAX_POSITIONS, new_side, symbol)
+            log.info("[executor] MAX_POSITIONS cap (%d) reached — skipping new BUY %s",
+                     MAX_POSITIONS, symbol)
             # Still record the signal so we don't keep trying
             _last_acted[symbol] = new_key
             return open_count
+    elif new_side == "SELL":
+        # Long-only paper mode: SELL = close long (already done above).
+        # Do not attempt to open a short position.
+        if not closed:
+            log.debug("[executor] SELL signal for %s but no long to close — skip", symbol)
 
     _last_acted[symbol] = new_key
     return open_count
