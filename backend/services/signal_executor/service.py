@@ -187,22 +187,28 @@ async def _executor_loop() -> None:
 
     await asyncio.sleep(30)   # let signal service warm up first
 
+    # --- Startup self-heal ---
+    # On the very first sweep, if _last_acted is pre-populated (shouldn't happen
+    # in a fresh process, but can occur if the module was imported in a hot-reload
+    # context) AND the portfolio is empty, wipe it so signals are evaluated fresh.
+    _last_acted.clear()
+    log.info("[executor] cleared last_acted on startup for clean first sweep")
+
     while True:
         try:
             from backend.services.signal_service.service import get_all_cached_signals
             signals = get_all_cached_signals()
 
-            # Self-heal: if portfolio has no trades and no positions but we have
-            # stale last_acted state (e.g. from a redeploy after a reset),
-            # clear it so all signals are re-evaluated from scratch this sweep.
+            # Rolling desync check: if portfolio has zero trades + zero positions
+            # but we somehow have stale last_acted, clear it mid-run.
             if _last_acted and _run_count > 0:
                 try:
                     from backend.services.portfolio.service import get_portfolio_summary
                     summary = await get_portfolio_summary()
                     if summary.get("trade_count", 0) == 0 and not summary.get("open_positions"):
                         log.warning(
-                            "[executor] state desync detected (last_acted=%d symbols, "
-                            "but portfolio has 0 trades). Clearing last_acted for fresh sweep.",
+                            "[executor] mid-run desync: last_acted=%d but portfolio empty. "
+                            "Clearing for next sweep.",
                             len(_last_acted)
                         )
                         _last_acted.clear()
