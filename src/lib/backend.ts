@@ -1,6 +1,5 @@
 import { getConfiguredBackendUrl, trimTrailingSlash } from '@/lib/env';
-
-const SETTINGS_STORAGE_KEY = 'crypto-signal-bot:settings:v1';
+import { readOperatorApiKey } from '@/lib/operatorAuth';
 
 async function readErrorMessage(response: Response) {
   const fallback = `Backend request failed (${response.status})`;
@@ -19,22 +18,6 @@ async function readErrorMessage(response: Response) {
   }
 
   return message;
-}
-
-function getOperatorApiKey() {
-  if (typeof window === 'undefined') return '';
-
-  try {
-    const raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
-    if (!raw) return '';
-
-    const parsed = JSON.parse(raw) as { operatorApiKey?: unknown };
-    return typeof parsed.operatorApiKey === 'string'
-      ? parsed.operatorApiKey.trim()
-      : '';
-  } catch {
-    return '';
-  }
 }
 
 export function getBackendBaseUrl() {
@@ -76,7 +59,7 @@ function buildBackendHeaders(initHeaders: HeadersInit | undefined, includeJsonCo
     headers.set('Content-Type', 'application/json');
   }
 
-  const operatorApiKey = getOperatorApiKey();
+  const operatorApiKey = readOperatorApiKey();
   if (operatorApiKey && !headers.has('X-API-Key')) {
     headers.set('X-API-Key', operatorApiKey);
   }
