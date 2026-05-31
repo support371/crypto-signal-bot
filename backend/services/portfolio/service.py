@@ -259,9 +259,21 @@ async def _fill_order(order: OrderState) -> None:
     """Execute a fill — updates cash, lots, positions, trades."""
     global _cash, _peak_equity, _trade_counter
 
+    from backend.services.market_data.service import MarketDataStale
     try:
         snap = await get_price(order.symbol)
         fill_price = _qty(snap.price)
+    except MarketDataStale as stale_exc:
+        # Use stale cached price for paper fills — acceptable for paper trading.
+        if stale_exc.stale_ticker and stale_exc.stale_ticker.price > 0:
+            fill_price = _qty(stale_exc.stale_ticker.price)
+            log.info("Filling %s with stale price %.4f (%s)",
+                     order.id[:8], float(fill_price), stale_exc.reason)
+        else:
+            log.warning("Cannot fill %s — stale price unavailable: %s", order.id, stale_exc)
+            order.status = "CANCELLED"
+            order.updated_at = int(time.time())
+            return
     except Exception as exc:
         log.warning("Cannot fill %s — price unavailable: %s", order.id, exc)
         order.status = "CANCELLED"
