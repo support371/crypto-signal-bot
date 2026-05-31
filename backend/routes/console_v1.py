@@ -630,3 +630,29 @@ async def console_portfolio_reset(body: PortfolioResetRequest) -> dict:
         "starting_cash": body.starting_cash,
         "ts": int(time.time()),
     }
+
+
+@router.get("/version")
+async def get_version():
+    """Return deployed git SHA and build timestamp."""
+    import subprocess, os
+    sha = os.environ.get("GIT_SHA", "unknown")
+    if sha == "unknown":
+        try:
+            sha = subprocess.check_output(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=os.getcwd(),
+                stderr=subprocess.DEVNULL,
+            ).decode().strip()
+        except Exception:
+            sha = "unknown"
+    return {
+        "sha": sha,
+        "version": "2.0.0",
+        "build_date": "2026-05-31",
+        "features": {
+            "market_data_stale_fix": True,
+            "executor_startup_clear": True,
+            "fill_order_stale_fix": True,
+        },
+    }
