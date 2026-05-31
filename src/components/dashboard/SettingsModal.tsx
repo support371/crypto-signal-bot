@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Settings, Shield, Activity, Wallet, Volume2, KeyRound } from 'lucide-react';
 import { DEFAULT_SETTINGS } from '@/components/dashboard/settingsDefaults';
+import { readOperatorApiKey, writeOperatorApiKey } from '@/lib/operatorAuth';
 
 export interface UserSettings {
   riskTolerance: number;
@@ -40,22 +41,36 @@ export function SettingsModal({
   onSettingsChange,
   systemMode = 'paper',
 }: SettingsModalProps) {
-  const [localSettings, setLocalSettings] = useState<UserSettings>(settings);
+  const [localSettings, setLocalSettings] = useState<UserSettings>(() => ({
+    ...settings,
+    operatorApiKey: readOperatorApiKey() || settings.operatorApiKey || '',
+  }));
 
   useEffect(() => {
-    setLocalSettings(settings);
+    setLocalSettings({
+      ...settings,
+      operatorApiKey: readOperatorApiKey() || settings.operatorApiKey || '',
+    });
   }, [settings]);
 
   const handleSave = () => {
+    const trimmedOperatorKey = localSettings.operatorApiKey.trim();
+    writeOperatorApiKey(trimmedOperatorKey);
     onSettingsChange({
       ...localSettings,
-      operatorApiKey: localSettings.operatorApiKey.trim(),
+      operatorApiKey: trimmedOperatorKey,
     });
     onOpenChange(false);
   };
 
   const handleReset = () => {
+    writeOperatorApiKey('');
     setLocalSettings(DEFAULT_SETTINGS);
+  };
+
+  const handleClearOperatorKey = () => {
+    writeOperatorApiKey('');
+    setLocalSettings(s => ({ ...s, operatorApiKey: '' }));
   };
 
   const getRiskLabel = (value: number) => {
@@ -236,7 +251,7 @@ export function SettingsModal({
                   variant="ghost"
                   size="sm"
                   className="h-7 px-2 text-xs font-mono text-muted-foreground hover:text-destructive"
-                  onClick={() => setLocalSettings(s => ({ ...s, operatorApiKey: '' }))}
+                  onClick={handleClearOperatorKey}
                 >
                   Clear operator key
                 </Button>
