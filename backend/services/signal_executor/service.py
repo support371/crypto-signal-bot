@@ -191,6 +191,23 @@ async def _executor_loop() -> None:
             from backend.services.signal_service.service import get_all_cached_signals
             signals = get_all_cached_signals()
 
+            # Self-heal: if portfolio has no trades and no positions but we have
+            # stale last_acted state (e.g. from a redeploy after a reset),
+            # clear it so all signals are re-evaluated from scratch this sweep.
+            if _last_acted and _run_count > 0:
+                try:
+                    from backend.services.portfolio.service import get_portfolio_summary
+                    summary = await get_portfolio_summary()
+                    if summary.get("trade_count", 0) == 0 and not summary.get("positions"):
+                        log.warning(
+                            "[executor] state desync detected (last_acted=%d symbols, "
+                            "but portfolio has 0 trades). Clearing last_acted for fresh sweep.",
+                            len(_last_acted)
+                        )
+                        _last_acted.clear()
+                except Exception:
+                    pass
+
             # Count currently open positions once per sweep
             open_count = await _count_open_positions()
 
