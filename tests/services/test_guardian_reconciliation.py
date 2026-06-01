@@ -1,111 +1,182 @@
+# tests/services/test_guardian_reconciliation.py
+"""
+Reconciliation drift tests.
+
+Verifies that the reconciliation service correctly:
+  1. Reports clean when balance matches last known state.
+  2. Detects balance drift when balance changes with no new trades.
+  3. Does NOT flag drift when new trades explain the balance change.
+  4. Handles P&L state unavailability gracefully (discrepancy=True).
+  5. ReconciliationResult fields are correctly populated.
+"""
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
-
+import time
 import pytest
-
-import backend.services.guardian_bot.service as guardian
-
-
-def _reset_guardian_state() -> None:
-    guardian._kill_switch_active = False
-    guardian._kill_switch_reason = None
-    guardian._triggered = False
-    guardian._trigger_reason = None
-    guardian._reconciliation_drift_count = 0
-    guardian._reconciliation_drift_reason = None
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
-@pytest.mark.asyncio
-async def test_reconciliation_match_resets_drift_state():
-    _reset_guardian_state()
-    guardian._reconciliation_drift_count = 2
-    guardian._reconciliation_drift_reason = "prior drift"
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
-    result = await guardian.on_reconciliation_check(
-        local_open_order_ids=["order-1", "order-2"],
-        venue_open_order_ids=["order-2", "order-1"],
-    )
+def _make_pnl(realized=0.0, unrealized=0.0, trades=5):
+    pnl = MagicMock()
+    pnl.total_realized_pnl = realized
+    pnl.total_unrealized_pnl = unrealized
+    pnl.trade_count = trades
+    return pnl
 
-    assert result is True
-    assert guardian._reconciliation_drift_count == 0
-    assert guardian._reconciliation_drift_reason is None
-    assert guardian._kill_switch_active is False
 
+def _make_lots(n_symbols=0, lots_per_symbol=0):
+    """Return a dict like {symbol: [lot1, ...]}."""
+    if n_symbols == 0:
+        return {}
+    return {f"SYM{i}": [MagicMock()] * lots_per_symbol for i in range(n_symbols)}
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_reconciliation_drift_inside_tolerance_does_not_halt():
-    _reset_guardian_state()
+async def test_clean_reconciliation():
+    """No prior report → no drift flagged."""
+    import backend.services.reconciliation.service as svc
+    svc._last_report = None
 
     with (
-        patch("backend.services.guardian_bot.service._set_kill_switch_redis", new=AsyncMock()) as redis_write,
-        patch("backend.services.guardian_bot.service._publish_guardian_event", new=AsyncMock()) as publish,
+        patch("backend.services.reconciliation.service.get_exchange_config",
+              return_value=MagicMock(mode="paper")),
+        patch("backend.engine.pnl.get_pnl_summary",
+              new_callable=AsyncMock, return_value=_make_pnl(0.0, 0.0, 3)),
+        patch("backend.engine.pnl.get_usdt_balance", return_value=10000.0),
+        patch("backend.engine.pnl.get_all_lots", return_value={}),
     ):
-        result = await guardian.on_reconciliation_check(
-            local_open_order_ids=["order-1"],
-            venue_open_order_ids=[],
-            tolerance_cycles=3,
-        )
+        result = await svc.run_reconciliation()
 
-    assert result is True
-    assert guardian._reconciliation_drift_count == 1
-    assert "missing_on_venue" in (guardian._reconciliation_drift_reason or "")
-    assert guardian._kill_switch_active is False
-    redis_write.assert_not_called()
-    publish.assert_not_called()
+    assert result.discrepancy_detected is False
+    assert result.usdt_balance == 10000.0
+    assert result.trade_count == 3
 
 
 @pytest.mark.asyncio
-async def test_persistent_reconciliation_drift_triggers_kill_switch():
-    _reset_guardian_state()
+async def test_drift_detected_no_new_trades():
+    """Balance changes with same trade_count → drift flagged."""
+    import backend.services.reconciliation.service as svc
+
+    svc._last_report = {
+        "usdt_balance": 10000.0,
+        "total_realized_pnl": 0.0,
+        "trade_count": 3,
+        "created_at": int(time.time()) - 300,
+    }
 
     with (
-        patch("backend.services.guardian_bot.service._set_kill_switch_redis", new=AsyncMock()) as redis_write,
-        patch("backend.services.guardian_bot.service._publish_guardian_event", new=AsyncMock()) as publish,
+        patch("backend.services.reconciliation.service.get_exchange_config",
+              return_value=MagicMock(mode="paper")),
+        patch("backend.engine.pnl.get_pnl_summary",
+              new_callable=AsyncMock, return_value=_make_pnl(0.0, 0.0, 3)),
+        patch("backend.engine.pnl.get_usdt_balance", return_value=9500.0),  # drift!
+        patch("backend.engine.pnl.get_all_lots", return_value={}),
     ):
-        await guardian.on_reconciliation_check(
-            local_open_order_ids=["order-1"],
-            venue_open_order_ids=[],
-            tolerance_cycles=2,
-        )
-        result = await guardian.on_reconciliation_check(
-            local_open_order_ids=["order-1"],
-            venue_open_order_ids=[],
-            tolerance_cycles=2,
-        )
+        result = await svc.run_reconciliation()
 
-    assert result is False
-    assert guardian._kill_switch_active is True
-    assert "reconciliation drift" in (guardian._kill_switch_reason or "").lower()
-    redis_write.assert_called_once()
-    assert publish.await_count == 2
+    assert result.discrepancy_detected is True
+    assert "drift" in result.discrepancy_detail.lower()
+    assert "9500" in result.discrepancy_detail
 
 
 @pytest.mark.asyncio
-async def test_reconciliation_status_exposes_drift_state():
-    _reset_guardian_state()
-    await guardian.on_reconciliation_check(
-        local_open_order_ids=["order-1"],
-        venue_open_order_ids=["order-2"],
-        tolerance_cycles=3,
-    )
+async def test_no_drift_when_new_trades_explain_change():
+    """Balance changes AND trade_count increased → not a drift."""
+    import backend.services.reconciliation.service as svc
 
-    risk_cfg = type(
-        "RiskCfg",
-        (),
-        {
-            "max_drawdown_pct": 5.0,
-            "max_api_errors": 10,
-            "max_failed_orders": 5,
-        },
-    )()
+    svc._last_report = {
+        "usdt_balance": 10000.0,
+        "total_realized_pnl": 0.0,
+        "trade_count": 3,
+        "created_at": int(time.time()) - 300,
+    }
 
     with (
-        patch("backend.services.guardian_bot.service.get_risk_config", return_value=risk_cfg),
-        patch("backend.services.guardian_bot.service._check_exchange_health", new=AsyncMock(return_value={})),
+        patch("backend.services.reconciliation.service.get_exchange_config",
+              return_value=MagicMock(mode="paper")),
+        patch("backend.engine.pnl.get_pnl_summary",
+              new_callable=AsyncMock, return_value=_make_pnl(50.0, 0.0, 5)),  # 2 new trades
+        patch("backend.engine.pnl.get_usdt_balance", return_value=10050.0),
+        patch("backend.engine.pnl.get_all_lots", return_value={}),
     ):
-        status = await guardian.get_guardian_status()
+        result = await svc.run_reconciliation()
 
-    assert status.reconciliation_drift_active is True
-    assert status.reconciliation_drift_count == 1
-    assert "unknown_on_venue" in (status.reconciliation_drift_reason or "")
+    assert result.discrepancy_detected is False
+
+
+@pytest.mark.asyncio
+async def test_drift_below_epsilon_ignored():
+    """Sub-cent rounding differences (< 0.01) should NOT flag drift."""
+    import backend.services.reconciliation.service as svc
+
+    svc._last_report = {
+        "usdt_balance": 10000.005,
+        "total_realized_pnl": 0.0,
+        "trade_count": 3,
+        "created_at": int(time.time()) - 300,
+    }
+
+    with (
+        patch("backend.services.reconciliation.service.get_exchange_config",
+              return_value=MagicMock(mode="paper")),
+        patch("backend.engine.pnl.get_pnl_summary",
+              new_callable=AsyncMock, return_value=_make_pnl(0.0, 0.0, 3)),
+        patch("backend.engine.pnl.get_usdt_balance", return_value=10000.008),  # < 0.01 drift
+        patch("backend.engine.pnl.get_all_lots", return_value={}),
+    ):
+        result = await svc.run_reconciliation()
+
+    assert result.discrepancy_detected is False
+
+
+@pytest.mark.asyncio
+async def test_pnl_unavailable_flags_discrepancy():
+    """When P&L state throws, reconciliation must return discrepancy=True."""
+    import backend.services.reconciliation.service as svc
+    svc._last_report = None
+
+    with (
+        patch("backend.services.reconciliation.service.get_exchange_config",
+              return_value=MagicMock(mode="paper")),
+        patch("backend.engine.pnl.get_pnl_summary",
+              new_callable=AsyncMock, side_effect=RuntimeError("DB unavailable")),
+        patch("backend.engine.pnl.get_usdt_balance", side_effect=RuntimeError("DB unavailable")),
+        patch("backend.engine.pnl.get_all_lots", side_effect=RuntimeError("DB unavailable")),
+    ):
+        result = await svc.run_reconciliation()
+
+    assert result.discrepancy_detected is True
+    assert result.discrepancy_detail is not None
+
+
+@pytest.mark.asyncio
+async def test_result_fields_populated():
+    """ReconciliationResult fields match what was passed in."""
+    import backend.services.reconciliation.service as svc
+    svc._last_report = None
+
+    with (
+        patch("backend.services.reconciliation.service.get_exchange_config",
+              return_value=MagicMock(mode="paper")),
+        patch("backend.engine.pnl.get_pnl_summary",
+              new_callable=AsyncMock, return_value=_make_pnl(100.0, 50.0, 7)),
+        patch("backend.engine.pnl.get_usdt_balance", return_value=10100.0),
+        patch("backend.engine.pnl.get_all_lots", return_value=_make_lots(2, 3)),
+    ):
+        result = await svc.run_reconciliation()
+
+    assert result.mode == "paper"
+    assert result.usdt_balance == 10100.0
+    assert result.total_realized_pnl == 100.0
+    assert result.total_unrealized_pnl == 50.0
+    assert result.open_lots_count == 6  # 2 symbols * 3 lots
+    assert result.trade_count == 7
+    assert result.created_at > 0
