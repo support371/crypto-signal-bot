@@ -12,7 +12,8 @@ risk:
 kill_switch:
   max_api_errors: 10           # Halt after 10 consecutive API errors
   max_failed_orders: 5         # Halt after 5 consecutive failed orders
-  max_daily_loss_pct: 0.05     # Halt after 5% daily loss
+  max_daily_loss_pct: 0.05     # Halt after 5% daily loss (risk gate)
+  max_drawdown_pct: 15.0       # Guardian kill switch: halt after 15% portfolio drawdown
 
 exchange:
   # Primary exchange (auto-detected from env vars)

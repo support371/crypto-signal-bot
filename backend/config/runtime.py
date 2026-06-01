@@ -166,7 +166,7 @@ def get_runtime_config() -> RuntimeConfig:
     guardian_defaults = GuardianConfig(
         max_api_errors=int(_get_nested(defaults, "kill_switch", "max_api_errors", default=10)),
         max_failed_orders=int(_get_nested(defaults, "kill_switch", "max_failed_orders", default=5)),
-        max_drawdown_pct=float(_get_nested(defaults, "kill_switch", "max_daily_loss_pct", default=0.05)),
+        max_drawdown_pct=float(_get_nested(defaults, "kill_switch", "max_drawdown_pct", default=15.0)),
     )
 
     risk_defaults = RiskConfig(
