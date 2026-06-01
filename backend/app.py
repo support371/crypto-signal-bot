@@ -77,6 +77,7 @@ from backend.services.reconciliation.service import (
     stop_reconciliation,
     get_latest_report as get_reconciliation_report,
 )
+from backend.services.stream_service import stream_manager, handle_stream_client
 from backend.services.websocket_manager import (
     ConnectionManager,
     broadcast_ticker_loop,
@@ -1247,6 +1248,19 @@ def get_earnings_history_api(symbol: Optional[str] = Query(None), limit: int = Q
 def reset_earnings_ledger_api(_: None = Depends(require_auth)):
     reset_earnings()
     return {"status": "ok", "message": "Earnings ledger cleared"}
+
+@app.websocket("/stream")
+async def stream_endpoint(ws: WebSocket):
+    """
+    Canonical typed WebSocket stream endpoint.
+
+    Publishes: ticker | signal | portfolio | guardian | heartbeat events.
+    Client can send: { type: "ping" } or { type: "subscribe", symbols: [...] }
+
+    See backend/services/stream_service.py for full event schema.
+    """
+    await handle_stream_client(ws)
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):

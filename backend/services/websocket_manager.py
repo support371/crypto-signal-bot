@@ -16,6 +16,7 @@ import time
 from typing import Any, Dict, List, Set
 
 from fastapi import WebSocket
+from backend.services.stream_service import stream_manager as _stream_manager
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +162,16 @@ async def broadcast_ticker_loop(
                 "change": change,
                 "timestamp": t,
             })
+            # Also push to canonical /stream endpoint
+            try:
+                await _stream_manager.broadcast_ticker(
+                    symbol=symbol,
+                    price=float(price) if price else 0.0,
+                    change24h=float(change) if change else 0.0,
+                    volume24h=0.0,
+                )
+            except Exception:
+                pass
 
         # Also broadcast status
         await manager.broadcast({
