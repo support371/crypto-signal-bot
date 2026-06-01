@@ -22,7 +22,7 @@ import pytest
 import backend.services.signal_executor.service as svc
 
 
-def _sig(symbol="BTCUSDT", side="BUY", strategy_id="combined", confidence=0.70):
+def _sig(symbol="BTCUSDT", side="BUY", strategy_id="combined", confidence=0.80):
     return SimpleNamespace(
         symbol=symbol, side=side,
         strategy_id=strategy_id, confidence=confidence,
@@ -171,7 +171,7 @@ class TestOpenOnBuySignal:
 
     @pytest.mark.asyncio
     async def test_state_updated_after_open(self):
-        sig = _sig("BNBUSDT", "BUY", "combined", confidence=0.72)
+        sig = _sig("BNBUSDT", "BUY", "combined", confidence=0.80)
         mock_snap = MagicMock(); mock_snap.price = "400.0"
 
         with (
@@ -196,7 +196,7 @@ class TestFlipBuyToSell:
     @pytest.mark.asyncio
     async def test_closes_long_then_opens_sell(self):
         svc._last_acted["BTCUSDT"] = ("BUY", "combined")
-        sig = _sig("BTCUSDT", "SELL", "combined", confidence=0.68)
+        sig = _sig("BTCUSDT", "SELL", "combined", confidence=0.80)
         mock_snap = MagicMock(); mock_snap.price = "74000.0"
         orders = []
 

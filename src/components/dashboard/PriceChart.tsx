@@ -25,7 +25,7 @@ function buildDeterministicChartData(price: CryptoPrice) {
     const derivedPrice = Math.max(basePrice + trendFactor + cycleFactor + microCycle, basePrice * 0.75);
 
     data.push({
-      time: timeAgo <= 24 ? `${timeAgo}h` : `${Math.floor(timeAgo / 24)}d`,
+      time: i % 8 !== 0 && i !== points - 1 ? '' : timeAgo <= 24 ? `${timeAgo}h` : `${Math.floor(timeAgo / 24)}d`,
       price: derivedPrice,
     });
   }
@@ -103,7 +103,7 @@ export function PriceChart({ price, isLoading }: PriceChartProps) {
                 <stop offset="100%" stopColor="hsl(0, 85%, 55%)" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <XAxis dataKey="time" stroke="hsl(180, 40%, 30%)" tick={{ fill: 'hsl(180, 40%, 60%)', fontSize: 10 }} axisLine={{ stroke: 'hsl(230, 30%, 18%)' }} interval="preserveStartEnd" />
+            <XAxis dataKey="time" stroke="hsl(180, 40%, 30%)" tick={{ fill: 'hsl(180, 40%, 60%)', fontSize: 10 }} axisLine={{ stroke: 'hsl(230, 30%, 18%)' }} interval={0} tickFormatter={(v) => v} />
             <YAxis domain={['auto', 'auto']} stroke="hsl(180, 40%, 30%)" tick={{ fill: 'hsl(180, 40%, 60%)', fontSize: 10 }} axisLine={{ stroke: 'hsl(230, 30%, 18%)' }} tickFormatter={(value) => `$${value.toLocaleString()}`} width={80} />
             <Tooltip contentStyle={{ backgroundColor: 'hsl(230, 30%, 10%)', border: '1px solid hsl(180, 100%, 50%)', borderRadius: '8px', boxShadow: '0 0 20px hsl(180, 100%, 50%, 0.3)' }} labelStyle={{ color: 'hsl(180, 100%, 90%)' }} itemStyle={{ color: 'hsl(180, 100%, 50%)' }} formatter={(value: number) => [`$${value.toLocaleString()}`, 'Price']} />
             <Area type="monotone" dataKey="price" stroke={strokeColor} strokeWidth={2} fill={fillColor} dot={false} />

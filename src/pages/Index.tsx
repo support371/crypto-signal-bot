@@ -335,9 +335,9 @@ const Index = () => {
       />
 
       <main className="container mx-auto p-4 lg:p-6 space-y-4 lg:space-y-6">
-        {error && (
-          <div className="cyber-card p-4 border-destructive bg-destructive/10">
-            <p className="text-destructive font-mono text-sm">⚠ {error}</p>
+        {error && !isConnected && (
+          <div className="cyber-card p-3 border-border/40 bg-muted/20">
+            <p className="text-muted-foreground font-mono text-xs">⚠ Price data: {error} — retrying…</p>
           </div>
         )}
 
