@@ -183,20 +183,42 @@ def bollinger_bands(
 ) -> Tuple[List[Optional[float]], List[Optional[float]], List[Optional[float]]]:
     """
     Returns (upper, middle, lower) bands. Middle is SMA. Leading values None.
+    Optimized to O(n) using rolling sum and rolling sum of squares.
     """
     n = len(values)
     upper: List[Optional[float]] = [None] * n
     middle: List[Optional[float]] = [None] * n
     lower: List[Optional[float]] = [None] * n
 
-    for i in range(period - 1, n):
-        window = values[i - period + 1 : i + 1]
-        sma = sum(window) / period
-        variance = sum((x - sma) ** 2 for x in window) / period
-        std = variance ** 0.5
-        middle[i] = sma
-        upper[i] = sma + num_std * std
-        lower[i] = sma - num_std * std
+    if n < period or period <= 0:
+        return upper, middle, lower
+
+    # Use rolling sums to achieve O(n) complexity instead of O(n * period)
+    current_sum = 0.0
+    current_sq_sum = 0.0
+
+    for i in range(n):
+        val = values[i]
+        current_sum += val
+        current_sq_sum += val * val
+
+        if i >= period:
+            # Remove the value that just left the window
+            old_val = values[i - period]
+            current_sum -= old_val
+            current_sq_sum -= old_val * old_val
+
+        if i >= period - 1:
+            # Calculate SMA and Variance
+            # Variance = E[X^2] - (E[X])^2
+            sma = current_sum / period
+            variance = (current_sq_sum / period) - (sma * sma)
+            # Safeguard against tiny negative numbers due to floating point precision
+            std = max(variance, 0.0) ** 0.5
+
+            middle[i] = sma
+            upper[i] = sma + num_std * std
+            lower[i] = sma - num_std * std
 
     return upper, middle, lower
 
@@ -207,13 +229,13 @@ def last_bollinger(
     num_std: float = 2.0,
 ) -> Tuple[Optional[float], Optional[float], Optional[float]]:
     """Return (upper, middle, lower) for the most recent bar."""
-    u, m, l = bollinger_bands(values, period, num_std)
+    upper, middle, lower = bollinger_bands(values, period, num_std)
     def _last(lst):
         for v in reversed(lst):
             if v is not None:
                 return v
         return None
-    return _last(u), _last(m), _last(l)
+    return _last(upper), _last(middle), _last(lower)
 
 
 # ---------------------------------------------------------------------------
