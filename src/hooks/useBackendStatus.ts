@@ -185,7 +185,8 @@ export function useBackendStatus(pollIntervalMs = 30000): UseBackendStatusResult
 
     // /balance - optional, keep previous value on failure
     if (balanceResult.status === 'fulfilled') {
-      setPaperBalance(balanceResult.value?.balances?.USDT ?? 0);
+      const rawUsdt = balanceResult.value?.balances?.USDT;
+      setPaperBalance(rawUsdt !== undefined ? parseFloat(String(rawUsdt)) : 0);
     } else {
       const balErr = balanceResult.reason instanceof Error
         ? balanceResult.reason.message

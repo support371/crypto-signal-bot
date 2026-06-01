@@ -14,7 +14,7 @@ export function SignalPanel({ signal, isLoading }: SignalPanelProps) {
   const [indicators, setIndicators] = useState<IndicatorState>({
     rsi: true,
     macd: true,
-    bollinger: false,
+    bollinger: true,
   });
 
   const handleToggle = (key: keyof IndicatorState) => {

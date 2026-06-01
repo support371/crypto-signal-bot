@@ -68,17 +68,50 @@ export function PriceTicker({ prices, selectedSymbol, onSelect }: PriceTickerPro
   const scrollingPrices = [...tickerPrices, ...tickerPrices, ...tickerPrices];
 
   return (
-    <div className="w-full overflow-hidden border-b border-border bg-muted/30">
-      <div className="ticker-marquee py-2" aria-label="Live crypto price ticker">
-        <div className="ticker-marquee-track flex w-max items-center gap-6 px-4">
-          {scrollingPrices.map((coin, index) => (
-            <PriceTickerItem
-              key={`${coin.id}-${index}`}
-              coin={coin}
-              isSelected={coin.id === selectedSymbol}
-              onSelect={onSelect}
-            />
-          ))}
+    <div className="w-full border-b border-border bg-muted/30">
+      {/* Desktop: scrolling marquee */}
+      <div className="hidden sm:block overflow-hidden">
+        <div className="ticker-marquee py-2" aria-label="Live crypto price ticker">
+          <div className="ticker-marquee-track flex w-max items-center gap-6 px-4">
+            {scrollingPrices.map((coin, index) => (
+              <PriceTickerItem
+                key={`${coin.id}-${index}`}
+                coin={coin}
+                isSelected={coin.id === selectedSymbol}
+                onSelect={onSelect}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Mobile: static scrollable grid of coin buttons */}
+      <div className="sm:hidden overflow-x-auto py-2 px-2">
+        <div className="flex gap-2 w-max">
+          {tickerPrices.map((coin) => {
+            const isSelected = coin.id === selectedSymbol;
+            const isPositive = coin.change24h >= 0;
+            return (
+              <button
+                key={coin.id}
+                type="button"
+                onClick={() => onSelect(coin.id)}
+                className={cn(
+                  'flex flex-col items-center gap-0.5 rounded-lg border px-3 py-2 text-xs whitespace-nowrap transition-all min-w-[64px]',
+                  isSelected
+                    ? 'border-primary bg-muted/50 shadow-neon-cyan'
+                    : 'border-border/40 bg-transparent hover:bg-muted/40'
+                )}
+              >
+                <span className={cn('font-display font-bold text-sm', isSelected && 'text-primary neon-glow')}>
+                  {coin.symbol}
+                </span>
+                <span className={cn('font-mono text-[10px]', isPositive ? 'text-accent' : 'text-destructive')}>
+                  {isPositive ? '+' : ''}{coin.change24h.toFixed(2)}%
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>

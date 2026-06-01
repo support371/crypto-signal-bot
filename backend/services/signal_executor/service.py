@@ -13,7 +13,7 @@ Every EXECUTOR_INTERVAL seconds the loop:
 
 Design decisions
 ----------------
-- MIN_CONFIDENCE  = 0.60  (operator-overridable via env EXECUTOR_MIN_CONFIDENCE)
+- MIN_CONFIDENCE  = 0.75  (operator-overridable via env EXECUTOR_MIN_CONFIDENCE)
 - POSITION_PCT    = 0.05  (5% of equity per symbol)
 - MAX_POSITIONS   = 4     (hard cap on simultaneous open positions)
 - Only MARKET orders — clean fills at live CoinGecko price.
@@ -32,7 +32,7 @@ from typing import Dict
 log = logging.getLogger(__name__)
 
 EXECUTOR_INTERVAL: int   = 65
-MIN_CONFIDENCE:    float = float(os.getenv("EXECUTOR_MIN_CONFIDENCE", "0.60"))
+MIN_CONFIDENCE:    float = float(os.getenv("EXECUTOR_MIN_CONFIDENCE", "0.75"))
 POSITION_PCT:      float = float(os.getenv("EXECUTOR_POSITION_PCT",   "0.05"))
 MAX_POSITIONS:     int   = int(os.getenv("EXECUTOR_MAX_POSITIONS",    "4"))
 
