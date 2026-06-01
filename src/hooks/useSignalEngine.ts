@@ -44,6 +44,21 @@ export function useSignalEngine(price: CryptoPrice | null, config: Partial<Signa
     setMicrostructure(data.microstructure);
   };
 
+  // applyRiskOnly: update risk/microstructure from market-state without overwriting
+  // a real signal already loaded from the signal engine
+  const applyRiskOnly = (data: MarketStateResponse) => {
+    setRisk(data.risk);
+    setMicrostructure(data.microstructure);
+    // Only update signal if we don't already have a strong signal from the engine
+    setSignal(prev => {
+      const incoming = data.signal;
+      if (!incoming) return prev;
+      // Keep existing strong signal; only accept market-state signal if it's non-neutral
+      if (prev && prev.confidence > 50) return prev;
+      return incoming;
+    });
+  };
+
   useEffect(() => {
     if (!price) {
       setSignal(null);
@@ -74,14 +89,14 @@ export function useSignalEngine(price: CryptoPrice | null, config: Partial<Signa
           }),
         });
 
-        applySnapshot(data);
+        applyRiskOnly(data);
       } catch (error) {
         if (controller.signal.aborted) {
           return;
         }
 
         console.error('Failed to fetch backend market state', error);
-        setSignal(null);
+        // Don't clear signal on market-state failure — keep last known signal engine data
         setRisk(null);
         setMicrostructure(null);
       } finally {
