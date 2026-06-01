@@ -298,6 +298,7 @@ async def _fill_order(order: OrderState) -> None:
             symbol=order.symbol, qty=order.qty,
             entry_price=fill_price, opened_at=now, order_id=order.id,
         ))
+        asyncio.create_task(_upsert_position(order.symbol, order.account_id))
 
     elif order.side == "SELL":
         # Check we have enough long exposure
@@ -310,6 +311,7 @@ async def _fill_order(order: OrderState) -> None:
         _, realized_pnl = _fifo_close(order.symbol, fill_qty, fill_price)
         proceeds = fill_qty * fill_price - fee
         _cash += proceeds.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        asyncio.create_task(_upsert_position(order.symbol, order.account_id))
 
     order.status    = "FILLED"
     order.updated_at = now
@@ -580,8 +582,11 @@ async def _persist_snapshot(snap: EquitySnapshot) -> None:
 # Startup
 # ─────────────────────────────────────────────────────────────────
 
-def start_portfolio_service(app) -> None:
-    # Direct task creation — called from lifespan() which is already async
+async def start_portfolio_service(app) -> None:
+    """Startup: restore DB state then launch background loops."""
+    # Restore portfolio state from DB before any trading activity
+    await restore_portfolio_state()
+    # Launch background loops
     asyncio.create_task(_snapshot_loop())
     asyncio.create_task(_limit_fill_loop())
 
@@ -840,3 +845,135 @@ def cancel_pending_order(order_id: str) -> bool:
     except Exception:
         pass
     return True
+
+
+# ─────────────────────────────────────────────────────────────────
+# DB state persistence — positions upsert + startup restore
+# ─────────────────────────────────────────────────────────────────
+
+async def _upsert_position(symbol: str, account_id: str = _DEFAULT_ACCOUNT_ID) -> None:
+    """Upsert the open position for `symbol` into paper_positions DB table."""
+    try:
+        from backend.db.session import get_session
+        from backend.db.models import PositionRecord2
+        from sqlalchemy import select
+
+        lots = _lots.get(symbol, [])
+        qty = float(sum(l.qty for l in lots))
+
+        async with get_session() as session:
+            stmt = select(PositionRecord2).where(
+                PositionRecord2.account_id == account_id,
+                PositionRecord2.symbol == symbol,
+            )
+            result = await session.execute(stmt)
+            rec = result.scalar_one_or_none()
+
+            avg_entry = 0.0
+            if lots:
+                total_cost = sum(float(l.qty) * float(l.entry_price) for l in lots)
+                avg_entry = total_cost / qty if qty > 0 else 0.0
+
+            if qty <= 0 and rec:
+                await session.delete(rec)
+            elif qty > 0:
+                if rec:
+                    rec.qty = qty
+                    rec.avg_entry_price = avg_entry
+                    rec.updated_at = int(time.time())
+                else:
+                    session.add(PositionRecord2(
+                        account_id=account_id, symbol=symbol,
+                        qty=qty, avg_entry_price=avg_entry,
+                        realized_pnl=0.0, unrealized_pnl=0.0,
+                    ))
+            await session.commit()
+    except Exception as exc:
+        log.debug("[portfolio] position upsert error (non-fatal): %s", exc)
+
+
+async def restore_portfolio_state(account_id: str = _DEFAULT_ACCOUNT_ID) -> None:
+    """
+    Restore in-memory portfolio state from DB on startup.
+
+    Loads:
+      1. Latest equity snapshot → _cash, _peak_equity
+      2. Open positions (paper_positions) → _lots
+      3. Trades (trade_records) → _trades, _trade_counter
+
+    Safe to call on a fresh DB (no-op if tables are empty).
+    """
+    global _cash, _peak_equity, _trade_counter
+
+    try:
+        from backend.db.session import get_session
+        from backend.db.models import EquitySnapshotRecord, PositionRecord2, TradeRecord
+        from sqlalchemy import select, desc
+
+        async with get_session() as session:
+
+            # 1. Latest equity snapshot → cash + peak
+            snap_stmt = (
+                select(EquitySnapshotRecord)
+                .where(EquitySnapshotRecord.account_id == account_id)
+                .order_by(desc(EquitySnapshotRecord.timestamp))
+                .limit(1)
+            )
+            snap_row = (await session.execute(snap_stmt)).scalar_one_or_none()
+            if snap_row:
+                _cash = Decimal(str(snap_row.cash))
+                _peak_equity = Decimal(str(snap_row.max_equity))
+                log.info("[portfolio] restored cash=%.2f peak=%.2f from DB snapshot",
+                         float(_cash), float(_peak_equity))
+
+            # 2. Open positions → rebuild _lots
+            pos_stmt = select(PositionRecord2).where(
+                PositionRecord2.account_id == account_id,
+                PositionRecord2.qty > 0,
+            )
+            positions = (await session.execute(pos_stmt)).scalars().all()
+            restored_syms = []
+            for pos in positions:
+                if pos.qty > 0:
+                    _lots[pos.symbol] = [
+                        Lot(
+                            symbol=pos.symbol,
+                            qty=Decimal(str(pos.qty)),
+                            entry_price=Decimal(str(pos.avg_entry_price)),
+                            opened_at=pos.updated_at or int(time.time()),
+                            order_id="restored",
+                        )
+                    ]
+                    restored_syms.append(f"{pos.symbol}({pos.qty:.4f})")
+            if restored_syms:
+                log.info("[portfolio] restored %d positions: %s",
+                         len(restored_syms), ", ".join(restored_syms))
+
+            # 3. Recent trades → restore counter + history (last 500)
+            trade_stmt = (
+                select(TradeRecord)
+                .where(TradeRecord.account_id == account_id)
+                .order_by(desc(TradeRecord.executed_at))
+                .limit(500)
+            )
+            trade_rows = (await session.execute(trade_stmt)).scalars().all()
+            if trade_rows:
+                _trade_counter = max(t.id for t in trade_rows if hasattr(t, 'id') and t.id) or len(trade_rows)
+                for t in reversed(trade_rows):  # chronological order
+                    _trades.append(TradeState(
+                        id=getattr(t, 'id', 0) or 0,
+                        order_id=t.order_id or "",
+                        account_id=t.account_id,
+                        symbol=t.symbol,
+                        qty=Decimal(str(t.qty)),
+                        price=Decimal(str(t.price)),
+                        fee=Decimal(str(t.fee)) if t.fee else Decimal("0"),
+                        side=t.side,
+                        realized_pnl=Decimal(str(t.realized_pnl)) if t.realized_pnl is not None else None,
+                        executed_at=t.executed_at,
+                    ))
+                log.info("[portfolio] restored %d trades, trade_counter=%d",
+                         len(trade_rows), _trade_counter)
+
+    except Exception as exc:
+        log.warning("[portfolio] state restore failed (starting fresh): %s", exc)

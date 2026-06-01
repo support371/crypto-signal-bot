@@ -56,7 +56,7 @@ class RuntimeConfig:
     network: str
     exchange: str
     market_data_public_exchange: str
-    backend_api_key: str
+    backend_api_key: Optional[str]
     rate_limit_rpm: int
     allow_mainnet: bool
     risk: RiskConfig

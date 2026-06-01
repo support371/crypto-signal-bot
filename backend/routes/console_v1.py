@@ -81,10 +81,13 @@ router = APIRouter(prefix="/api/v1/console", tags=["console"])
 def _require_operator(
     x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
 ) -> None:
-    auth = get_auth_config()
-    if not auth.auth_enabled:
-        return
-    if not x_api_key or x_api_key != auth.api_key:
+    # Auth is only enforced when BACKEND_API_KEY is explicitly set and non-empty.
+    # Re-read from env directly (not lru_cache) to pick up runtime changes.
+    import os
+    live_key = os.environ.get("BACKEND_API_KEY", "").strip()
+    if not live_key:
+        return  # No key configured — open access (private deployment)
+    if not x_api_key or x_api_key != live_key:
         raise HTTPException(status_code=401, detail="X-API-Key required for console write endpoints.")
 
 
