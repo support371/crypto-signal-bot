@@ -1,35 +1,25 @@
 import { useState, useCallback } from 'react';
 import { CryptoPrice } from '@/types/crypto';
 import { toast } from 'sonner';
+import { getConfiguredBackendUrl } from '@/lib/env';
 
-const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string | undefined)
-  ?? 'https://crypto-signal-bot-deqd.onrender.com';
+const BACKEND_URL = getConfiguredBackendUrl();
 
 interface SignalMetadata {
   indicators: {
-    ema20: number;
-    ema50: number;
-    ema200: number;
+    ema20: number; ema50: number; ema200: number;
     rsi14: number;
-    bb_upper: number;
-    bb_mid: number;
-    bb_lower: number;
-    macd: number;
-    macd_signal: number;
-    macd_hist: number;
+    bb_upper: number; bb_mid: number; bb_lower: number;
+    macd: number; macd_signal: number; macd_hist: number;
     atr14: number;
   };
   strategy_votes: Record<string, { side: string; confidence: number }>;
 }
 
 interface SignalResponse {
-  symbol: string;
-  side: string;
-  entry_price: number;
-  stop_loss: number;
-  take_profit: number;
-  confidence: number;
-  strategy_id: string;
+  symbol: string; side: string;
+  entry_price: number; stop_loss: number; take_profit: number;
+  confidence: number; strategy_id: string;
   metadata?: SignalMetadata;
 }
 
@@ -46,20 +36,16 @@ function buildInsight(signal: SignalResponse, coin: CryptoPrice): string {
 
   const lines: string[] = [];
 
-  // Headline
   lines.push(
     `${coin.name} is showing a ${dirLabel} signal with ${pct}% confidence. ` +
     `Price is ${change} over 24h, currently at $${coin.price.toLocaleString()}.`
   );
 
-  // Indicator commentary
   if (ind) {
     const rsiComment =
-      ind.rsi14 > 70
-        ? `RSI at ${ind.rsi14.toFixed(1)} is overbought — momentum may be fading.`
-        : ind.rsi14 < 30
-        ? `RSI at ${ind.rsi14.toFixed(1)} is oversold — a bounce could be near.`
-        : `RSI is neutral at ${ind.rsi14.toFixed(1)}.`;
+      ind.rsi14 > 70 ? `RSI at ${ind.rsi14.toFixed(1)} is overbought — momentum may be fading.`
+      : ind.rsi14 < 30 ? `RSI at ${ind.rsi14.toFixed(1)} is oversold — a bounce could be near.`
+      : `RSI is neutral at ${ind.rsi14.toFixed(1)}.`;
 
     const trendComment =
       ind.ema20 > ind.ema50
@@ -68,76 +54,75 @@ function buildInsight(signal: SignalResponse, coin: CryptoPrice): string {
 
     const bbComment =
       coin.price >= ind.bb_upper
-        ? `Price is touching the upper Bollinger Band — resistance near $${ind.bb_upper.toFixed(0)}.`
+        ? `Price is touching the upper Bollinger Band — resistance near $${ind.bb_upper.toFixed(2)}.`
         : coin.price <= ind.bb_lower
-        ? `Price is near the lower Bollinger Band — support near $${ind.bb_lower.toFixed(0)}.`
-        : `Price sits within Bollinger Bands ($${ind.bb_lower.toFixed(0)}–$${ind.bb_upper.toFixed(0)}).`;
+        ? `Price near the lower Bollinger Band — support near $${ind.bb_lower.toFixed(2)}.`
+        : `Price within Bollinger Bands ($${ind.bb_lower.toFixed(2)}–$${ind.bb_upper.toFixed(2)}).`;
 
     const macdComment =
       ind.macd_hist > 0
-        ? `MACD histogram is positive (${ind.macd_hist.toFixed(4)}), suggesting building bullish momentum.`
-        : `MACD histogram is negative (${ind.macd_hist.toFixed(4)}), suggesting bearish momentum.`;
+        ? `MACD histogram positive (${ind.macd_hist.toFixed(4)}) — building bullish momentum.`
+        : `MACD histogram negative (${ind.macd_hist.toFixed(4)}) — bearish momentum.`;
 
     lines.push(`${rsiComment} ${trendComment}`);
     lines.push(`${bbComment} ${macdComment}`);
   }
 
-  // Strategy consensus
   const voteKeys = Object.keys(votes);
   if (voteKeys.length > 0) {
     const agreeing = voteKeys.filter(k => votes[k].side === side);
-    const disagreeing = voteKeys.filter(
-      k => votes[k].side !== side && votes[k].side !== 'FLAT'
-    );
+    const disagreeing = voteKeys.filter(k => votes[k].side !== side && votes[k].side !== 'FLAT');
     if (agreeing.length === voteKeys.length) {
       lines.push(`All ${voteKeys.length} strategies agree on a ${dirLabel} bias.`);
     } else {
       lines.push(
         `${agreeing.length}/${voteKeys.length} strategies lean ${dirLabel}` +
-        (disagreeing.length > 0
-          ? ` — mixed signals from ${disagreeing.join(', ')}.`
-          : '.')
+        (disagreeing.length > 0 ? ` — mixed signals from ${disagreeing.join(', ')}.` : '.')
       );
     }
   }
 
-  // Risk / reward summary
   if (entry_price && stop_loss && take_profit) {
     const riskPct = Math.abs(((stop_loss - entry_price) / entry_price) * 100).toFixed(2);
     const rewardPct = Math.abs(((take_profit - entry_price) / entry_price) * 100).toFixed(2);
     lines.push(
-      `Risk/Reward: stop at $${stop_loss.toFixed(0)} (−${riskPct}%), ` +
-      `target $${take_profit.toFixed(0)} (+${rewardPct}%).`
+      `Risk/Reward: stop $${stop_loss.toFixed(2)} (−${riskPct}%), target $${take_profit.toFixed(2)} (+${rewardPct}%).`
     );
   }
 
   return lines.join(' ');
 }
 
-// Symbol ID → backend symbol mapping
 const SYMBOL_MAP: Record<string, string> = {
-  bitcoin: 'BTCUSDT',
-  ethereum: 'ETHUSDT',
-  solana: 'SOLUSDT',
-  binancecoin: 'BNBUSDT',
-  cardano: 'ADAUSDT',
-  ripple: 'XRPUSDT',
-  dogecoin: 'DOGEUSDT',
-  polkadot: 'DOTUSDT',
-  'avalanche-2': 'AVAXUSDT',
-  avalanche: 'AVAXUSDT',
-  chainlink: 'LINKUSDT',
-  btc: 'BTCUSDT',
-  eth: 'ETHUSDT',
-  sol: 'SOLUSDT',
-  bnb: 'BNBUSDT',
-  ada: 'ADAUSDT',
-  xrp: 'XRPUSDT',
-  doge: 'DOGEUSDT',
-  dot: 'DOTUSDT',
-  avax: 'AVAXUSDT',
-  link: 'LINKUSDT',
+  bitcoin: 'BTCUSDT',      btc: 'BTCUSDT',
+  ethereum: 'ETHUSDT',     eth: 'ETHUSDT',
+  solana: 'SOLUSDT',       sol: 'SOLUSDT',
+  binancecoin: 'BNBUSDT',  bnb: 'BNBUSDT',
+  cardano: 'ADAUSDT',      ada: 'ADAUSDT',
+  ripple: 'XRPUSDT',       xrp: 'XRPUSDT',
+  dogecoin: 'DOGEUSDT',    doge: 'DOGEUSDT',
+  polkadot: 'DOTUSDT',     dot: 'DOTUSDT',
+  'avalanche-2': 'AVAXUSDT', avalanche: 'AVAXUSDT', avax: 'AVAXUSDT',
+  chainlink: 'LINKUSDT',   link: 'LINKUSDT',
 };
+
+async function fetchWithRetry(url: string, retries = 2, timeoutMs = 12000): Promise<Response> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      return res;
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (attempt === retries) throw err;
+      // Exponential backoff: 1s, 2s
+      await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+    }
+  }
+  throw new Error('All retries exhausted');
+}
 
 export function useAIInsights() {
   const [insight, setInsight] = useState<string | null>(null);
@@ -157,21 +142,25 @@ export function useAIInsights() {
         SYMBOL_MAP[priceData.symbol.toLowerCase()] ??
         `${priceData.symbol.toUpperCase()}USDT`;
 
-      const res = await fetch(
+      const res = await fetchWithRetry(
         `${BACKEND_URL}/api/v1/signals/${backendSymbol}`,
-        { signal: AbortSignal.timeout(8000) }
+        2,   // up to 2 retries (3 attempts total)
+        12000 // 12s timeout per attempt — handles Render cold starts
       );
 
-      if (!res.ok) throw new Error(`Signal fetch failed: ${res.status}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const signalData: SignalResponse = await res.json();
       setInsight(buildInsight(signalData, priceData));
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
+      const name = err instanceof Error ? err.name : '';
+      const message = err instanceof Error ? err.message : '';
       console.error('[AIInsight] error:', err);
 
-      if (message.includes('timeout') || message.includes('fetch')) {
-        toast.error('Signal backend unreachable — will retry');
+      if (name === 'AbortError') {
+        toast.error('Signal backend is waking up — try again in a few seconds');
+      } else if (message.includes('fetch') || message.includes('network') || message.includes('Failed to fetch')) {
+        toast.error('Could not reach signal backend');
       } else if (!message.includes('404')) {
         toast.error('Failed to generate AI insight');
       }
@@ -181,6 +170,5 @@ export function useAIInsights() {
     }
   }, []);
 
-  // Always available — no Supabase required
   return { insight, isLoading, generateInsight, available: true };
 }
