@@ -659,3 +659,18 @@ async def get_version():
             "fill_order_stale_fix": True,
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Temporary auth-debug endpoint — shows whether BACKEND_API_KEY is set
+# (Safe: only reveals True/False, never the key value)
+# ---------------------------------------------------------------------------
+@router.get("/auth-status")
+async def auth_status():
+    import os
+    key = os.environ.get("BACKEND_API_KEY", "").strip()
+    return {
+        "backend_api_key_set": bool(key),
+        "key_length": len(key) if key else 0,
+        "auth_enabled": bool(key),
+    }
