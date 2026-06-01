@@ -135,6 +135,10 @@ def get_market_data_adapter(cfg: "ExchangeConfig") -> BaseExchangeAdapter:
             paper=True, base_url=cfg.bitget_base_url
         )
 
+    if exchange_override == "coinbase":
+        from backend.adapters.exchanges.coinbase import CoinbaseAdapter
+        return CoinbaseAdapter()
+
     # Fallback: coingecko
     from backend.adapters.exchanges.coingecko import CoinGeckoAdapter
     return CoinGeckoAdapter(paper=True)
@@ -157,4 +161,5 @@ __all__ = [
     "OhlcvCandle",
     "ExchangeStatus",
     "CoinGeckoAdapter",
+    "CoinbaseAdapter",
 ]

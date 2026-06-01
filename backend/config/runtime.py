@@ -122,7 +122,7 @@ def _env_bool(name: str, default: bool) -> bool:
 
 def _normalize_exchange(value: str, default: str = "binance") -> str:
     normalized = (value or "").strip().lower()
-    if normalized in {"binance", "bitget", "btcc"}:
+    if normalized in {"binance", "bitget", "btcc", "coinbase", "coingecko"}:
         return normalized
     return default
 

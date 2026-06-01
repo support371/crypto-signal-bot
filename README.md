@@ -10,9 +10,9 @@ A full-stack crypto trading control center — React dashboard frontend, FastAPI
 - **Risk gate** — composite risk score from spread stress, depth decay, volatility, and price shock; blocks or sizes positions accordingly
 - **Guardian service** — monitors drawdown, API errors, and failed orders; activates kill switch automatically when thresholds breach
 - **Paper trading** — full order simulation with realistic slippage, portfolio tracking, and FIFO realized P&L
-- **Hybrid live-paper mode** — paper execution and balances with live public Binance, Bitget, or BTCC market data
+- **Hybrid live-paper mode** — paper execution and balances with live public Binance, Bitget, BTCC, or Coinbase market data
 - **Earnings ledger** — per-trade realized P&L, win rate, best/worst trade, trade history
-- **Exchange adapter** — pluggable: `PaperAdapter` (default) or exchange-selected authenticated adapters for Binance / Bitget / BTCC
+- **Exchange adapter** — pluggable: `PaperAdapter` (default) or exchange-selected authenticated adapters for Binance / Bitget / BTCC. Coinbase is available as a **public market-data source** only (no order execution).
 - **WebSocket** — real-time order updates, guardian alerts, live market updates, and exchange-status updates
 - **Auth + rate limiting** — optional API key on write endpoints, sliding-window rate limiting on reads
 - **Dashboard** — live prices, signal panel, risk gauge, guardian panel, portfolio panel, earnings panel
@@ -226,7 +226,7 @@ Operational defaults now come from `backend/config/config.yaml`, with environmen
 TRADING_MODE=paper              # paper | live
 EXCHANGE=binance                # binance | bitget | btcc
 PAPER_USE_LIVE_MARKET_DATA=false
-MARKET_DATA_PUBLIC_EXCHANGE=binance
+MARKET_DATA_PUBLIC_EXCHANGE=binance   # or: coinbase | coingecko | bitget | btcc
 NETWORK=testnet                 # testnet | mainnet
 BACKEND_API_KEY=                # Restricts POST endpoints when set
 BINANCE_API_KEY=                # Required for EXCHANGE=binance + TRADING_MODE=live
@@ -260,7 +260,7 @@ Leave the Supabase values empty to run in local paper-mode without auth. Set bot
 
 If `BACKEND_API_KEY` is set on the backend, open the dashboard Settings panel and enter the same value in the optional operator API key field so UI write actions can send `X-API-Key` automatically. Supabase values are optional and frontend-only unless the backend is explicitly configured to verify Supabase JWTs (not implemented in this repo).
 
-Hybrid live-paper mode uses `MARKET_DATA_PUBLIC_EXCHANGE` for `/price`, `/signal/latest`, `/guardian/status`, `/exchange/status`, and WebSocket market updates while execution stays on the paper adapter. Binance and Bitget use websocket-first feeds with REST fallback; BTCC uses polling fallback for hybrid paper mode. If a symbol is not covered by the live-paper feed, `/price` returns a clear error instead of silently falling back to synthetic pricing.
+Hybrid live-paper mode uses `MARKET_DATA_PUBLIC_EXCHANGE` for `/price`, `/signal/latest`, `/guardian/status`, `/exchange/status`, and WebSocket market updates while execution stays on the paper adapter. Binance and Bitget use websocket-first feeds with REST fallback; BTCC uses polling fallback for hybrid paper mode. **Coinbase** (`MARKET_DATA_PUBLIC_EXCHANGE=coinbase`) uses the Coinbase Advanced Trade public REST API — no credentials required, globally accessible, public data only. If a symbol is not covered by the live-paper feed, `/price` returns a clear error instead of silently falling back to synthetic pricing.
 
 ---
 
@@ -291,7 +291,7 @@ crypto-signal-bot/
 │   │   ├── paper_trading.py      # Paper portfolio + order fill simulation
 │   │   ├── earnings.py           # FIFO P&L ledger, realized earnings tracking
 │   │   ├── exchange_adapter.py   # Adapter abstraction: Paper | exchange-selected live adapters
-│   │   ├── market_data.py        # Public market-data providers for Binance, Bitget, BTCC
+│   │   ├── market_data.py        # Public market-data providers for Binance, Bitget, BTCC, Coinbase
 │   │   ├── startup_checks.py     # Mode validation, mainnet gate, env audit
 │   │   ├── audit_store.py        # JSON-backed audit persistence
 │   │   └── simulate.py           # Session simulator

@@ -206,7 +206,7 @@ class CoinbaseAdapter(BaseExchangeAdapter):
             for c in candles_raw:
                 candles.append(
                     OhlcvCandle(
-                        timestamp=float(c.get("start", 0)),
+                        time=int(float(c.get("start", 0))),
                         open=Decimal(str(c.get("open", 0))),
                         high=Decimal(str(c.get("high", 0))),
                         low=Decimal(str(c.get("low", 0))),
@@ -215,7 +215,7 @@ class CoinbaseAdapter(BaseExchangeAdapter):
                     )
                 )
             # Coinbase returns newest-first; sort oldest-first
-            candles.sort(key=lambda x: x.timestamp)
+            candles.sort(key=lambda x: x.time)
             return candles[-limit:]
         except (AdapterRateLimitError, AdapterSymbolNotFoundError, AdapterUnavailableError):
             raise
