@@ -308,12 +308,16 @@ def record_heartbeat() -> None:
 
 
 def reset_counters() -> None:
-    global _api_error_count, _failed_order_count
+    global _api_error_count, _failed_order_count, _triggered, _trigger_reason
     _api_error_count = 0
     _failed_order_count = 0
+    _triggered = False
+    _trigger_reason = None
     # Mirror into shared context so /guardian/status reflects the reset.
     context.api_error_count = 0
     context.failed_order_count = 0
+    context.guardian_triggered = False
+    context.guardian_trigger_reason = None
 
 
 def _normalize_open_order_ids(order_ids: Iterable[str]) -> set[str]:
