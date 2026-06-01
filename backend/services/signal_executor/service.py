@@ -29,12 +29,21 @@ import os
 import time
 from typing import Dict
 
+from backend.config.settings import get_settings as _get_settings
+from backend.logic.decision_tracer import decision_tracer, HoldReason
+
 log = logging.getLogger(__name__)
 
-EXECUTOR_INTERVAL: int   = 65
-MIN_CONFIDENCE:    float = float(os.getenv("EXECUTOR_MIN_CONFIDENCE", "0.75"))
-POSITION_PCT:      float = float(os.getenv("EXECUTOR_POSITION_PCT",   "0.05"))
-MAX_POSITIONS:     int   = int(os.getenv("EXECUTOR_MAX_POSITIONS",    "4"))
+def _settings():
+    return _get_settings()
+
+# Read from Settings (which reads from env vars with validated defaults)
+# These are evaluated at import time for performance, but settings object
+# is the canonical source — do not hardcode values here.
+EXECUTOR_INTERVAL: int   = int(os.getenv("EXECUTOR_INTERVAL", str(_settings().executor_interval_seconds)))
+MIN_CONFIDENCE:    float = _settings().executor_min_confidence
+POSITION_PCT:      float = _settings().executor_position_pct
+MAX_POSITIONS:     int   = _settings().executor_max_positions
 
 _last_acted: Dict[str, tuple] = {}   # symbol -> (side, strategy_id)
 _running:    bool = False
@@ -154,16 +163,42 @@ async def _execute_symbol(symbol: str, signal, open_count: int = 0) -> int:
     prev_key       = _last_acted.get(symbol, ("FLAT", ""))
     prev_side      = prev_key[0]
 
+    equity = await _get_equity()
+    notional = equity * POSITION_PCT
+
     if new_side != "FLAT" and new_confidence < MIN_CONFIDENCE:
+        # HOLD: low confidence
+        entry = decision_tracer.make_entry(
+            symbol=symbol, decision="HOLD", side=None,
+            confidence=new_confidence, strategy_id=new_strategy,
+            signal_side=new_side, equity=equity, notional=notional, mode="paper",
+            hold_reasons=[HoldReason(
+                code="LOW_CONFIDENCE",
+                description=f"Confidence {new_confidence:.3f} below threshold {MIN_CONFIDENCE:.3f}",
+                threshold=MIN_CONFIDENCE, actual=new_confidence,
+            )],
+        )
+        decision_tracer.record(entry)
         return open_count
 
     if new_key == prev_key:
+        # HOLD: no change in signal
+        if new_side == "FLAT":
+            return open_count  # silent flat — don't spam traces
+        entry = decision_tracer.make_entry(
+            symbol=symbol, decision="HOLD", side=None,
+            confidence=new_confidence, strategy_id=new_strategy,
+            signal_side=new_side, equity=equity, notional=notional, mode="paper",
+            hold_reasons=[HoldReason(
+                code="NO_SIGNAL_CHANGE",
+                description=f"Signal unchanged: side={new_side} strategy={new_strategy}",
+            )],
+        )
+        decision_tracer.record(entry)
         return open_count
 
     log.info("[executor] signal change %s: %s->%s conf=%.3f strat=%s",
              symbol, prev_side, new_side, new_confidence, new_strategy)
-
-    equity = await _get_equity()
 
     # Close existing position first
     closed = False
@@ -184,6 +219,17 @@ async def _execute_symbol(symbol: str, signal, open_count: int = 0) -> int:
         else:
             log.info("[executor] MAX_POSITIONS cap (%d) reached — skipping new BUY %s",
                      MAX_POSITIONS, symbol)
+            entry = decision_tracer.make_entry(
+                symbol=symbol, decision="HOLD", side="BUY",
+                confidence=new_confidence, strategy_id=new_strategy,
+                signal_side=new_side, equity=equity, notional=notional, mode="paper",
+                hold_reasons=[HoldReason(
+                    code="MAX_POSITIONS_REACHED",
+                    description=f"Open positions ({open_count}) >= MAX_POSITIONS ({MAX_POSITIONS})",
+                    threshold=float(MAX_POSITIONS), actual=float(open_count),
+                )],
+            )
+            decision_tracer.record(entry)
             # Still record the signal so we don't keep trying
             _last_acted[symbol] = new_key
             return open_count

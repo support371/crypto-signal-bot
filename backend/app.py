@@ -342,6 +342,7 @@ from backend.services.portfolio.service import start_portfolio_service
 from backend.routes.risk_v1 import router as risk_v1_router
 from backend.routes.console_v1 import router as console_v1_router
 from backend.routes.monitor_v1 import router as monitor_v1_router
+from backend.routes.decisions_v1 import router as decisions_v1_router
 from backend.services.guardian_bot.monitor import start_guardian_monitor
 
 # Track already registered paths to avoid duplicates
@@ -855,6 +856,204 @@ def get_exchange_status():
         "last_update_ts": market_data.get("last_update_ts"),
         "last_error": market_data.get("last_error"),
     }
+
+
+@app.get("/exchange/supported")
+def get_exchange_supported():
+    """Return support matrix for all exchanges. Acceptance checklist item 14."""
+    return {
+        "supported": [
+            {
+                "id": "binance",
+                "name": "Binance",
+                "public_market_data": True,
+                "ohlcv_source": "binance_us_ohlcv",
+                "paper_execution": False,
+                "testnet_auth_supported": False,
+                "live_execution_enabled": False,
+                "adapter_file": "backend/adapters/exchanges/binance.py",
+            },
+            {
+                "id": "bitget",
+                "name": "Bitget",
+                "public_market_data": True,
+                "ohlcv_source": "bitget_rest",
+                "paper_execution": False,
+                "testnet_auth_supported": False,
+                "live_execution_enabled": False,
+                "adapter_file": "backend/adapters/exchanges/bitget.py",
+            },
+            {
+                "id": "btcc",
+                "name": "BTCC",
+                "public_market_data": True,
+                "ohlcv_source": "btcc_rest",
+                "paper_execution": False,
+                "testnet_auth_supported": False,
+                "live_execution_enabled": False,
+                "adapter_file": "backend/adapters/exchanges/btcc.py",
+            },
+            {
+                "id": "coinbase",
+                "name": "Coinbase",
+                "public_market_data": True,
+                "ohlcv_source": "coinbase_rest",
+                "paper_execution": False,
+                "sandbox_auth_supported": False,
+                "live_execution_enabled": False,
+                "adapter_file": "backend/adapters/exchanges/coinbase.py",
+            },
+            {
+                "id": "coingecko",
+                "name": "CoinGecko",
+                "public_market_data": True,
+                "ohlcv_source": "coingecko_rest",
+                "paper_execution": False,
+                "live_execution_enabled": False,
+                "adapter_file": "backend/adapters/exchanges/coingecko.py",
+                "note": "Primary market data source (geo-restriction fallback)",
+            },
+        ],
+        "execution_adapter": "paper",
+        "live_execution_enabled": False,
+        "withdrawals_enabled": False,
+        "safe_mode": True,
+        "trading_mode": TRADING_MODE,
+    }
+
+
+@app.get("/market/feed/status")
+def get_market_feed_status():
+    """Return current market data feed status."""
+    mds = _get_market_data_status()
+    symbols = mds.get("symbols", [])
+    last_ts = mds.get("last_update_ts")
+    stale = mds.get("stale", True)
+    connected = mds.get("connected", False)
+    return {
+        "source": mds.get("source", "synthetic"),
+        "exchange": mds.get("exchange", MARKET_DATA_PUBLIC_EXCHANGE),
+        "symbol_count": len(symbols),
+        "symbols": symbols,
+        "connected": connected,
+        "stale": stale,
+        "last_tick_at": last_ts,
+        "latency_ms": None,
+        "fallback_active": mds.get("fallback_active", False),
+        "safe_mode_reason": None if connected else "market_data_unavailable",
+        "market_data_mode": mds.get("market_data_mode", "synthetic"),
+    }
+
+
+@app.post("/exchange/test-connection")
+async def test_exchange_connection(exchange: str = "coinbase"):
+    """
+    Diagnostic connectivity test. Does NOT place real orders.
+    Checks public API reachability for the specified exchange.
+    Supports: binance, bitget, btcc, coinbase, coingecko.
+    """
+    supported = {"binance", "bitget", "btcc", "coinbase", "coingecko"}
+    if exchange not in supported:
+        return {"mode": "safe", "reason": f"unsupported_exchange: {exchange}", "supported": list(supported)}
+
+    result = {
+        "exchange": exchange,
+        "test_type": "public_market_data",
+        "live_orders_attempted": False,
+        "secrets_exposed": False,
+        "mode": "diagnostic",
+    }
+
+    try:
+        import httpx
+        urls = {
+            "binance": "https://api.binance.us/api/v3/ping",
+            "bitget": "https://api.bitget.com/api/v2/public/time",
+            "btcc": "https://api.btcc.com/api/v1/info",
+            "coinbase": "https://api.coinbase.com/api/v3/brokerage/products/BTC-USDT",
+            "coingecko": "https://api.coingecko.com/api/v3/ping",
+        }
+        url = urls[exchange]
+        import time as _time
+        t0 = _time.time()
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            r = await client.get(url)
+        latency_ms = round((_time.time() - t0) * 1000, 1)
+        result["connected"] = r.status_code in (200, 201)
+        result["http_status"] = r.status_code
+        result["latency_ms"] = latency_ms
+        result["error"] = None
+    except Exception as exc:
+        result["connected"] = False
+        result["latency_ms"] = None
+        result["error"] = str(exc)
+
+    return result
+
+
+@app.get("/version")
+def get_version():
+    """Return application version and runtime info."""
+    import sys
+    import os
+    return {
+        "version": "1.0.0",
+        "mode": TRADING_MODE,
+        "network": NETWORK,
+        "python": sys.version.split()[0],
+        "safe_mode": True,
+        "live_execution_enabled": False,
+        "withdrawals_enabled": False,
+        "paper_only": True,
+    }
+
+
+@app.get("/runtime/status")
+def get_runtime_status():
+    """Return backend runtime state: uptime, safe mode, exchange, WS clients."""
+    import time as _time
+    mds = _get_market_data_status()
+    from backend.services.guardian_bot import service as _gsvc
+    ws_clients = len(getattr(ws_manager, "_connections", []))
+    return {
+        "mode": TRADING_MODE,
+        "network": NETWORK,
+        "safe_mode": True,
+        "live_execution_enabled": False,
+        "withdrawals_enabled": False,
+        "selected_exchange": MARKET_DATA_PUBLIC_EXCHANGE,
+        "feed_connected": mds.get("connected", False),
+        "feed_stale": mds.get("stale", True),
+        "feed_source": mds.get("source", "synthetic"),
+        "websocket_clients": ws_clients,
+        "guardian_triggered": _gsvc._triggered,
+        "kill_switch_active": _gsvc._kill_switch_active,
+        "drawdown_pct": _gsvc._drawdown_pct,
+    }
+
+
+@app.get("/config/snapshot")
+def get_config_snapshot():
+    """Return current config without secrets. Includes config hash."""
+    import hashlib, json as _json
+    cfg = get_runtime_config()
+    snapshot = {
+        "trading_mode": TRADING_MODE,
+        "network": NETWORK,
+        "market_data_source": MARKET_DATA_PUBLIC_EXCHANGE,
+        "paper_use_live_market_data": PAPER_USE_LIVE_MARKET_DATA,
+        "live_execution_enabled": False,
+        "withdrawals_enabled": False,
+        "safe_mode": True,
+        "risk": {
+            "max_position_pct": cfg.risk.max_position_pct if hasattr(cfg, "risk") else None,
+            "max_daily_loss_pct": cfg.risk.max_daily_loss_pct if hasattr(cfg, "risk") else None,
+        },
+    }
+    snapshot_str = _json.dumps(snapshot, sort_keys=True)
+    snapshot["config_hash"] = hashlib.sha256(snapshot_str.encode()).hexdigest()[:16]
+    return snapshot
+
 
 @app.get("/balance", dependencies=[Depends(rate_limit.rate_limit)])
 def get_balance():

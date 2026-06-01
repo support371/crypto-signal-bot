@@ -239,6 +239,83 @@ class Settings(BaseSettings):
     # Validators
     # -------------------------------------------------------------------------
 
+
+    # -------------------------------------------------------------------------
+    # Signal Executor
+    # -------------------------------------------------------------------------
+
+    executor_min_confidence: float = Field(
+        default=0.75,
+        ge=0.0,
+        le=1.0,
+        description="Minimum signal confidence score to trigger a paper trade. "
+                    "Override with EXECUTOR_MIN_CONFIDENCE env var.",
+    )
+    executor_interval_seconds: int = Field(
+        default=65,
+        ge=10,
+        description="Seconds between executor evaluation loops. "
+                    "Override with EXECUTOR_INTERVAL env var.",
+    )
+    executor_position_pct: float = Field(
+        default=0.05,
+        gt=0.0,
+        le=1.0,
+        description="Fraction of equity allocated per symbol (0.05 = 5%). "
+                    "Override with EXECUTOR_POSITION_PCT env var.",
+    )
+    executor_max_positions: int = Field(
+        default=4,
+        ge=1,
+        le=20,
+        description="Maximum simultaneous open paper positions. "
+                    "Override with EXECUTOR_MAX_POSITIONS env var.",
+    )
+
+    # -------------------------------------------------------------------------
+    # Guardian
+    # -------------------------------------------------------------------------
+
+    guardian_max_drawdown_pct: float = Field(
+        default=15.0,
+        ge=0.0,
+        le=100.0,
+        description="Drawdown % at which Guardian halts trading. "
+                    "Override with GUARDIAN_MAX_DRAWDOWN_PCT env var.",
+    )
+    guardian_max_api_errors: int = Field(
+        default=10,
+        ge=1,
+        description="API error count before Guardian triggers. "
+                    "Override with GUARDIAN_MAX_API_ERRORS env var.",
+    )
+    guardian_max_failed_orders: int = Field(
+        default=5,
+        ge=1,
+        description="Failed order count before Guardian triggers. "
+                    "Override with GUARDIAN_MAX_FAILED_ORDERS env var.",
+    )
+    guardian_check_interval_seconds: int = Field(
+        default=30,
+        ge=5,
+        description="Seconds between Guardian evaluation loops. "
+                    "Override with GUARDIAN_CHECK_INTERVAL env var.",
+    )
+
+    # -------------------------------------------------------------------------
+    # Decision Tracing
+    # -------------------------------------------------------------------------
+
+    trace_decisions: bool = Field(
+        default=True,
+        description="Enable HOLD/BUY/SELL decision tracing to DecisionTrace store.",
+    )
+    trace_max_entries: int = Field(
+        default=1000,
+        ge=100,
+        description="Maximum decision trace entries to retain in memory.",
+    )
+
     @field_validator("database_url")
     @classmethod
     def validate_database_url(cls, v: str) -> str:
