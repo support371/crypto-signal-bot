@@ -213,6 +213,12 @@ async def lifespan(application):
     except Exception as _exc:
         logger.warning("Signal executor start skipped: %s", _exc)
     logger.info("All background services registered.")
+    try:
+        from backend.services.market_data.ingestion import pipeline as _ingestion_pipeline
+        await _ingestion_pipeline.start()
+        logger.info("Ingestion pipeline started (%d symbols).", len(_ingestion_pipeline._active))
+    except Exception as _exc:
+        logger.warning("Ingestion pipeline start skipped (non-fatal): %s", _exc)
 
     try:
         yield
@@ -225,6 +231,11 @@ async def lifespan(application):
         except Exception:
             logger.warning("Portfolio persist on shutdown failed (non-fatal).")
         await stop_reconciliation()
+        try:
+            from backend.services.market_data.ingestion import pipeline as _ingestion_pipeline
+            await _ingestion_pipeline.stop()
+        except Exception:
+            pass
         if context.market_data_service is not None:
             await context.market_data_service.stop()
         try:
