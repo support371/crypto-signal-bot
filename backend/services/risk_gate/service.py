@@ -133,7 +133,7 @@ async def _evaluate(
             mark = 0.0
 
     # Per-symbol position value
-    pos_value = sum(float(l.qty) * mark for l in lots)
+    pos_value = sum(float(l.qty) * float(mark) for l in lots)
 
     # Total portfolio exposure
     total_exp = 0.0
@@ -145,13 +145,13 @@ async def _evaluate(
             p = float(snap.price)
         except Exception:
             p = mark if s == sym else 0.0
-        total_exp += sum(float(l.qty) * p for l in s_lots)
+        total_exp += sum(float(l.qty) * float(p) for l in s_lots)
 
     # Daily realized PnL
     now = int(time.time())
     day_start = now - (now % 86400)
     daily_pnl = sum(
-        float(t.realized_pnl) for t in port_svc._trades
+        float(t.realized_pnl or 0) for t in port_svc._trades
         if t.realized_pnl is not None and t.executed_at >= day_start
     )
 
@@ -164,7 +164,7 @@ async def _evaluate(
     except Exception:
         pass
 
-    nav = cash + total_exp  # Net Asset Value
+    nav = float(cash) + float(total_exp)  # Net Asset Value
 
     # ── Drawdown-aware daily loss feedback ────────────────────
     # Pull live drawdown_pct from the guardian so the MaxDailyLossRule
