@@ -1,55 +1,41 @@
-export const SETTINGS_STORAGE_KEY = 'crypto-signal-bot:settings:v1';
+/**
+ * operatorAuth.ts
+ *
+ * Operator authentication helpers — session-scoped only.
+ *
+ * SECURITY: API keys are NEVER stored in localStorage, sessionStorage,
+ * or any browser-persistent storage. Keys are held in React context
+ * (in-memory) for the duration of the session only and cleared on page close.
+ *
+ * The backend API key lives in the Render environment as BACKEND_API_KEY.
+ * The frontend must never store, expose, or proxy it.
+ */
+
 export const OPERATOR_API_KEY_STORAGE_KEY = 'crypto-signal-bot:operator-api-key:v1';
 
-function safeLocalStorage(): Storage | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    return window.localStorage;
-  } catch {
-    return null;
-  }
-}
-
-function readSettingsOperatorKey(storage: Storage): string {
-  try {
-    const raw = storage.getItem(SETTINGS_STORAGE_KEY);
-    if (!raw) return '';
-
-    const parsed = JSON.parse(raw) as { operatorApiKey?: unknown };
-    return typeof parsed.operatorApiKey === 'string'
-      ? parsed.operatorApiKey.trim()
-      : '';
-  } catch {
-    return '';
-  }
-}
-
+/**
+ * Read operator API key — returns empty string.
+ * localStorage key storage has been removed for security.
+ * The backend enforces API key validation server-side via BACKEND_API_KEY env var.
+ */
 export function readOperatorApiKey(): string {
-  const storage = safeLocalStorage();
-  if (!storage) return '';
-
-  const dedicatedKey = storage.getItem(OPERATOR_API_KEY_STORAGE_KEY)?.trim() ?? '';
-  if (dedicatedKey) return dedicatedKey;
-
-  return readSettingsOperatorKey(storage);
+  // Key storage removed — backend manages its own API key via env var.
+  // Frontend never holds, reads, or writes the operator key.
+  return '';
 }
 
-export function writeOperatorApiKey(value: string): void {
-  const storage = safeLocalStorage();
-  if (!storage) return;
-
-  const trimmed = value.trim();
-  try {
-    if (trimmed) {
-      storage.setItem(OPERATOR_API_KEY_STORAGE_KEY, trimmed);
-    } else {
-      storage.removeItem(OPERATOR_API_KEY_STORAGE_KEY);
-    }
-  } catch {
-    // storage unavailable — no-op
-  }
+/**
+ * Write operator API key — no-op.
+ * Kept for interface compatibility during migration.
+ */
+export function writeOperatorApiKey(_key: string): void {
+  // Intentional no-op. Do not restore localStorage writes here.
+  // See SECURITY_HARDENING.md for rationale.
 }
 
-export function hasOperatorApiKey(): boolean {
-  return readOperatorApiKey().length > 0;
+/**
+ * Clear operator API key — no-op (nothing to clear).
+ */
+export function clearOperatorApiKey(): void {
+  // Nothing stored — nothing to clear.
 }

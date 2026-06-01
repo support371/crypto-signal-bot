@@ -1017,10 +1017,12 @@ def market_state_api(req: MarketStateRequest, _: None = Depends(require_auth)):
 
 @app.post("/intent/live", response_model=IntentResponse)
 def intent_live_api(req: IntentRequest, _: None = Depends(require_auth)):
-    if context.kill_switch_active:
-        raise HTTPException(status_code=503, detail=f"Kill switch active: {context.kill_switch_reason}")
-    mode = "live" if TRADING_MODE == "live" else "paper"
-    return _process_intent(req, mode)
+    # Paper-only safety: live execution is disabled. Return 403 regardless of TRADING_MODE.
+    # The MainnetGate provides a second-layer check inside _process_intent if this is ever relaxed.
+    raise HTTPException(
+        status_code=403,
+        detail={"mode": "safe", "reason": "live_execution_disabled", "message": "Live order execution is permanently disabled. All execution routes through the paper adapter."}
+    )
 
 @app.post("/intent/paper", response_model=IntentResponse)
 def intent_paper_api(req: IntentRequest, _: None = Depends(require_auth)):
@@ -1028,13 +1030,11 @@ def intent_paper_api(req: IntentRequest, _: None = Depends(require_auth)):
 
 @app.post("/withdraw")
 def withdraw_api(req: WithdrawRequest, _: None = Depends(require_auth)):
-    balance = paper_portfolio.get_balance(req.asset)
-    if balance < req.amount:
-        raise HTTPException(status_code=400, detail=f"Insufficient balance: {balance:.2f} < {req.amount:.2f}")
-    paper_portfolio.balances[req.asset] = balance - req.amount
-    withdrawal_data = {"asset": req.asset, "amount": req.amount, "address": req.address, "timestamp": time.time()}
-    append_withdrawal(withdrawal_data)
-    return {"status": "ok", "withdrawal": withdrawal_data}
+    # Withdrawals are explicitly disabled in paper/safe mode.
+    raise HTTPException(
+        status_code=403,
+        detail={"mode": "safe", "reason": "withdrawals_disabled", "message": "Withdrawals are disabled. This is a paper-only simulator."}
+    )
 
 @app.get("/earnings/summary", dependencies=[Depends(rate_limit.rate_limit)])
 def get_earnings_summary_api():
