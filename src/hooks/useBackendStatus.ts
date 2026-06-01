@@ -157,11 +157,12 @@ export function useBackendStatus(pollIntervalMs = 30000): UseBackendStatusResult
     };
 
     // Use Promise.allSettled for resilient fetching
-    const [healthResult, balanceResult, configResult, exchangeResult] = await Promise.allSettled([
+    const [healthResult, balanceResult, configResult, exchangeResult, portfolioResult] = await Promise.allSettled([
       fetchBackendJson<BackendHealth>('/health'),
       fetchBackendJson<BalanceResponse>('/balance'),
       fetchBackendJson<BackendConfig>('/config'),
       fetchBackendJson<BackendExchangeStatus>('/exchange/status'),
+      fetchBackendJson<{ cash_balance: number; equity: number }>('/api/v1/portfolio'),
     ]);
 
     // /health is the source of truth for connectivity
@@ -183,8 +184,11 @@ export function useBackendStatus(pollIntervalMs = 30000): UseBackendStatusResult
       // Don't clear health data - keep last known state for reference
     }
 
-    // /balance - optional, keep previous value on failure
-    if (balanceResult.status === 'fulfilled') {
+    // /balance + /api/v1/portfolio — prefer portfolio cash_balance as authoritative source
+    if (portfolioResult.status === 'fulfilled' && portfolioResult.value?.cash_balance !== undefined) {
+      // Portfolio endpoint is the authoritative source for paper balance
+      setPaperBalance(parseFloat(String(portfolioResult.value.cash_balance)));
+    } else if (balanceResult.status === 'fulfilled') {
       const rawUsdt = balanceResult.value?.balances?.USDT;
       setPaperBalance(rawUsdt !== undefined ? parseFloat(String(rawUsdt)) : 0);
     } else {

@@ -35,9 +35,14 @@ export function SignalPanel({ signal, isLoading }: SignalPanelProps) {
     
     switch (signal.direction) {
       case 'UP':
+      case 'BUY':
         return { icon: ArrowUp, label: 'BULLISH', color: 'text-accent status-bullish' };
       case 'DOWN':
+      case 'SELL':
         return { icon: ArrowDown, label: 'BEARISH', color: 'text-destructive status-bearish' };
+      case 'NEUTRAL':
+      case 'FLAT':
+        return { icon: Circle, label: 'NEUTRAL', color: 'text-muted-foreground' };
       default:
         return { icon: Circle, label: 'NEUTRAL', color: 'text-muted-foreground' };
     }
@@ -46,8 +51,14 @@ export function SignalPanel({ signal, isLoading }: SignalPanelProps) {
   const getRegimeColor = () => {
     if (!signal) return 'text-muted-foreground';
     switch (signal.regime) {
-      case 'TREND': return 'text-accent';
-      case 'CHAOS': return 'text-destructive';
+      case 'TREND':
+      case 'TRENDING_UP':
+        return 'text-accent';
+      case 'CHAOS':
+      case 'TRENDING_DOWN':
+        return 'text-destructive';
+      case 'RANGE':
+        return 'text-warning';
       default: return 'text-warning';
     }
   };
