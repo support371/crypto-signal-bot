@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useAIInsights } from '@/hooks/useAIInsights';
 import { CryptoPrice } from '@/types/crypto';
-import { Brain, RefreshCw, Sparkles, PlugZap } from 'lucide-react';
+import { Brain, RefreshCw, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -12,16 +12,16 @@ interface AIInsightCardProps {
 }
 
 export function AIInsightCard({ selectedCoin, signal, riskScore }: AIInsightCardProps) {
-  const { insight, isLoading, generateInsight, available } = useAIInsights();
+  const { insight, isLoading, generateInsight } = useAIInsights();
 
   useEffect(() => {
-    if (selectedCoin && available) {
+    if (selectedCoin) {
       generateInsight(selectedCoin, signal, riskScore);
     }
-  }, [available, generateInsight, riskScore, selectedCoin, signal]);
+  }, [generateInsight, riskScore, selectedCoin, signal]);
 
   const handleRefresh = () => {
-    if (available) generateInsight(selectedCoin ?? undefined, signal, riskScore);
+    if (selectedCoin) generateInsight(selectedCoin, signal, riskScore);
   };
 
   return (
@@ -43,27 +43,18 @@ export function AIInsightCard({ selectedCoin, signal, riskScore }: AIInsightCard
             variant="ghost"
             size="icon"
             onClick={handleRefresh}
-            disabled={isLoading || !available}
+            disabled={isLoading || !selectedCoin}
             className="h-8 w-8"
           >
             <RefreshCw className={cn('w-4 h-4', isLoading && 'animate-spin')} />
           </Button>
         </div>
 
-        {!available ? (
-          <div className="text-center py-6 space-y-2">
-            <PlugZap className="w-8 h-8 text-muted-foreground/40 mx-auto" />
-            <p className="text-sm text-muted-foreground">
-              AI insights require Supabase auth and edge functions.
-            </p>
-            <p className="text-xs text-muted-foreground/60">
-              Set both <span className="font-mono">VITE_SUPABASE_URL</span> and <span className="font-mono">VITE_SUPABASE_PUBLISHABLE_KEY</span> to enable.
-            </p>
-          </div>
-        ) : isLoading ? (
+        {isLoading ? (
           <div className="space-y-3 animate-pulse">
             <div className="h-4 bg-muted rounded w-3/4" />
             <div className="h-4 bg-muted rounded w-full" />
+            <div className="h-4 bg-muted rounded w-5/6" />
             <div className="h-4 bg-muted rounded w-2/3" />
           </div>
         ) : insight ? (
@@ -75,16 +66,19 @@ export function AIInsightCard({ selectedCoin, signal, riskScore }: AIInsightCard
           </div>
         ) : (
           <div className="text-center py-6 text-muted-foreground">
-            <p className="text-sm">Select a coin to get AI-powered insights</p>
+            <Brain className="w-8 h-8 mx-auto mb-2 opacity-30" />
+            <p className="text-sm">Select a coin to get AI-powered market insights</p>
           </div>
         )}
 
-        {available && selectedCoin && (
+        {insight && selectedCoin && (
           <div className="mt-4 pt-4 border-t border-border/50">
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span className="px-2 py-1 rounded bg-muted/50 font-mono">{selectedCoin.symbol}</span>
+              <span className="px-2 py-1 rounded bg-muted/50 font-mono">
+                {selectedCoin.symbol.toUpperCase()}
+              </span>
               <span>•</span>
-              <span>Powered by edge AI</span>
+              <span>Powered by live signal engine</span>
             </div>
           </div>
         )}
