@@ -197,21 +197,20 @@ def last_macd(
     slow: int = 26,
     signal_period: int = 9,
     count: int = 1,
-) -> List[Tuple[Optional[float], Optional[float], Optional[float]]]:
+) -> Any:
     """
     Return the last `count` MACD values (macd_line, signal_line, histogram).
-    Optimized: Returns a list of tuples, where the last element is the most recent.
-    Example: last_macd(..., count=2) -> [(prev_ml, prev_sl, prev_hist), (curr_ml, curr_sl, curr_hist)]
+
+    Returns:
+        - If count == 1 (default): A single Tuple (ml, sl, hist)
+        - If count > 1: A List of Tuples, where the last element is the most recent.
     """
     if len(values) < slow + signal_period - 1:
-        return [(None, None, None)] * count
+        empty = (None, None, None)
+        return empty if count == 1 else [empty] * count
 
     # MACD line = EMA(fast) - EMA(slow)
-
-    # Efficiently get enough EMA values to compute the needed MACD lines
-    # EMA(slow) needs more data than EMA(fast)
-    # We need a dense series of MACD lines to compute the Signal EMA
-
+    # We compute full series here as Signal EMA needs a dense list.
     ema_f = ema(values, fast)
     ema_s = ema(values, slow)
 
@@ -221,25 +220,23 @@ def last_macd(
             macd_line.append(f - s)
 
     if len(macd_line) < signal_period:
-        return [(None, None, None)] * count
+        empty = (None, None, None)
+        return empty if count == 1 else [empty] * count
 
-    # Now compute the Signal Line (EMA of MACD line)
-    # We only need the last `count` values of the Signal EMA
+    # Signal Line = EMA of MACD line
     sig_line_full = ema(macd_line, signal_period)
 
-    results = []
-    # Map back the requested number of results
-    # The last `count` values of sig_line_full correspond to the last `count` bars
     requested_sig = sig_line_full[-count:]
     requested_macd = macd_line[-count:]
 
+    results = []
     for ml, sl in zip(requested_macd, requested_sig):
         if ml is not None and sl is not None:
             results.append((ml, sl, ml - sl))
         else:
             results.append((None, None, None))
 
-    return results
+    return results[0] if count == 1 else results
 
 
 # ---------------------------------------------------------------------------

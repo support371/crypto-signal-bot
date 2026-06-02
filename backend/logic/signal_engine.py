@@ -128,8 +128,8 @@ def evaluate_symbol(
             prev_macd_l, prev_sig_l, _ = macd_vals[0]
             macd_l, sig_l, hist = macd_vals[1]
         elif n >= 35:
-            macd_vals = last_macd(closes, 12, 26, 9, count=1)
-            macd_l, sig_l, hist = macd_vals[0]
+            # Returns a single Tuple (ml, sl, hist) by default
+            macd_l, sig_l, hist = last_macd(closes, 12, 26, 9)
             prev_macd_l = prev_sig_l = None
         else:
             macd_l = sig_l = hist = prev_macd_l = prev_sig_l = None

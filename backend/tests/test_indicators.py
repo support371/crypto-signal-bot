@@ -98,14 +98,12 @@ class TestMACD:
                 assert abs((m - s) - h) < 1e-9
 
     def test_last_macd_tuple(self):
-        # last_macd returns a List of Tuples
-        res = last_macd(_prices(60), count=1)
-        ml, sl, hist = res[0]
+        # last_macd returns a single Tuple by default
+        ml, sl, hist = last_macd(_prices(60))
         assert all(v is not None for v in [ml, sl, hist])
 
     def test_last_macd_none_on_short(self):
-        res = last_macd(_prices(10), count=1)
-        ml, sl, hist = res[0]
+        ml, sl, hist = last_macd(_prices(10))
         assert ml is None
 
     def test_last_macd_multiple_count(self):
