@@ -17,6 +17,7 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 const PublicHome = lazy(() => import("./pages/PublicHome"));
 const IntegrationsStatus = lazy(() => import("./pages/IntegrationsStatus"));
 const Waitlist = lazy(() => import("./pages/Waitlist"));
+const Backtest = lazy(() => import("./pages/Backtest"));
 
 const queryClient = new QueryClient();
 
@@ -53,6 +54,7 @@ const App = () => (
                   }
                 />
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+                <Route path="/backtest" element={<Backtest />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </Suspense>

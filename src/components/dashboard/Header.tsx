@@ -1,4 +1,4 @@
-import { Activity, LogOut, Settings, Wallet } from 'lucide-react';
+import { Activity, BarChart2, LogOut, Settings, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth, isSupabaseConfigured as SUPABASE_CONFIGURED } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
