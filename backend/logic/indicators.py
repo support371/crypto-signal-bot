@@ -10,7 +10,7 @@ insufficient data rather than raising.
 """
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple, Union
 
 
 # ---------------------------------------------------------------------------
@@ -197,7 +197,7 @@ def last_macd(
     slow: int = 26,
     signal_period: int = 9,
     count: int = 1,
-) -> Any:
+) -> Union[Tuple[Optional[float], Optional[float], Optional[float]], List[Tuple[Optional[float], Optional[float], Optional[float]]]]:
     """
     Return the last `count` MACD values (macd_line, signal_line, histogram).
 
