@@ -1,5 +1,6 @@
 // src/components/dashboard/SurgePanel.tsx
-import { Zap, ShieldCheck, TrendingUp, AlertTriangle, RefreshCw, Activity } from 'lucide-react';
+import { useState } from 'react';
+import { Zap, ShieldCheck, TrendingUp, AlertTriangle, RefreshCw, Activity, Volume2, VolumeX } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SurgeScannerStatus, SymbolSurgeStatus } from '@/hooks/useSurgeScanner';
 
@@ -8,6 +9,8 @@ interface SurgePanelProps {
   isLoading?: boolean;
   error?: string | null;
   onRefetch?: () => void;
+  soundEnabled?: boolean;
+  onToggleSound?: () => void;
 }
 
 const ALERT_META: Record<
@@ -46,36 +49,43 @@ const ALERT_META: Record<
 
 function SymbolRow({ symbol, data }: { symbol: string; data: SymbolSurgeStatus }) {
   const meta = ALERT_META[data.type] ?? ALERT_META.WATCHING;
-  const tick = symbol.replace('USDT', '');
+  const ticker = symbol.replace('USDT', '');
   const pct = data.pct_change ?? 0;
   const sign = pct >= 0 ? '+' : '';
+  const isActive = data.type === 'NORMAL_SURGE' || data.type === 'STRONG_SURGE';
+  const isStop   = data.type === 'STOP_LOSS_EXIT';
 
   return (
     <div
       className={cn(
-        'flex items-center justify-between rounded-lg px-3 py-2 border text-xs font-mono',
+        'flex items-center justify-between rounded-lg px-3 py-2.5 border text-xs font-mono transition-all duration-500',
         meta.bg,
         meta.border,
+        isActive && 'ring-1 ring-yellow-500/20',
+        isStop  && 'ring-1 ring-red-500/30',
       )}
     >
       <div className="flex items-center gap-2">
-        <span className={cn('flex items-center gap-1', meta.color)}>
+        <span className={cn('flex items-center gap-1', meta.color, isActive && 'animate-pulse')}>
           {meta.icon}
         </span>
-        <span className="font-semibold text-foreground">{tick}</span>
+        <span className="font-bold text-foreground text-sm">{ticker}</span>
         <span className={cn('text-[10px]', meta.color)}>{meta.label}</span>
       </div>
+
       <div className="flex items-center gap-3">
         <span
           className={cn(
-            'font-bold',
-            pct > 0 ? 'text-emerald-400' : pct < -0.01 ? 'text-red-400' : 'text-muted-foreground',
+            'font-bold text-sm',
+            pct > 0   ? 'text-emerald-400'      :
+            pct < -0.01 ? 'text-red-400'        :
+            'text-muted-foreground',
           )}
         >
           {sign}{pct.toFixed(2)}%
         </span>
         {data.position_pct !== undefined && data.position_pct > 0 && (
-          <span className="text-muted-foreground">
+          <span className="text-[10px] text-muted-foreground">
             {(data.position_pct * 100).toFixed(0)}% eq
           </span>
         )}
@@ -84,32 +94,36 @@ function SymbolRow({ symbol, data }: { symbol: string; data: SymbolSurgeStatus }
   );
 }
 
-export function SurgePanel({ status, isLoading, error, onRefetch }: SurgePanelProps) {
-  const hasStatus = !!status;
-  const isRunning = status?.running ?? false;
-
-  const totalAlerts = status?.alerts_fired ?? 0;
-  const stopLosses = status?.stop_losses_triggered ?? 0;
-  const surgeStatus = status?.surge_status ?? {};
-  const watchedSymbols = status?.watched_symbols ?? ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT'];
+export function SurgePanel({
+  status,
+  isLoading,
+  error,
+  onRefetch,
+  soundEnabled = true,
+  onToggleSound,
+}: SurgePanelProps) {
+  const hasStatus    = !!status;
+  const isRunning    = status?.running ?? false;
+  const totalAlerts  = status?.alerts_fired ?? 0;
+  const stopLosses   = status?.stop_losses_triggered ?? 0;
+  const surgeStatus  = status?.surge_status ?? {};
+  const watchedSyms  = status?.watched_symbols ?? ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT'];
 
   const activeSurges = Object.values(surgeStatus).filter(
     (s) => s.type === 'NORMAL_SURGE' || s.type === 'STRONG_SURGE',
   ).length;
 
   return (
-    <div className="rounded-xl border border-border bg-card shadow-sm flex flex-col h-full">
-      {/* Header */}
+    <div className="rounded-xl border border-border bg-card shadow-sm flex flex-col">
+      {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
         <div className="flex items-center gap-2">
           <Zap
             className={cn(
               'w-4 h-4',
-              activeSurges > 0
-                ? 'text-yellow-400 animate-pulse'
-                : isRunning
-                ? 'text-emerald-400'
-                : 'text-muted-foreground',
+              activeSurges > 0 ? 'text-yellow-400 animate-pulse' :
+              isRunning        ? 'text-emerald-400'              :
+              'text-muted-foreground',
             )}
           />
           <span className="text-sm font-semibold tracking-tight">Surge Scanner</span>
@@ -118,39 +132,62 @@ export function SurgePanel({ status, isLoading, error, onRefetch }: SurgePanelPr
               LIVE
             </span>
           )}
+          {activeSurges > 0 && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/15 text-yellow-400 border border-yellow-500/25 font-mono animate-pulse">
+              {activeSurges} ACTIVE
+            </span>
+          )}
         </div>
-        <button
-          onClick={onRefetch}
-          className="text-muted-foreground hover:text-foreground transition-colors"
-          title="Refresh"
-        >
-          <RefreshCw className={cn('w-3.5 h-3.5', isLoading && 'animate-spin')} />
-        </button>
+
+        <div className="flex items-center gap-2">
+          {/* Sound toggle */}
+          <button
+            onClick={onToggleSound}
+            title={soundEnabled ? 'Mute alerts' : 'Enable alert sounds'}
+            className={cn(
+              'transition-colors',
+              soundEnabled ? 'text-emerald-400 hover:text-emerald-300' : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {soundEnabled
+              ? <Volume2 className="w-3.5 h-3.5" />
+              : <VolumeX className="w-3.5 h-3.5" />}
+          </button>
+
+          {/* Refresh */}
+          <button
+            onClick={onRefetch}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+            title="Refresh"
+          >
+            <RefreshCw className={cn('w-3.5 h-3.5', isLoading && 'animate-spin')} />
+          </button>
+        </div>
       </div>
 
-      {/* Stats row */}
+      {/* ── Stats row ──────────────────────────────────────────────────── */}
       <div className="grid grid-cols-3 divide-x divide-border border-b border-border">
-        <div className="flex flex-col items-center py-2">
-          <span className="text-[10px] text-muted-foreground font-mono uppercase tracking-wide">Alerts</span>
-          <span className="text-lg font-bold font-mono text-foreground">{totalAlerts}</span>
+        <div className="flex flex-col items-center py-3">
+          <span className="text-[10px] text-muted-foreground font-mono uppercase tracking-wide">Alerts Fired</span>
+          <span className="text-xl font-bold font-mono text-foreground">{totalAlerts}</span>
         </div>
-        <div className="flex flex-col items-center py-2">
+        <div className="flex flex-col items-center py-3">
           <span className="text-[10px] text-muted-foreground font-mono uppercase tracking-wide">Stops Hit</span>
-          <span className={cn('text-lg font-bold font-mono', stopLosses > 0 ? 'text-red-400' : 'text-foreground')}>
+          <span className={cn('text-xl font-bold font-mono', stopLosses > 0 ? 'text-red-400' : 'text-foreground')}>
             {stopLosses}
           </span>
         </div>
-        <div className="flex flex-col items-center py-2">
-          <span className="text-[10px] text-muted-foreground font-mono uppercase tracking-wide">Active</span>
-          <span className={cn('text-lg font-bold font-mono', activeSurges > 0 ? 'text-yellow-400' : 'text-muted-foreground')}>
+        <div className="flex flex-col items-center py-3">
+          <span className="text-[10px] text-muted-foreground font-mono uppercase tracking-wide">Active Now</span>
+          <span className={cn('text-xl font-bold font-mono', activeSurges > 0 ? 'text-yellow-400' : 'text-muted-foreground')}>
             {activeSurges}
           </span>
         </div>
       </div>
 
-      {/* Config pills */}
+      {/* ── Config pills ───────────────────────────────────────────────── */}
       {status?.config && (
-        <div className="flex flex-wrap gap-1.5 px-4 py-2 border-b border-border">
+        <div className="flex flex-wrap gap-1.5 px-4 py-2.5 border-b border-border">
           <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted/50 text-muted-foreground font-mono">
             window: {status.config.window_minutes}min
           </span>
@@ -161,25 +198,25 @@ export function SurgePanel({ status, isLoading, error, onRefetch }: SurgePanelPr
             surge: {(status.config.surge_threshold_mid * 100).toFixed(0)}–{(status.config.surge_threshold_high * 100).toFixed(0)}%
           </span>
           <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
-            deploy: {(status.config.normal_position_pct * 100).toFixed(0)}–{(status.config.strong_position_pct * 100).toFixed(0)}% eq
+            deploy: {(status.config.normal_position_pct * 100).toFixed(0)}–{(status.config.strong_position_pct * 100).toFixed(0)}% equity
           </span>
         </div>
       )}
 
-      {/* Symbol rows */}
-      <div className="flex-1 px-4 py-3 space-y-2 overflow-y-auto">
+      {/* ── Coin rows ──────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 px-4 py-3">
         {isLoading && !hasStatus ? (
-          <div className="flex items-center justify-center h-20 text-muted-foreground text-xs">
-            Loading scanner…
+          <div className="col-span-4 flex items-center justify-center h-16 text-muted-foreground text-xs">
+            Connecting to scanner…
           </div>
         ) : error ? (
-          <div className="flex items-center justify-center h-20 text-red-400 text-xs font-mono">
+          <div className="col-span-4 flex items-center justify-center h-16 text-red-400 text-xs font-mono">
             {error}
           </div>
         ) : (
-          watchedSymbols.map((sym) => {
-            const data = surgeStatus[sym] ?? {
-              type: 'WATCHING' as const,
+          watchedSyms.map((sym) => {
+            const data: SymbolSurgeStatus = surgeStatus[sym] ?? {
+              type: 'WATCHING',
               pct_change: 0,
               at: 0,
             };
@@ -188,10 +225,15 @@ export function SurgePanel({ status, isLoading, error, onRefetch }: SurgePanelPr
         )}
       </div>
 
-      {/* Footer */}
-      <div className="px-4 py-2 border-t border-border flex items-center gap-1.5 text-[10px] text-muted-foreground font-mono">
+      {/* ── Footer ─────────────────────────────────────────────────────── */}
+      <div className="px-4 py-2.5 border-t border-border flex items-center gap-1.5 text-[10px] text-muted-foreground font-mono">
         <ShieldCheck className="w-3 h-3 text-emerald-500" />
-        Guardian-gated · Paper mode · Top-cap only
+        Guardian-gated · Paper mode only · Top market-cap coins
+        {soundEnabled && (
+          <span className="ml-auto flex items-center gap-1 text-emerald-400">
+            <Volume2 className="w-2.5 h-2.5" /> alerts on
+          </span>
+        )}
       </div>
     </div>
   );

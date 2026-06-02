@@ -113,7 +113,8 @@ const Index = () => {
   } = useConsole();
   const { status: monitorStatus, isLoading: monitorLoading, runNow, refetch: refetchMonitor } = useMonitoring();
   const { metrics, isLoading: metricsLoading, error: metricsError, refetch: refetchMetrics } = useBackendMetrics();
-  const { status: surgeStatus, isLoading: surgeLoading, error: surgeError, refetch: refetchSurge } = useSurgeScanner();
+  const [surgeSound, setSurgeSound] = useState(true);
+  const { status: surgeStatus, isLoading: surgeLoading, error: surgeError, refetch: refetchSurge } = useSurgeScanner(surgeSound);
   const selectedCoin = prices.find((price) => price.id === selectedSymbol) || null;
 
   const { signal, risk, microstructure, isLoading: signalLoading, refreshLatest: refreshLatestSignal } = useSignalEngine(selectedCoin, {
@@ -433,6 +434,8 @@ const Index = () => {
               isLoading={surgeLoading}
               error={surgeError}
               onRefetch={refetchSurge}
+              soundEnabled={surgeSound}
+              onToggleSound={() => setSurgeSound((v) => !v)}
             />
           </div>
         </div>
