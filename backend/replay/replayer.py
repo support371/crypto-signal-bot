@@ -47,8 +47,7 @@ from backend.logic.indicators import (
 
 def compute_macd(closes):
     from backend.logic.indicators import last_macd
-    # last_macd returns a single Tuple by default when count is 1 or omitted
-    return last_macd(closes)
+    return last_macd(closes)   # already returns (macd_line, signal_line, histogram)
 
 def compute_bollinger_bands(closes):
     from backend.logic.indicators import last_bollinger

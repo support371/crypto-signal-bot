@@ -10,7 +10,7 @@ insufficient data rather than raising.
 """
 from __future__ import annotations
 
-from typing import Any, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple
 
 
 # ---------------------------------------------------------------------------
