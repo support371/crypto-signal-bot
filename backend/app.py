@@ -212,6 +212,12 @@ async def lifespan(application):
         _start_exec(app)
     except Exception as _exc:
         logger.warning("Signal executor start skipped: %s", _exc)
+    try:
+        from backend.services.surge_scanner.service import start_surge_scanner as _start_surge
+        import asyncio as _asyncio
+        _asyncio.create_task(_start_surge(), name="surge_scanner_boot")
+    except Exception as _exc:
+        logger.warning("Surge scanner start skipped: %s", _exc)
     logger.info("All background services registered.")
     try:
         from backend.services.market_data.ingestion import pipeline as _ingestion_pipeline
@@ -1387,6 +1393,17 @@ def simulate_session_api(req: SimulateRequest) -> SimulateResponse:
 # ---------------------------------------------------------------------------
 # This allows serving the frontend if it's built and placed in 'dist'
 DIST_PATH = os.path.join(os.path.dirname(__file__), "..", "dist")
+
+
+
+@app.get("/surge/status")
+async def surge_status():
+    """Surge scanner status — active alerts, watched symbols, stop-loss counts."""
+    try:
+        from backend.services.surge_scanner.service import get_surge_status
+        return get_surge_status()
+    except Exception as exc:
+        return {"error": str(exc)}
 
 @app.get("/{path:path}")
 async def serve_spa(path: str):
