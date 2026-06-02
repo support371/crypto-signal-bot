@@ -25,8 +25,6 @@ from backend.logic.indicators import (
     last_ema,
     last_macd,
     last_rsi,
-    ema as ema_series,
-    macd as macd_series,
 )
 from backend.logic.strategies import (
     combine_strategies,
@@ -123,18 +121,18 @@ def evaluate_symbol(
         # Mean-reversion: BB(20) + RSI(14)
         bb_upper, bb_mid, bb_lower = last_bollinger(closes, 20, 2.0) if n >= 20 else (None, None, None)
 
-        # Momentum: MACD(12,26,9) — need prev bar too
-        macd_l, sig_l, hist = last_macd(closes, 12, 26, 9) if n >= 35 else (None, None, None)
-
-        # Prev-bar MACD for crossover detection
+        # Momentum: MACD(12,26,9) — need current and prev bar for crossover detection
         if n >= 36:
-            ml_series, sl_series, _ = macd_series(closes, 12, 26, 9)
-            prev_macd_vals  = [v for v in ml_series if v is not None]
-            prev_sig_vals   = [v for v in sl_series  if v is not None]
-            prev_macd_l = prev_macd_vals[-2] if len(prev_macd_vals) >= 2 else None
-            prev_sig_l  = prev_sig_vals[-2]  if len(prev_sig_vals)  >= 2 else None
-        else:
+            # Efficiently get both current and previous MACD values in one pass
+            macd_vals = last_macd(closes, 12, 26, 9, count=2)
+            prev_macd_l, prev_sig_l, _ = macd_vals[0]
+            macd_l, sig_l, hist = macd_vals[1]
+        elif n >= 35:
+            macd_vals = last_macd(closes, 12, 26, 9, count=1)
+            macd_l, sig_l, hist = macd_vals[0]
             prev_macd_l = prev_sig_l = None
+        else:
+            macd_l = sig_l = hist = prev_macd_l = prev_sig_l = None
 
         # --- Run strategies ---
         results = []

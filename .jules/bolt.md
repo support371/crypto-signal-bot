@@ -9,3 +9,7 @@
 ## 2026-05-29 - [Redundant API Round-trips in Exchange Adapters]
 **Learning:** Some exchange endpoints (like Binance's 24hr ticker) provide a superset of data that makes other specialized endpoints (like bookTicker) redundant for common use cases. Consolidating these calls reduces network latency and saves API rate-limit weight.
 **Action:** Always check the full response schema of "thick" API endpoints to see if they can replace multiple "thin" calls in hot paths like price fetching.
+
+## 2026-05-30 - [Technical Indicator Tail-only Optimization]
+**Learning:** Calculating full historical series for technical indicators when only the latest 1-2 values are needed (for signal generation or crossover detection) is a major performance bottleneck. List allocations and redundant (n)$ series passes create unnecessary GC pressure and CPU overhead.
+**Action:** Implement iterative, (1)$ space "last" functions for all indicators. For crossover detection (e.g., MACD), extend these functions with a `count` parameter to retrieve both current and penultimate values in a single pass, eliminating redundant series re-evaluation.

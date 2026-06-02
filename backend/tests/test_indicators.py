@@ -98,12 +98,24 @@ class TestMACD:
                 assert abs((m - s) - h) < 1e-9
 
     def test_last_macd_tuple(self):
-        ml, sl, hist = last_macd(_prices(60))
+        # last_macd returns a List of Tuples
+        res = last_macd(_prices(60), count=1)
+        ml, sl, hist = res[0]
         assert all(v is not None for v in [ml, sl, hist])
 
     def test_last_macd_none_on_short(self):
-        ml, sl, hist = last_macd(_prices(10))
+        res = last_macd(_prices(10), count=1)
+        ml, sl, hist = res[0]
         assert ml is None
+
+    def test_last_macd_multiple_count(self):
+        res = last_macd(_prices(60), count=2)
+        assert len(res) == 2
+        # current
+        ml1, sl1, hist1 = res[1]
+        # previous
+        ml0, sl0, hist0 = res[0]
+        assert ml1 is not None and ml0 is not None
 
 
 # ── Bollinger Bands ───────────────────────────────────────────────────────────
