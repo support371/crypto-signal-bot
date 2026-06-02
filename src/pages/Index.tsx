@@ -29,6 +29,8 @@ import { useMonitoring } from '@/hooks/useMonitoring';
 import { CommandConsolePanel } from '@/components/dashboard/CommandConsolePanel';
 import { MonitoringPanel } from '@/components/dashboard/MonitoringPanel';
 import { fetchBackendJson } from '@/lib/backend';
+import { SurgePanel } from '@/components/dashboard/SurgePanel';
+import { useSurgeScanner } from '@/hooks/useSurgeScanner';
 import { useAuth } from '@/context/AuthContext';
 
 /**
@@ -111,6 +113,7 @@ const Index = () => {
   } = useConsole();
   const { status: monitorStatus, isLoading: monitorLoading, runNow, refetch: refetchMonitor } = useMonitoring();
   const { metrics, isLoading: metricsLoading, error: metricsError, refetch: refetchMetrics } = useBackendMetrics();
+  const { status: surgeStatus, isLoading: surgeLoading, error: surgeError, refetch: refetchSurge } = useSurgeScanner();
   const selectedCoin = prices.find((price) => price.id === selectedSymbol) || null;
 
   const { signal, risk, microstructure, isLoading: signalLoading, refreshLatest: refreshLatestSignal } = useSignalEngine(selectedCoin, {
@@ -419,6 +422,17 @@ const Index = () => {
               audit={audit}
               isLoading={auditLoading}
               onRefetch={refetchAudit}
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6 mb-4">
+          <div className="lg:col-span-3">
+            <SurgePanel
+              status={surgeStatus}
+              isLoading={surgeLoading}
+              error={surgeError}
+              onRefetch={refetchSurge}
             />
           </div>
         </div>
