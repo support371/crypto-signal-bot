@@ -10,7 +10,7 @@ insufficient data rather than raising.
 """
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 
 # ---------------------------------------------------------------------------
@@ -47,12 +47,22 @@ def ema(values: List[float], period: int) -> List[Optional[float]]:
 
 
 def last_ema(values: List[float], period: int) -> Optional[float]:
-    """Return the most recent EMA value, or None if insufficient data."""
-    r = ema(values, period)
-    for v in reversed(r):
-        if v is not None:
-            return v
-    return None
+    """
+    Return the most recent EMA value, or None if insufficient data.
+    Optimized to O(n) time and O(1) space by avoiding full list allocation.
+    """
+    if len(values) < period or period <= 0:
+        return None
+
+    k = 2.0 / (period + 1)
+    # Seed with SMA of first 'period' values
+    val = sum(values[:period]) / period
+
+    # Progressively calculate EMA for the rest
+    for i in range(period, len(values)):
+        val = values[i] * k + val * (1 - k)
+
+    return val
 
 
 # ---------------------------------------------------------------------------
@@ -99,11 +109,41 @@ def rsi(values: List[float], period: int = 14) -> List[Optional[float]]:
 
 
 def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
-    r = rsi(values, period)
-    for v in reversed(r):
-        if v is not None:
-            return v
-    return None
+    """
+    Return the most recent RSI value.
+    Optimized to O(n) time and O(1) space by avoiding list allocations for changes, gains, and losses.
+    """
+    n = len(values)
+    if n < period + 1 or period <= 0:
+        return None
+
+    # Initial averages
+    avg_gain = 0.0
+    avg_loss = 0.0
+
+    for i in range(1, period + 1):
+        change = values[i] - values[i - 1]
+        if change > 0:
+            avg_gain += change
+        else:
+            avg_loss -= change
+
+    avg_gain /= period
+    avg_loss /= period
+
+    # Wilder smoothing for the rest
+    for i in range(period + 1, n):
+        change = values[i] - values[i - 1]
+        gain = change if change > 0 else 0.0
+        loss = -change if change < 0 else 0.0
+        avg_gain = (avg_gain * (period - 1) + gain) / period
+        avg_loss = (avg_loss * (period - 1) + loss) / period
+
+    if avg_loss == 0:
+        return 100.0
+
+    rs = avg_gain / avg_loss
+    return 100.0 - (100.0 / (1 + rs))
 
 
 # ---------------------------------------------------------------------------
@@ -159,17 +199,25 @@ def last_macd(
     fast: int = 12,
     slow: int = 26,
     signal_period: int = 9,
-) -> Tuple[Optional[float], Optional[float], Optional[float]]:
-    """Return (macd_line, signal_line, histogram) for the most recent bar."""
+    count: int = 1,
+) -> Any:
+    """
+    Return (macd_line, signal_line, histogram) for the most recent 'count' bars.
+    If count=1 (default), returns a single tuple (ml, sl, hist) for backward compatibility.
+    If count > 1, returns a list of tuples, newest last.
+    """
     ml, sl, hist = macd(values, fast, slow, signal_period)
 
-    def _last(lst: List[Optional[float]]) -> Optional[float]:
-        for v in reversed(lst):
-            if v is not None:
-                return v
-        return None
+    results = []
+    for i in range(len(ml) - count, len(ml)):
+        if i < 0:
+            results.append((None, None, None))
+        else:
+            results.append((ml[i], sl[i], hist[i]))
 
-    return _last(ml), _last(sl), _last(hist)
+    if count == 1:
+        return results[0]
+    return results
 
 
 # ---------------------------------------------------------------------------
@@ -228,14 +276,21 @@ def last_bollinger(
     period: int = 20,
     num_std: float = 2.0,
 ) -> Tuple[Optional[float], Optional[float], Optional[float]]:
-    """Return (upper, middle, lower) for the most recent bar."""
-    upper, middle, lower = bollinger_bands(values, period, num_std)
-    def _last(lst):
-        for v in reversed(lst):
-            if v is not None:
-                return v
-        return None
-    return _last(upper), _last(middle), _last(lower)
+    """
+    Return (upper, middle, lower) for the most recent bar.
+    Optimized to O(period) time and O(1) space for the last-value calculation.
+    """
+    n = len(values)
+    if n < period or period <= 0:
+        return None, None, None
+
+    # We only need the last 'period' values
+    window = values[-period:]
+    sma = sum(window) / period
+    variance = sum((x - sma) ** 2 for x in window) / period
+    std = max(variance, 0.0) ** 0.5
+
+    return sma + num_std * std, sma, sma - num_std * std
 
 
 # ---------------------------------------------------------------------------
@@ -289,8 +344,34 @@ def last_atr(
     closes: List[float],
     period: int = 14,
 ) -> Optional[float]:
-    r = atr(highs, lows, closes, period)
-    for v in reversed(r):
-        if v is not None:
-            return v
-    return None
+    """
+    Return the most recent ATR value.
+    Optimized to O(n) time and O(1) space.
+    """
+    n = len(closes)
+    if len(highs) != n or len(lows) != n:
+        return None
+    if n < period + 1 or period <= 0:
+        return None
+
+    # Calculate first True Range (tr0) to start seeding
+    # tr_list start at i=1
+    def get_tr(i):
+        hl = highs[i] - lows[i]
+        hpc = abs(highs[i] - closes[i - 1])
+        lpc = abs(lows[i] - closes[i - 1])
+        return max(hl, hpc, lpc)
+
+    # Seed with average of first 'period' TRs
+    # Seed value is for result[period]
+    tr_sum = 0.0
+    for i in range(1, period + 1):
+        tr_sum += get_tr(i)
+
+    val = tr_sum / period
+
+    # Wilder smoothing for the rest
+    for i in range(period + 1, n):
+        val = (val * (period - 1) + get_tr(i)) / period
+
+    return val
