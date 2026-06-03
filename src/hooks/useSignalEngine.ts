@@ -141,21 +141,26 @@ export function useSignalEngine(price: CryptoPrice | null, config: Partial<Signa
           metadata?: Record<string, unknown>;
         }>(`/api/v1/signals/${encodeURIComponent(expectedBackendSymbol)}`, { signal: controller.signal });
 
-        // Map the signal engine response to our Signal/Risk shape
-        const direction = engineSignal.side as 'BUY' | 'SELL' | 'NEUTRAL';
+        // Map the signal engine response to our canonical Signal/Risk shape
+        const side = engineSignal.side as 'BUY' | 'SELL' | 'NEUTRAL';
+        const direction: Signal['direction'] =
+          side === 'BUY' ? 'UP' : side === 'SELL' ? 'DOWN' : 'NEUTRAL';
         const confidencePct = Math.round(engineSignal.confidence * 100);
+        const strong = confidencePct >= 65;
         setSignal({
           direction,
           confidence: confidencePct,
-          regime: confidencePct >= 65 ? (direction === 'BUY' ? 'TRENDING_UP' : 'TRENDING_DOWN') : 'RANGE',
+          regime: strong ? 'TREND' : 'RANGE',
           horizon: 60,
         });
         setRisk({
-          score: confidencePct >= 65 ? Math.round(confidencePct * 0.4) : 20,
-          decision: confidencePct >= 65 ? direction : 'HOLD',
-          approved: confidencePct >= 65,
-          positionSize: confidencePct >= 65 ? 0.1 : 0,
-          reasoning: confidencePct >= 65
+          score: strong ? Math.round(confidencePct * 0.4) : 20,
+          decision: strong
+            ? direction === 'UP' ? 'ENTER_LONG' : direction === 'DOWN' ? 'ENTER_SHORT' : 'HOLD'
+            : 'HOLD',
+          approved: strong,
+          positionSize: strong ? 0.1 : 0,
+          reasoning: strong
             ? `${engineSignal.strategy_id} strategy — ${confidencePct}% confidence`
             : 'Signal not strong enough',
         });
@@ -199,20 +204,25 @@ export function useSignalEngine(price: CryptoPrice | null, config: Partial<Signa
         strategy_id: string;
       }>(`/api/v1/signals/${encodeURIComponent(expectedBackendSymbol)}`);
 
-      const direction = engineSignal.side as 'BUY' | 'SELL' | 'NEUTRAL';
+      const side = engineSignal.side as 'BUY' | 'SELL' | 'NEUTRAL';
+      const direction: Signal['direction'] =
+        side === 'BUY' ? 'UP' : side === 'SELL' ? 'DOWN' : 'NEUTRAL';
       const confidencePct = Math.round(engineSignal.confidence * 100);
+      const strong = confidencePct >= 65;
       setSignal({
         direction,
         confidence: confidencePct,
-        regime: confidencePct >= 65 ? (direction === 'BUY' ? 'TRENDING_UP' : 'TRENDING_DOWN') : 'RANGE',
+        regime: strong ? 'TREND' : 'RANGE',
         horizon: 60,
       });
       setRisk({
-        score: confidencePct >= 65 ? Math.round(confidencePct * 0.4) : 20,
-        decision: confidencePct >= 65 ? direction : 'HOLD',
-        approved: confidencePct >= 65,
-        positionSize: confidencePct >= 65 ? 0.1 : 0,
-        reasoning: confidencePct >= 65
+        score: strong ? Math.round(confidencePct * 0.4) : 20,
+        decision: strong
+          ? direction === 'UP' ? 'ENTER_LONG' : direction === 'DOWN' ? 'ENTER_SHORT' : 'HOLD'
+          : 'HOLD',
+        approved: strong,
+        positionSize: strong ? 0.1 : 0,
+        reasoning: strong
           ? `${engineSignal.strategy_id} — ${confidencePct}% confidence`
           : 'Signal not strong enough',
       });
