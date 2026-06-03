@@ -9,3 +9,11 @@
 ## 2026-05-29 - [Redundant API Round-trips in Exchange Adapters]
 **Learning:** Some exchange endpoints (like Binance's 24hr ticker) provide a superset of data that makes other specialized endpoints (like bookTicker) redundant for common use cases. Consolidating these calls reduces network latency and saves API rate-limit weight.
 **Action:** Always check the full response schema of "thick" API endpoints to see if they can replace multiple "thin" calls in hot paths like price fetching.
+
+## 2026-06-03 - [Series-based Indicator "Last Value" Overhead]
+**Learning:** Functions that calculate a full time series only to return the last value (e.g., `last_ema`) introduce significant memory and CPU overhead due to list allocation and redundant calculations. For $N$ candles, this is $O(N)$ space when $O(1)$ is possible.
+**Action:** Always implement optimized "last-value" versions of technical indicators that skip list allocation and calculate the target value in a single pass. For Bollinger Bands, $O(period)$ is sufficient for the last bar, avoiding the $O(N)$ rolling sum logic.
+
+## 2026-06-03 - [MACD Redundant Series Calculation]
+**Learning:** Signal engines often need both current and previous bar values for crossover detection. Calling `last_macd` twice results in two full series calculations ($2 \times 2$ EMAs).
+**Action:** Extend "last-value" indicators with a `count` parameter to allow fetching the last $K$ values in a single pass, drastically reducing the number of EMA calculations in strategy hot paths.

@@ -608,9 +608,8 @@ class TestIntentLive:
             "side": "BUY",
             "quantity": 0.001,
         })
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["status"] in ("FILLED", "RISK_REJECTED", "FAILED")
+        # Live execution is hard-disabled in app.py for safety
+        assert resp.status_code == 403
 
     def test_live_intent_blocked_by_kill_switch(self, client):
         context_module.kill_switch_active = True
@@ -620,7 +619,8 @@ class TestIntentLive:
             "side": "BUY",
             "quantity": 0.001,
         })
-        assert resp.status_code == 503
+        # Live execution is hard-disabled in app.py for safety
+        assert resp.status_code == 403
 
 
 class TestWithdraw:
@@ -630,15 +630,16 @@ class TestWithdraw:
             "amount": 100.0,
             "address": "test-wallet",
         })
-        assert resp.status_code == 200
-        assert resp.json()["status"] == "ok"
+        # Withdrawals are hard-disabled in app.py
+        assert resp.status_code == 403
 
     def test_withdraw_insufficient(self, client):
         resp = client.post("/withdraw", json={
             "asset": "USDT",
             "amount": 999999999.0,
         })
-        assert resp.status_code == 400
+        # Withdrawals are hard-disabled in app.py
+        assert resp.status_code == 403
 
 
 class TestMarketState:
