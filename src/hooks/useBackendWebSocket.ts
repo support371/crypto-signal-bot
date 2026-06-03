@@ -83,6 +83,10 @@ export interface WsExchangeStatusMessage {
   source: string;
 }
 
+export interface WsPingMessage {
+  type: 'ping';
+}
+
 export type WsMessage =
   | WsHealthMessage
   | WsTickerMessage
@@ -91,7 +95,8 @@ export type WsMessage =
   | WsGuardianAlertMessage
   | WsKillSwitchMessage
   | WsMarketUpdateMessage
-  | WsExchangeStatusMessage;
+  | WsExchangeStatusMessage
+  | WsPingMessage;
 
 interface UseBackendWebSocketOptions {
   onHealthUpdate?: (msg: WsHealthMessage) => void;

@@ -198,7 +198,7 @@ describe("useBackendStatus — resilient endpoint handling", () => {
   it("minimal health payload is normalized without runtime errors", () => {
     // Contract: backend may return minimal { status: 'ok', ... }
     // Frontend must normalize this to full shape with defaults
-    const minimalHealth = {
+    const minimalHealth: Record<string, unknown> = {
       status: 'ok',
       service: 'crypto-signal-bot-backend',
       runtime: 'render',
@@ -319,7 +319,7 @@ describe("Demo mode — VITE_DEMO_MODE behavior", () => {
   it("paper trading is allowed in demo mode", () => {
     // Contract: when isDemoMode=true, paper trading is allowed
     const isDemoMode = true;
-    const systemMode = 'paper';
+    const systemMode: string = 'paper';
 
     const shouldBlockTrading = isDemoMode && systemMode === 'live';
     expect(shouldBlockTrading).toBe(false);

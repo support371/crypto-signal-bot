@@ -74,7 +74,7 @@ async function fetchFromCoinGecko(coins: CoinConfig[]): Promise<CryptoPrice[]> {
   const data: CoinGeckoResponse = await res.json();
   const now = new Date().toISOString();
   return coins.map((coin) => {
-    const d = data[coin.id] ?? {};
+    const d: CoinGeckoResponse[string] = data[coin.id] ?? { usd: 0 };
     return {
       id: coin.id,
       symbol: coin.symbol,
