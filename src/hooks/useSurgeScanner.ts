@@ -37,7 +37,9 @@ const POLL_INTERVAL = 15_000; // 15 seconds
 // ── Tiny audio ping using Web Audio API ───────────────────────────────────────
 function playPing(type: 'surge' | 'stop_loss') {
   try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const AudioContextClass = window.AudioContext || (window as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.connect(gain);
@@ -131,8 +133,9 @@ export function useSurgeScanner(soundEnabled = true) {
       checkAlerts(next);
       setStatus(next);
       setError(null);
-    } catch (e: any) {
-      setError(e?.message ?? 'Failed to fetch surge status');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg ?? 'Failed to fetch surge status');
     } finally {
       setIsLoading(false);
     }

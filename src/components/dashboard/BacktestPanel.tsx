@@ -249,8 +249,9 @@ export function BacktestPanel() {
       }
       const data = await resp.json();
       setResult(data);
-    } catch (e: any) {
-      setError(e.message ?? "Backtest failed");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg ?? "Backtest failed");
     } finally {
       setLoading(false);
     }

@@ -118,7 +118,11 @@ const Index = () => {
   });
   const toggleSurgeSound = () => setSurgeSound((v) => {
     const next = !v;
-    try { localStorage.setItem('surge_sound_enabled', String(next)); } catch {}
+    try {
+      localStorage.setItem('surge_sound_enabled', String(next));
+    } catch (e) {
+      console.warn('Failed to persist surge sound setting', e);
+    }
     return next;
   });
   const { status: surgeStatus, isLoading: surgeLoading, error: surgeError, refetch: refetchSurge } = useSurgeScanner(surgeSound);
