@@ -10,15 +10,15 @@ export interface CryptoPrice {
 }
 
 export interface Signal {
-  direction: 'UP' | 'DOWN' | 'NEUTRAL';
+  direction: 'UP' | 'DOWN' | 'NEUTRAL' | 'BUY' | 'SELL' | 'FLAT';
   confidence: number;
-  regime: 'TREND' | 'RANGE' | 'CHAOS';
+  regime: 'TREND' | 'RANGE' | 'CHAOS' | 'TRENDING_UP' | 'TRENDING_DOWN';
   horizon: number;
 }
 
 export interface RiskAssessment {
   score: number;
-  decision: 'ENTER_LONG' | 'ENTER_SHORT' | 'HOLD' | 'EXIT';
+  decision: 'ENTER_LONG' | 'ENTER_SHORT' | 'HOLD' | 'EXIT' | 'BUY' | 'SELL' | 'NEUTRAL';
   approved: boolean;
   positionSize: number;
   reasoning: string;
