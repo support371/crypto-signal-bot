@@ -203,20 +203,74 @@ def last_macd(
 ) -> Any:
     """
     Return (macd_line, signal_line, histogram) for the most recent 'count' bars.
+    Optimized to O(n) time and O(count) space by avoiding full series allocation.
     If count=1 (default), returns a single tuple (ml, sl, hist) for backward compatibility.
     If count > 1, returns a list of tuples, newest last.
     """
-    ml, sl, hist = macd(values, fast, slow, signal_period)
+    n = len(values)
+    p_max = max(fast, slow)
+
+    # We need enough data for the slow EMA seed AND the signal EMA seed
+    if n < p_max + signal_period - 1 or fast <= 0 or slow <= 0 or signal_period <= 0:
+        if count == 1:
+            return None, None, None
+        return [(None, None, None)] * count
+
+    k_fast = 2.0 / (fast + 1)
+    k_slow = 2.0 / (slow + 1)
+    k_sig = 2.0 / (signal_period + 1)
+
+    # 1. Seed fast and slow EMAs
+    # Seed short period EMA first, then progress it to p_max-1
+    ema_f = sum(values[:fast]) / fast
+    for i in range(fast, p_max):
+        ema_f = values[i] * k_fast + ema_f * (1 - k_fast)
+
+    ema_s = sum(values[:slow]) / slow
+    for i in range(slow, p_max):
+        ema_s = values[i] * k_slow + ema_s * (1 - k_slow)
+
+    # Both EMAs are now at index p_max - 1. Calculate first MACD value.
+    macd_val = ema_f - ema_s
+
+    # 2. Seed Signal EMA
+    # We need 'signal_period' MACD values to calculate the first signal SMA.
+    macd_history = [macd_val]
+    curr = p_max
+    while len(macd_history) < signal_period:
+        v = values[curr]
+        ema_f = v * k_fast + ema_f * (1 - k_fast)
+        ema_s = v * k_slow + ema_s * (1 - k_slow)
+        macd_val = ema_f - ema_s
+        macd_history.append(macd_val)
+        curr += 1
+
+    # First signal EMA value is the SMA of the first 'signal_period' MACD values.
+    # This corresponds to original index (p_max - 1) + (signal_period - 1).
+    sig_ema = sum(macd_history) / signal_period
 
     results = []
-    for i in range(len(ml) - count, len(ml)):
-        if i < 0:
-            results.append((None, None, None))
-        else:
-            results.append((ml[i], sl[i], hist[i]))
+    # If the current index is within the 'count' range, capture the result.
+    if curr >= n - count + 1:
+        results.append((macd_history[-1], sig_ema, macd_history[-1] - sig_ema))
+
+    # 3. Process remaining bars iteratively
+    for i in range(curr, n):
+        v = values[i]
+        ema_f = v * k_fast + ema_f * (1 - k_fast)
+        ema_s = v * k_slow + ema_s * (1 - k_slow)
+        macd_val = ema_f - ema_s
+        sig_ema = macd_val * k_sig + sig_ema * (1 - k_sig)
+
+        if i >= n - count:
+            results.append((macd_val, sig_ema, macd_val - sig_ema))
 
     if count == 1:
-        return results[0]
+        return results[-1] if results else (None, None, None)
+
+    # Ensure we return exactly 'count' items, padded with None if necessary.
+    if len(results) < count:
+        results = [(None, None, None)] * (count - len(results)) + results
     return results
 
 

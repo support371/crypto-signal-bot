@@ -17,3 +17,7 @@
 ## 2026-06-03 - [MACD Redundant Series Calculation]
 **Learning:** Signal engines often need both current and previous bar values for crossover detection. Calling `last_macd` twice results in two full series calculations ($2 \times 2$ EMAs).
 **Action:** Extend "last-value" indicators with a `count` parameter to allow fetching the last $K$ values in a single pass, drastically reducing the number of EMA calculations in strategy hot paths.
+
+## 2026-06-10 - [Single-pass Iterative MACD]
+**Learning:** Even with a `count` parameter, if `last_macd` calls the full series `macd` function, it still performs $O(N)$ space allocations and multiple passes. A true single-pass iterative implementation reduces space to $O(count)$ and halves CPU time by avoiding redundant list iterations and garbage collection pressure.
+**Action:** Always implement technical indicators using iterative single-pass logic when only the most recent values are needed, rather than wrapping full-series calculations.
