@@ -155,8 +155,23 @@ async def lifespan(application):
     try:
         await init_db()
         await restore_portfolio(paper_portfolio, mode=TRADING_MODE)
-        # Update guardian starting NAV to match restored portfolio value
-        context.guardian_starting_nav = paper_portfolio.get_total_exposure(_synthetic_price)
+        # Set guardian starting NAV.
+        # If the restored portfolio has open non-USDT positions, use the restored NAV
+        # so the guardian tracks real drawdown from that session's high-water mark.
+        # If the portfolio is cash-only (fresh start or fully liquidated), always reset
+        # to the USDT balance so a stale prior-session NAV cannot trigger a false drawdown.
+        restored_nav = paper_portfolio.get_total_exposure(_synthetic_price)
+        usdt_only = all(asset == "USDT" for asset in paper_portfolio.balances)
+        if usdt_only or restored_nav <= 0:
+            # Fresh start — use current USDT balance as starting NAV
+            context.guardian_starting_nav = paper_portfolio.get_balance("USDT") or 10000.0
+        else:
+            # Restore the real NAV so the guardian tracks from where we left off
+            context.guardian_starting_nav = restored_nav
+        logger.info(
+            "Guardian starting NAV set to %.2f (usdt_only=%s, restored_nav=%.2f)",
+            context.guardian_starting_nav, usdt_only, restored_nav,
+        )
     except Exception as exc:
         logger.warning("DB init skipped (non-fatal): %s", exc)
 
