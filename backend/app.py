@@ -175,6 +175,14 @@ async def lifespan(application):
     except Exception as exc:
         logger.warning("DB init skipped (non-fatal): %s", exc)
 
+    # Pre-warm the CoinGecko price cache so the signal service hits cache on first eval
+    # This eliminates the 429 storm caused by 9 simultaneous requests at startup
+    try:
+        from backend.adapters.exchanges.coingecko import warm_cache
+        await warm_cache()
+    except Exception as exc:
+        logger.warning("CoinGecko pre-warm skipped (non-fatal): %s", exc)
+
     if TRADING_MODE == "paper" and PAPER_USE_LIVE_MARKET_DATA:
         svc = _get_market_data_service()
         await svc.start()
