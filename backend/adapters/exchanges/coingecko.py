@@ -53,17 +53,26 @@ _GECKO_TO_SYMBOL: Dict[str, str] = {v: k for k, v in _SYMBOL_MAP.items()}
 # Module-level shared cache — all CoinGeckoAdapter instances share this
 # so we hit the API at most once per _CACHE_TTL seconds
 # ---------------------------------------------------------------------------
+_cache_data:       Dict[str, dict]    = {}   # gecko_id → raw price payload
+_cache_ts:         float               = 0.0
+_cache_last_error: Optional[str]      = None
+_shared_client:    Optional[httpx.AsyncClient] = None
+
+# Lock is created lazily per event-loop to survive hot-reloads and test isolation
 _cache_lock:      asyncio.Lock | None = None
-_cache_data:      Dict[str, dict]    = {}   # gecko_id → raw price payload
-_cache_ts:        float               = 0.0
-_cache_last_error: Optional[str]     = None
-_shared_client:   Optional[httpx.AsyncClient] = None
+_cache_lock_loop: object | None       = None   # loop the lock was created for
 
 
 def _get_lock() -> asyncio.Lock:
-    global _cache_lock
-    if _cache_lock is None:
-        _cache_lock = asyncio.Lock()
+    global _cache_lock, _cache_lock_loop
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    # Re-create the lock if the event loop changed (new Render deploy / test isolation)
+    if _cache_lock is None or _cache_lock_loop is not loop:
+        _cache_lock      = asyncio.Lock()
+        _cache_lock_loop = loop
     return _cache_lock
 
 
@@ -269,3 +278,14 @@ class CoinGeckoAdapter(BaseExchangeAdapter):
 
     async def fetch_order(self, symbol: str, order_id: str) -> Order:
         raise AdapterUnavailableError("CoinGecko is a read-only price feed")
+
+async def warm_cache() -> None:
+    """Pre-populate the shared price cache at startup.
+    Call once from app lifespan so all signal evaluations hit the cache, not the network."""
+    data, err = await _fetch_all_cached()
+    if err:
+        import logging as _log
+        _log.getLogger(__name__).warning("CoinGecko warm_cache: %s", err)
+    else:
+        import logging as _log
+        _log.getLogger(__name__).info("CoinGecko cache warmed — %d assets loaded", len(data))
