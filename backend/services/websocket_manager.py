@@ -13,7 +13,7 @@ import json
 import logging
 import math
 import time
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 from fastapi import WebSocket
 from backend.services.stream_service import stream_manager as _stream_manager
@@ -64,14 +64,33 @@ class ConnectionManager:
         return len(self._active)
 
     async def broadcast(self, message: Dict[str, Any]) -> None:
-        dead: List[WebSocket] = []
+        """Broadcast a message to all connected clients.
+
+        Optimized: pre-serializes JSON once and uses asyncio.gather for
+        concurrent delivery, reducing O(N) serialization to O(1) and
+        minimizing total broadcast latency.
+        """
         async with self._lock:
             clients = list(self._active)
-        for ws in clients:
+        if not clients:
+            return
+
+        # Pre-serialize payload to avoid redundant work for each client
+        text = json.dumps(message)
+
+        async def _safe_send(ws: WebSocket) -> Optional[WebSocket]:
             try:
-                await ws.send_json(message)
+                # Use send_text with pre-serialized JSON
+                await ws.send_text(text)
+                return None
             except Exception:
-                dead.append(ws)
+                return ws
+
+        # Concurrently send to all clients
+        results = await asyncio.gather(*[_safe_send(ws) for ws in clients])
+
+        # Prune dead connections
+        dead = [ws for ws in results if ws is not None]
         if dead:
             async with self._lock:
                 for ws in dead:

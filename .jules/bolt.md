@@ -21,3 +21,7 @@
 ## 2026-06-10 - [Single-pass Iterative MACD]
 **Learning:** Even with a `count` parameter, if `last_macd` calls the full series `macd` function, it still performs $O(N)$ space allocations and multiple passes. A true single-pass iterative implementation reduces space to $O(count)$ and halves CPU time by avoiding redundant list iterations and garbage collection pressure.
 **Action:** Always implement technical indicators using iterative single-pass logic when only the most recent values are needed, rather than wrapping full-series calculations.
+
+## 2026-06-17 - [WebSocket O(N) Broadcast Latency]
+**Learning:** Sequential O(N) serialization and sequential I/O delivery in WebSocket broadcasting causes significant latency as the number of clients grows. Each client send adds serialization overhead and network wait time, making the last client in a 1000-client list wait much longer than the first.
+**Action:** Always pre-serialize JSON payloads once per broadcast and use `asyncio.gather` for concurrent delivery to all clients. This reduces serialization to O(1) and broadcast time from O(N*L) to roughly O(L) where L is the latency of a single send.
