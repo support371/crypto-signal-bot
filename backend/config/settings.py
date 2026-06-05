@@ -16,7 +16,7 @@ Design rules:
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -227,11 +227,11 @@ class Settings(BaseSettings):
     # CORS
     # -------------------------------------------------------------------------
 
-    cors_allowed_origins: list[str] = Field(
+    cors_allowed_origins: Any = Field(
         default_factory=list,
         description=(
             "List of allowed frontend origins for CORS. "
-            "Example: ['https://crypto-signal-bot-alpha.vercel.app']"
+            "Supports CSV string or JSON list."
         ),
     )
 

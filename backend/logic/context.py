@@ -2,11 +2,11 @@
 import asyncio
 import json
 import time
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, Optional, Set
 from fastapi import WebSocket
 from backend.config.runtime import get_runtime_config
-from backend.logic.paper_trading import PaperPortfolio, _synthetic_price
-from backend.logic.exchange_adapter import ExchangeAdapter, build_adapter
+from backend.logic.paper_trading import PaperPortfolio
+from backend.logic.exchange_adapter import ExchangeAdapter
 from backend.engine.risk_rules import RiskRuleEngine
 
 # Load Config
