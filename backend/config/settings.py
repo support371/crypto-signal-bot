@@ -227,7 +227,7 @@ class Settings(BaseSettings):
     # CORS
     # -------------------------------------------------------------------------
 
-    cors_allowed_origins: list[str] = Field(
+    cors_allowed_origins: Any = Field(
         default_factory=list,
         description=(
             "List of allowed frontend origins for CORS. "
