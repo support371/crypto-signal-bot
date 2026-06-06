@@ -15,8 +15,9 @@ Design rules:
 
 from __future__ import annotations
 
+import json
 from functools import lru_cache
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -228,10 +229,11 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
 
     cors_allowed_origins: Any = Field(
-        default_factory=list,
+        default="",
         description=(
             "List of allowed frontend origins for CORS. "
-            "Example: ['https://crypto-signal-bot-alpha.vercel.app']"
+            "Accepts a JSON list or a comma-separated string."
+            "Example: 'https://app.com,https://api.com' or '[\"https://app.com\"]'"
         ),
     )
 
@@ -348,11 +350,16 @@ class Settings(BaseSettings):
 
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod
-    def parse_cors_origins(cls, v: object) -> list[str]:
+    def parse_cors_origins(cls, v: Any) -> list[str]:
         """Accept comma-separated string from environment or a list."""
         if isinstance(v, str):
-            return [o.strip() for o in v.split(",") if o.strip()]
-        return v  # type: ignore[return-value]
+            if not v.strip():
+                return []
+            try:
+                return json.loads(v)
+            except json.JSONDecodeError:
+                return [o.strip() for o in v.split(",") if o.strip()]
+        return v
 
 
 @lru_cache(maxsize=1)
