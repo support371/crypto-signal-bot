@@ -1,5 +1,6 @@
 """Shared application state and components."""
 import asyncio
+import json
 import time
 from typing import Any, Dict, List, Optional, Set
 from fastapi import WebSocket
@@ -58,12 +59,25 @@ def unix_timestamp() -> float:
     return time.time()
 
 async def broadcast(message: Dict[str, Any]) -> None:
-    dead: List[WebSocket] = []
-    for ws in ws_clients:
+    """Broadcast a message to all connected clients.
+    Optimized: Pre-serializes the payload and uses asyncio.gather for concurrent delivery.
+    """
+    if not ws_clients:
+        return
+
+    payload = json.dumps(message)
+
+    async def _send(ws: WebSocket):
         try:
-            await ws.send_json(message)
+            await ws.send_text(payload)
+            return True
         except Exception:
-            dead.append(ws)
+            return False
+
+    clients = list(ws_clients)
+    results = await asyncio.gather(*(_send(ws) for ws in clients), return_exceptions=True)
+
+    dead = [ws for ws, ok in zip(clients, results) if ok is not True]
     for ws in dead:
         ws_clients.discard(ws)
 

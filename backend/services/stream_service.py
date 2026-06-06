@@ -22,6 +22,7 @@ Design:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from typing import Any, Dict, Optional, Set
@@ -46,6 +47,14 @@ class StreamClient:
         """Send a typed event. Returns False if send failed (client disconnected)."""
         try:
             await self.ws.send_json(event)
+            return True
+        except Exception:
+            return False
+
+    async def send_text(self, text: str) -> bool:
+        """Send a pre-serialized JSON string. Returns False if send failed."""
+        try:
+            await self.ws.send_text(text)
             return True
         except Exception:
             return False
@@ -81,12 +90,22 @@ class StreamManager:
         log.info("[stream] client disconnected (total=%d)", len(self._clients))
 
     async def broadcast(self, event: Dict[str, Any]) -> None:
-        """Broadcast an event to all connected clients. Dead clients are pruned."""
-        dead = []
-        for client in self._clients:
-            ok = await client.send(event)
-            if not ok:
-                dead.append(client)
+        """Broadcast an event to all connected clients. Dead clients are pruned.
+        Optimized: Pre-serializes the payload and uses asyncio.gather for concurrent delivery.
+        """
+        if not self._clients:
+            return
+
+        payload = json.dumps(event)
+        results = await asyncio.gather(
+            *(client.send_text(payload) for client in self._clients),
+            return_exceptions=True
+        )
+
+        dead = [
+            client for client, ok in zip(self._clients, results)
+            if ok is not True
+        ]
         for d in dead:
             self.disconnect(d)
 
@@ -97,6 +116,12 @@ class StreamManager:
         change24h: float,
         volume24h: float,
     ) -> None:
+        """Broadcast a ticker event.
+        Optimized: Pre-serializes and uses asyncio.gather for clients interested in this symbol.
+        """
+        if not self._clients:
+            return
+
         event = {
             "type": "ticker",
             "symbol": symbol,
@@ -105,12 +130,22 @@ class StreamManager:
             "volume24h": volume24h,
             "ts": int(time.time()),
         }
-        dead = []
-        for client in self._clients:
-            if client.wants_symbol(symbol):
-                ok = await client.send(event)
-                if not ok:
-                    dead.append(client)
+        payload = json.dumps(event)
+
+        # Filter clients first
+        target_clients = [c for c in self._clients if c.wants_symbol(symbol)]
+        if not target_clients:
+            return
+
+        results = await asyncio.gather(
+            *(client.send_text(payload) for client in target_clients),
+            return_exceptions=True
+        )
+
+        dead = [
+            client for client, ok in zip(target_clients, results)
+            if ok is not True
+        ]
         for d in dead:
             self.disconnect(d)
 

@@ -64,14 +64,28 @@ class ConnectionManager:
         return len(self._active)
 
     async def broadcast(self, message: Dict[str, Any]) -> None:
-        dead: List[WebSocket] = []
+        """Broadcast a message to all connected clients.
+        Optimized: Pre-serializes the payload and uses asyncio.gather for concurrent delivery.
+        """
         async with self._lock:
             clients = list(self._active)
-        for ws in clients:
+
+        if not clients:
+            return
+
+        payload = json.dumps(message)
+
+        async def _send(ws: WebSocket):
             try:
-                await ws.send_json(message)
+                await ws.send_text(payload)
+                return True
             except Exception:
-                dead.append(ws)
+                return False
+
+        results = await asyncio.gather(*(_send(ws) for ws in clients), return_exceptions=True)
+
+        dead = [ws for ws, ok in zip(clients, results) if ok is not True]
+
         if dead:
             async with self._lock:
                 for ws in dead:
