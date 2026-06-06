@@ -101,21 +101,10 @@ class ConnectionManager:
         """Send ping to all clients every 10s to keep connections alive."""
         while True:
             await asyncio.sleep(10)
-            async with self._lock:
-                clients = list(self._active)
-            dead: List[WebSocket] = []
-            for ws in clients:
-                try:
-                    await ws.send_json({
-                        "type": "ping",
-                        "timestamp": time.time(),
-                    })
-                except Exception:
-                    dead.append(ws)
-            if dead:
-                async with self._lock:
-                    for ws in dead:
-                        self._active.discard(ws)
+            await self.broadcast({
+                "type": "ping",
+                "timestamp": time.time(),
+            })
 
 
 # Singleton instance
