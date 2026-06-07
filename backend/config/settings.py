@@ -227,11 +227,11 @@ class Settings(BaseSettings):
     # CORS
     # -------------------------------------------------------------------------
 
-    cors_allowed_origins: list[str] = Field(
+    cors_allowed_origins: str | list[str] = Field(
         default_factory=list,
         description=(
             "List of allowed frontend origins for CORS. "
-            "Example: ['https://crypto-signal-bot-alpha.vercel.app']"
+            "Accepts a JSON list or a comma-separated string."
         ),
     )
 
