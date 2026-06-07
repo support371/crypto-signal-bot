@@ -12,8 +12,7 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.9
 
-      # ── Trading mode ─────────────────────────────────────────────
-      # PAPER MODE (safe default — change to live when ready)
+      # ── Trading mode (testnet live — real API, testnet funds) ─────
       - key: TRADING_MODE
         value: paper
       - key: NETWORK
@@ -29,13 +28,13 @@ services:
       - key: MARKET_DATA_PUBLIC_EXCHANGE
         value: coingecko
 
-      # ── Bitget credentials (set in Render dashboard) ──────────────
+      # ── Bitget credentials (GEM-Bot key — no IP restriction) ─────
       - key: BITGET_API_KEY
-        sync: false
+        value: bg_4eb5f494e0d96c52c4d021a69232bd4f
       - key: BITGET_API_SECRET
-        sync: false
+        value: f92b2eee55a07c0f6ab4f46c3c87d7e6d1d2538e7e187cef05c2b67a4c10b11c
       - key: BITGET_API_PASSPHRASE
-        sync: false
+        value: "9542715097"
 
       # ── Telegram alerts ───────────────────────────────────────────
       - key: TELEGRAM_ALERTS_ENABLED
@@ -43,7 +42,7 @@ services:
       - key: TELEGRAM_CHANNEL_ID
         value: "-1003368597629"
       - key: TELEGRAM_BOT_TOKEN
-        sync: false
+        value: "8327316373:AAEXeisn6svbs6JHtlIWBon7YOQzbu7upq4"
 
       # ── Risk / Guardian ───────────────────────────────────────────
       - key: GUARDIAN_MAX_DRAWDOWN_PCT
