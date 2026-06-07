@@ -13,7 +13,7 @@ services:
         value: 3.11.9
 
       # ── LIVE MODE — $100 controlled test ─────────────────────────
-      - key: TRADING_MODE
+      - key: EXCHANGE_MODE
         value: live
       - key: NETWORK
         value: mainnet
@@ -56,7 +56,7 @@ services:
       - key: TELEGRAM_BOT_TOKEN
         value: "8327316373:AAEXeisn6svbs6JHtlIWBon7YOQzbu7upq4"
 
-      # ── Guardian — tight for live test ────────────────────────────
+      # ── Guardian — tight for $100 live test ───────────────────────
       - key: GUARDIAN_MAX_DRAWDOWN_PCT
         value: "10"
       - key: GUARDIAN_MAX_DAILY_LOSS_PCT
