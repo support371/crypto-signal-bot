@@ -38,22 +38,12 @@ from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 from backend.logic.indicators import (
-    last_atr as compute_atr,
-    last_bollinger as _last_bollinger,
-    last_ema as compute_ema,
-    last_macd as _last_macd,
-    last_rsi as compute_rsi,
+    ema,
+    rsi,
+    macd,
+    bollinger_bands,
+    atr,
 )
-
-def compute_macd(closes):
-    from backend.logic.indicators import last_macd
-    return last_macd(closes)   # already returns (macd_line, signal_line, histogram)
-
-def compute_bollinger_bands(closes):
-    from backend.logic.indicators import last_bollinger
-    return last_bollinger(closes)   # already returns (upper, middle, lower)
-
-
 
 # ---------------------------------------------------------------------------
 # Data types
@@ -139,46 +129,6 @@ class ReplayResult:
 
 
 # ---------------------------------------------------------------------------
-# Indicator computation helpers
-# ---------------------------------------------------------------------------
-
-def _closes(candles: List[ReplayCandle]) -> List[Decimal]:
-    return [Decimal(str(c.close)) for c in candles]
-
-
-def _compute_indicators(candles: List[ReplayCandle]) -> Dict[str, Any]:
-    """Run all indicator calculations on the candle sequence."""
-    closes_dec = _closes(candles)
-    closes = [float(c) for c in closes_dec]
-    if len(closes) < 26:
-        return {}
-
-    rsi = compute_rsi(closes, period=14)
-    ema20 = compute_ema(closes, period=20)
-    ema50 = compute_ema(closes, period=50)
-    ema200 = compute_ema(closes, period=200)
-    macd_line, signal_line, histogram = compute_macd(closes)
-    bb_upper, bb_mid, bb_lower = compute_bollinger_bands(closes)
-    highs = [float(c.high) for c in candles]
-    lows = [float(c.low) for c in candles]
-    atr = compute_atr(highs, lows, closes, period=14)
-
-    return {
-        "rsi": float(rsi) if rsi is not None else None,
-        "ema20": float(ema20) if ema20 is not None else None,
-        "ema50": float(ema50) if ema50 is not None else None,
-        "ema200": float(ema200) if ema200 is not None else None,
-        "macd_line": float(macd_line) if macd_line is not None else None,
-        "macd_signal": float(signal_line) if signal_line is not None else None,
-        "macd_hist": float(histogram) if histogram is not None else None,
-        "bb_upper": float(bb_upper) if bb_upper is not None else None,
-        "bb_mid": float(bb_mid) if bb_mid is not None else None,
-        "bb_lower": float(bb_lower) if bb_lower is not None else None,
-        "atr": float(atr) if atr is not None else None,
-    }
-
-
-# ---------------------------------------------------------------------------
 # Signal classification (deterministic, no randomness)
 # ---------------------------------------------------------------------------
 
@@ -200,8 +150,8 @@ def _classify_trend(indicators: Dict[str, Any], close: float) -> tuple[str, floa
     macd_hist = indicators.get("macd_hist")
     if macd_hist and macd_hist > 0:
         confidence += 0.1
-    rsi = indicators.get("rsi")
-    if rsi and 45 < rsi < 70:
+    rsi_val = indicators.get("rsi")
+    if rsi_val and 45 < rsi_val < 70:
         confidence += 0.1
 
     if ema20 > ema50:
@@ -212,17 +162,17 @@ def _classify_trend(indicators: Dict[str, Any], close: float) -> tuple[str, floa
 
 def _classify_mean_reversion(indicators: Dict[str, Any], close: float) -> tuple[str, float]:
     """RSI + Bollinger mean-reversion strategy."""
-    rsi = indicators.get("rsi")
+    rsi_val = indicators.get("rsi")
     bb_lower = indicators.get("bb_lower")
     bb_upper = indicators.get("bb_upper")
-    if rsi is None or bb_lower is None:
+    if rsi_val is None or bb_lower is None:
         return "FLAT", 0.0
 
-    if rsi < 30 and close <= bb_lower:
-        confidence = 0.6 + max(0.0, (30 - rsi) / 30 * 0.3)
+    if rsi_val < 30 and close <= bb_lower:
+        confidence = 0.6 + max(0.0, (30 - rsi_val) / 30 * 0.3)
         return "BUY", min(confidence, 0.95)
-    if rsi > 70 and close >= bb_upper:
-        confidence = 0.6 + max(0.0, (rsi - 70) / 30 * 0.3)
+    if rsi_val > 70 and close >= bb_upper:
+        confidence = 0.6 + max(0.0, (rsi_val - 70) / 30 * 0.3)
         return "SELL", min(confidence, 0.95)
     return "FLAT", 0.0
 
@@ -232,7 +182,7 @@ def _classify_momentum(indicators: Dict[str, Any]) -> tuple[str, float]:
     macd_line = indicators.get("macd_line")
     macd_signal = indicators.get("macd_signal")
     macd_hist = indicators.get("macd_hist")
-    rsi = indicators.get("rsi")
+    rsi_val = indicators.get("rsi")
     if macd_line is None or macd_signal is None:
         return "FLAT", 0.0
 
@@ -241,14 +191,14 @@ def _classify_momentum(indicators: Dict[str, Any]) -> tuple[str, float]:
         confidence += 0.4
         if macd_hist and macd_hist > 0:
             confidence += 0.2
-        if rsi and 40 < rsi < 65:
+        if rsi_val and 40 < rsi_val < 65:
             confidence += 0.15
         return "BUY", min(confidence, 0.9)
     else:
         confidence += 0.35
         if macd_hist and macd_hist < 0:
             confidence += 0.2
-        if rsi and rsi > 55:
+        if rsi_val and rsi_val > 55:
             confidence += 0.15
         return "SELL", min(confidence, 0.85)
 
@@ -306,6 +256,69 @@ class Replayer:
     DEFAULT_STRATEGY = "trend_v1"
     MIN_CANDLES = 26  # minimum for MACD(12,26,9)
 
+    def _run_replay_logic(
+        self,
+        symbol: str,
+        candles: List[ReplayCandle],
+        strategy_id: str,
+        include_indicators: bool = True
+    ) -> List[ReplaySignal]:
+        """
+        Internal implementation of replay logic, optimized to O(N).
+        Pre-computes all indicators in full series instead of sliding window.
+        """
+        if len(candles) < self.MIN_CANDLES:
+            return []
+
+        # Optimization: Pre-extract price lists once
+        closes = [float(c.close) for c in candles]
+        highs  = [float(c.high) for c in candles]
+        lows   = [float(c.low)  for c in candles]
+
+        # Optimization: Pre-compute full indicator series in O(N)
+        # instead of O(N^2) sliding window calls.
+        rsi_series = rsi(closes, 14)
+        ema20_series = ema(closes, 20)
+        ema50_series = ema(closes, 50)
+        ema200_series = ema(closes, 200)
+        macd_l_series, sig_l_series, hist_series = macd(closes)
+        bb_u_series, bb_m_series, bb_l_series = bollinger_bands(closes)
+        atr_series = atr(highs, lows, closes, 14)
+
+        signals: List[ReplaySignal] = []
+
+        # Walk through candles and use pre-computed indicator values
+        for i in range(self.MIN_CANDLES - 1, len(candles)):
+            indicator_snap = {
+                "rsi": rsi_series[i],
+                "ema20": ema20_series[i],
+                "ema50": ema50_series[i],
+                "ema200": ema200_series[i],
+                "macd_line": macd_l_series[i],
+                "macd_signal": sig_l_series[i],
+                "macd_hist": hist_series[i],
+                "bb_upper": bb_u_series[i],
+                "bb_mid": bb_m_series[i],
+                "bb_lower": bb_l_series[i],
+                "atr": atr_series[i],
+            }
+
+            # Strategy logic requires current close
+            current_close = closes[i]
+            side, confidence = _classify(strategy_id, indicator_snap, current_close)
+
+            signals.append(
+                ReplaySignal(
+                    timestamp=candles[i].timestamp,
+                    side=side,
+                    confidence=confidence,
+                    strategy_id=strategy_id,
+                    indicators=indicator_snap if include_indicators else {},
+                )
+            )
+
+        return signals
+
     def replay(
         self,
         symbol: str,
@@ -314,73 +327,20 @@ class Replayer:
     ) -> ReplayResult:
         """
         Replay signal generation on the given candle sequence.
-
-        Args:
-            symbol:      e.g. "BTCUSDT"
-            candles:     List[ReplayCandle] sorted oldest-first
-            strategy_id: one of trend_v1 | mean_reversion_v1 | momentum_v1
-
-        Returns:
-            ReplayResult with signals list and determinism hash.
+        Optimized to O(N) by utilizing full-series technical indicator functions.
         """
         t0 = time.perf_counter()
         strategy_id = strategy_id or self.DEFAULT_STRATEGY
         input_hash = _hash_candles(candles)
 
-        signals: List[ReplaySignal] = []
-
-        # Minimum warmup: need at least MIN_CANDLES before we can produce a signal
-        if len(candles) < self.MIN_CANDLES:
-            return ReplayResult(
-                symbol=symbol,
-                candle_count=len(candles),
-                signals=[],
-                input_hash=input_hash,
-                output_hash=_hash_signals([]),
-                deterministic=True,
-                elapsed_ms=(time.perf_counter() - t0) * 1000,
-                strategy_id=strategy_id,
-            )
-
-        # Walk through the candle sequence, expanding the window
-        for i in range(self.MIN_CANDLES, len(candles) + 1):
-            window = candles[:i]
-            indicators = _compute_indicators(window)
-            if not indicators:
-                continue
-            current_close = window[-1].close
-            side, confidence = _classify(strategy_id, indicators, current_close)
-            signals.append(
-                ReplaySignal(
-                    timestamp=window[-1].timestamp,
-                    side=side,
-                    confidence=confidence,
-                    strategy_id=strategy_id,
-                    indicators=indicators,
-                )
-            )
+        # 1. Run replay logic
+        signals = self._run_replay_logic(symbol, candles, strategy_id, include_indicators=True)
 
         output_hash = _hash_signals(signals)
         elapsed_ms = (time.perf_counter() - t0) * 1000
 
-        # Verify determinism by running twice and comparing output hashes
-        # (second run on same data must match first run)
-        signals2: List[ReplaySignal] = []
-        for i in range(self.MIN_CANDLES, len(candles) + 1):
-            window = candles[:i]
-            indicators = _compute_indicators(window)
-            if not indicators:
-                continue
-            current_close = window[-1].close
-            side, confidence = _classify(strategy_id, indicators, current_close)
-            signals2.append(
-                ReplaySignal(
-                    timestamp=window[-1].timestamp,
-                    side=side,
-                    confidence=confidence,
-                    strategy_id=strategy_id,
-                )
-            )
+        # 2. Verify determinism by running again (O(N) check instead of O(N^2))
+        signals2 = self._run_replay_logic(symbol, candles, strategy_id, include_indicators=False)
         output_hash2 = _hash_signals(signals2)
         deterministic = (output_hash == output_hash2)
 

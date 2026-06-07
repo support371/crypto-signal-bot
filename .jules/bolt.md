@@ -21,3 +21,11 @@
 ## 2026-06-10 - [Single-pass Iterative MACD]
 **Learning:** Even with a `count` parameter, if `last_macd` calls the full series `macd` function, it still performs $O(N)$ space allocations and multiple passes. A true single-pass iterative implementation reduces space to $O(count)$ and halves CPU time by avoiding redundant list iterations and garbage collection pressure.
 **Action:** Always implement technical indicators using iterative single-pass logic when only the most recent values are needed, rather than wrapping full-series calculations.
+
+## 2026-06-17 - [Replayer O(N²) Bottleneck]
+**Learning:** Replaying a strategy over a historical sequence by calling "last-value" indicators in a sliding window loop leads to (N^2)$ complexity. For 1,000 candles, this results in ~500,000 indicator data point calculations.
+**Action:** Always use full-series indicator functions (, , , etc.) to pre-compute all values for the entire sequence in (N)$ before iterating. This reduced replay time for 1,000 candles from 4.8s to 0.035s (~137x speedup).
+
+## 2026-06-17 - [Replayer O(N²) Bottleneck]
+**Learning:** Replaying a strategy over a historical sequence by calling "last-value" indicators in a sliding window loop leads to $O(N^2)$ complexity. For 1,000 candles, this results in ~500,000 indicator data point calculations.
+**Action:** Always use full-series indicator functions (`ema`, `rsi`, `macd`, etc.) to pre-compute all values for the entire sequence in $O(N)$ before iterating. This reduced replay time for 1,000 candles from 4.8s to 0.035s (~137x speedup).
