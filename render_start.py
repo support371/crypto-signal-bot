@@ -12,6 +12,7 @@ import sys
 
 # ── $100 Live Test Configuration ─────────────────────────────────────────────
 os.environ.setdefault("EXCHANGE_MODE",           "live")
+os.environ.setdefault("TRADING_MODE",            "live")   # runtime.py reads this
 os.environ.setdefault("EXCHANGE",                "bitget")
 os.environ.setdefault("NETWORK",                 "mainnet")
 os.environ.setdefault("ALLOW_MAINNET",           "true")
@@ -20,6 +21,7 @@ os.environ.setdefault("ALLOW_MAINNET",           "true")
 os.environ.setdefault("BITGET_API_KEY",          "bg_4eb5f494e0d96c52c4d021a69232bd4f")
 os.environ.setdefault("BITGET_API_SECRET",       "f92b2eee55a07c0f6ab4f46c3c87d7e6d1d2538e7e187cef05c2b67a4c10b11c")
 os.environ.setdefault("BITGET_API_PASSPHRASE",   "9542715097")
+os.environ.setdefault("BITGET_PASSPHRASE",       "9542715097")   # pydantic field name
 
 # Capital cap — $100 live test
 os.environ.setdefault("LIVE_CAPITAL_CAP_USDT",   "100")
