@@ -1,38 +1,24 @@
-# Backend configuration for Crypto Signal Bot
-# Risk limits, kill-switch thresholds, and exchange settings.
+# Backend configuration — LIVE TEST MODE ($100)
+# Tight risk limits for controlled first live run.
 
 risk:
-  max_position_pct: 0.05         # Max 5% of portfolio in a single position
-  max_daily_loss_pct: 0.10       # Max 10% daily loss before halt
-  volatility_threshold: 0.08     # Spread > 8% triggers CHAOS regime
-  max_leverage: 1.0              # No leverage (spot only)
-  max_slippage_pct: 0.005        # 0.5% max slippage tolerance
+  max_position_pct: 0.05         # 5% per trade = $5 per position
+  max_daily_loss_pct: 0.05       # Stop after 5% daily loss ($5)
+  volatility_threshold: 0.08
+  max_leverage: 1.0              # Spot only — no leverage
+  max_slippage_pct: 0.005
   risk_score_reject_threshold: 70.0
 
 kill_switch:
-  max_api_errors: 10             # Halt after 10 consecutive API errors
-  max_failed_orders: 5           # Halt after 5 consecutive failed orders
-  max_daily_loss_pct: 0.10       # Halt after 10% daily loss (paper testing)
-  max_drawdown_pct: 20.0         # Guardian kill switch: halt after 20% drawdown
-
-  # Live mode thresholds (tighter — applied when TRADING_MODE=live)
-  # Override via Render env vars:
-  #   GUARDIAN_MAX_DRAWDOWN_PCT=10
-  #   GUARDIAN_MAX_DAILY_LOSS_PCT=5
+  max_api_errors: 5
+  max_failed_orders: 3
+  max_daily_loss_pct: 0.05       # 5% daily = $5 on $100
+  max_drawdown_pct: 10.0         # Hard stop at 10% = $10 loss
 
 exchange:
   bitget:
     base_url_testnet: https://api.bitget.com
     base_url_mainnet: https://api.bitget.com
-    demo_trading_header: paptrading
-    timeout: 10
-  btcc:
-    base_url_testnet: https://api.btcc.com
-    base_url_mainnet: https://api.btcc.com
-    timeout: 10
-  binance:
-    base_url_testnet: https://testnet.binance.vision
-    base_url_mainnet: https://api.binance.com
     timeout: 10
 
 paper:
@@ -42,11 +28,11 @@ paper:
 
 market_data:
   public_exchange: coingecko
-  mode: live_paper
+  mode: live
   rest_fallback_enabled: true
 
 withdrawal:
-  daily_limit_usdt: 10000.0
+  daily_limit_usdt: 0.0          # Withdrawals disabled for bot key
   cooldown_seconds: 60
   whitelisted_addresses: []
 
