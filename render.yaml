@@ -12,13 +12,13 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.9
 
-      # ── Trading mode (testnet live — real API, testnet funds) ─────
+      # ── LIVE MODE — $100 controlled test ─────────────────────────
       - key: TRADING_MODE
-        value: paper
+        value: live
       - key: NETWORK
-        value: testnet
+        value: mainnet
       - key: ALLOW_MAINNET
-        value: "false"
+        value: "true"
 
       # ── Exchange ──────────────────────────────────────────────────
       - key: EXCHANGE
@@ -36,6 +36,18 @@ services:
       - key: BITGET_API_PASSPHRASE
         value: "9542715097"
 
+      # ── Capital cap — $100 live test ──────────────────────────────
+      - key: LIVE_CAPITAL_CAP_USDT
+        value: "100"
+      - key: EXECUTOR_POSITION_PCT
+        value: "0.05"
+      - key: EXECUTOR_MAX_POSITIONS
+        value: "4"
+      - key: EXECUTOR_MIN_CONFIDENCE
+        value: "0.80"
+      - key: EXECUTOR_INTERVAL
+        value: "60"
+
       # ── Telegram alerts ───────────────────────────────────────────
       - key: TELEGRAM_ALERTS_ENABLED
         value: "true"
@@ -44,25 +56,15 @@ services:
       - key: TELEGRAM_BOT_TOKEN
         value: "8327316373:AAEXeisn6svbs6JHtlIWBon7YOQzbu7upq4"
 
-      # ── Risk / Guardian ───────────────────────────────────────────
+      # ── Guardian — tight for live test ────────────────────────────
       - key: GUARDIAN_MAX_DRAWDOWN_PCT
-        value: "20"
+        value: "10"
       - key: GUARDIAN_MAX_DAILY_LOSS_PCT
-        value: "10"
-      - key: GUARDIAN_MAX_API_ERRORS
-        value: "10"
-      - key: GUARDIAN_MAX_FAILED_ORDERS
         value: "5"
-
-      # ── Executor ──────────────────────────────────────────────────
-      - key: EXECUTOR_INTERVAL
-        value: "60"
-      - key: EXECUTOR_MIN_CONFIDENCE
-        value: "0.75"
-      - key: EXECUTOR_POSITION_PCT
-        value: "0.05"
-      - key: EXECUTOR_MAX_POSITIONS
-        value: "4"
+      - key: GUARDIAN_MAX_API_ERRORS
+        value: "5"
+      - key: GUARDIAN_MAX_FAILED_ORDERS
+        value: "3"
 
       # ── Infrastructure ────────────────────────────────────────────
       - key: CORS_ORIGINS
