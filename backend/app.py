@@ -183,7 +183,7 @@ async def lifespan(application):
     except Exception as exc:
         logger.warning("CoinGecko pre-warm skipped (non-fatal): %s", exc)
 
-    if TRADING_MODE == "paper" and PAPER_USE_LIVE_MARKET_DATA:
+    if PAPER_USE_LIVE_MARKET_DATA:  # Start coingecko market data in both paper and live modes
         svc = _get_market_data_service()
         await svc.start()
 
