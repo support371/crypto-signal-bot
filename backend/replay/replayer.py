@@ -43,7 +43,23 @@ from backend.logic.indicators import (
     macd,
     bollinger_bands,
     atr,
+    last_atr as compute_atr,
+    last_bollinger as _last_bollinger,
+    last_ema as compute_ema,
+    last_macd as _last_macd,
+    last_rsi as compute_rsi,
 )
+
+
+def compute_macd(closes):
+    from backend.logic.indicators import last_macd
+    return last_macd(closes)   # already returns (macd_line, signal_line, histogram)
+
+
+def compute_bollinger_bands(closes):
+    from backend.logic.indicators import last_bollinger
+    return last_bollinger(closes)   # already returns (upper, middle, lower)
+
 
 # ---------------------------------------------------------------------------
 # Data types
@@ -98,6 +114,48 @@ class ReplaySignal:
             "strategy_id": self.strategy_id,
             "indicators": self.indicators,
         }
+
+
+# ---------------------------------------------------------------------------
+# Indicator computation helpers (Legacy O(N^2) exports for backtest engine)
+# ---------------------------------------------------------------------------
+
+def _closes(candles: List[ReplayCandle]) -> List[Decimal]:
+    return [Decimal(str(c.close)) for c in candles]
+
+
+def _compute_indicators(candles: List[ReplayCandle]) -> Dict[str, Any]:
+    """Run all indicator calculations on the candle sequence.
+    Legacy sliding-window approach exported for backtest engine.
+    """
+    closes_dec = _closes(candles)
+    closes = [float(c) for c in closes_dec]
+    if len(closes) < 26:
+        return {}
+
+    rsi_val = compute_rsi(closes, period=14)
+    ema20 = compute_ema(closes, period=20)
+    ema50 = compute_ema(closes, period=50)
+    ema200 = compute_ema(closes, period=200)
+    macd_line, signal_line, histogram = compute_macd(closes)
+    bb_upper, bb_mid, bb_lower = compute_bollinger_bands(closes)
+    highs = [float(c.high) for c in candles]
+    lows = [float(c.low) for c in candles]
+    atr_val = compute_atr(highs, lows, closes, period=14)
+
+    return {
+        "rsi": float(rsi_val) if rsi_val is not None else None,
+        "ema20": float(ema20) if ema20 is not None else None,
+        "ema50": float(ema50) if ema50 is not None else None,
+        "ema200": float(ema200) if ema200 is not None else None,
+        "macd_line": float(macd_line) if macd_line is not None else None,
+        "macd_signal": float(signal_line) if signal_line is not None else None,
+        "macd_hist": float(histogram) if histogram is not None else None,
+        "bb_upper": float(bb_upper) if bb_upper is not None else None,
+        "bb_mid": float(bb_mid) if bb_mid is not None else None,
+        "bb_lower": float(bb_lower) if bb_lower is not None else None,
+        "atr": float(atr_val) if atr_val is not None else None,
+    }
 
 
 @dataclass
