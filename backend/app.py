@@ -1085,9 +1085,9 @@ def get_config_snapshot():
         "network": NETWORK,
         "market_data_source": MARKET_DATA_PUBLIC_EXCHANGE,
         "paper_use_live_market_data": PAPER_USE_LIVE_MARKET_DATA,
-        "live_execution_enabled": False,
+        "live_execution_enabled": exchange_adapter.mode == "mainnet",
         "withdrawals_enabled": False,
-        "safe_mode": True,
+        "safe_mode": exchange_adapter.mode != "mainnet",
         "risk": {
             "max_position_pct": cfg.risk.max_position_pct if hasattr(cfg, "risk") else None,
             "max_daily_loss_pct": cfg.risk.max_daily_loss_pct if hasattr(cfg, "risk") else None,
@@ -1259,12 +1259,9 @@ def market_state_api(req: MarketStateRequest, _: None = Depends(require_auth)):
 
 @app.post("/intent/live", response_model=IntentResponse)
 def intent_live_api(req: IntentRequest, _: None = Depends(require_auth)):
-    # Paper-only safety: live execution is disabled. Return 403 regardless of TRADING_MODE.
-    # The MainnetGate provides a second-layer check inside _process_intent if this is ever relaxed.
-    raise HTTPException(
-        status_code=403,
-        detail={"mode": "safe", "reason": "live_execution_disabled", "message": "Live order execution is permanently disabled. All execution routes through the paper adapter."}
-    )
+    # Live execution enabled — routes through CCXTSpotAdapter (Bitget mainnet)
+    # MainnetGate + guardian provide secondary safety layers
+    return _process_intent(req, "live")
 
 @app.post("/intent/paper", response_model=IntentResponse)
 def intent_paper_api(req: IntentRequest, _: None = Depends(require_auth)):
