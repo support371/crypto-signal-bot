@@ -13,16 +13,13 @@ services:
         value: 3.11.9
 
       # ── Trading mode ─────────────────────────────────────────────
-      # PAPER MODE (default — safe)
+      # PAPER MODE (safe default — change to live when ready)
       - key: TRADING_MODE
         value: paper
       - key: NETWORK
         value: testnet
       - key: ALLOW_MAINNET
         value: "false"
-
-      # Switch to LIVE: set TRADING_MODE=live, NETWORK=mainnet, ALLOW_MAINNET=true
-      # + add exchange credentials below
 
       # ── Exchange ──────────────────────────────────────────────────
       - key: EXCHANGE
@@ -32,26 +29,21 @@ services:
       - key: MARKET_DATA_PUBLIC_EXCHANGE
         value: coingecko
 
-      # ── Bitget credentials (set in Render dashboard, not here) ───
-      # - key: BITGET_API_KEY
-      #   sync: false
-      # - key: BITGET_API_SECRET
-      #   sync: false
-      # - key: BITGET_API_PASSPHRASE
-      #   sync: false
-
-      # ── BTCC credentials (alternative) ───────────────────────────
-      # - key: BTCC_API_KEY
-      #   sync: false
-      # - key: BTCC_API_SECRET
-      #   sync: false
+      # ── Bitget credentials (set in Render dashboard) ──────────────
+      - key: BITGET_API_KEY
+        sync: false
+      - key: BITGET_API_SECRET
+        sync: false
+      - key: BITGET_API_PASSPHRASE
+        sync: false
 
       # ── Telegram alerts ───────────────────────────────────────────
       - key: TELEGRAM_ALERTS_ENABLED
         value: "true"
       - key: TELEGRAM_CHANNEL_ID
         value: "-1003368597629"
-      # TELEGRAM_BOT_TOKEN set in Render dashboard (secret)
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
 
       # ── Risk / Guardian ───────────────────────────────────────────
       - key: GUARDIAN_MAX_DRAWDOWN_PCT
