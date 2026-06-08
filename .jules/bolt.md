@@ -21,3 +21,7 @@
 ## 2026-06-10 - [Single-pass Iterative MACD]
 **Learning:** Even with a `count` parameter, if `last_macd` calls the full series `macd` function, it still performs $O(N)$ space allocations and multiple passes. A true single-pass iterative implementation reduces space to $O(count)$ and halves CPU time by avoiding redundant list iterations and garbage collection pressure.
 **Action:** Always implement technical indicators using iterative single-pass logic when only the most recent values are needed, rather than wrapping full-series calculations.
+
+## 2026-06-15 - [Indicator Arithmetic & Call Overhead]
+**Learning:** In hot loops, Python's function call overhead and repeated division operations are significant. Pre-calculating `1.0 / period` and replacing division with multiplication, along with inlining simple helper logic, can yield 2-3x speedups for O(n) indicators.
+**Action:** Use multiplicative inverses for period-based smoothing and inline True Range calculation to minimize stack frames in technical indicator hot paths.
