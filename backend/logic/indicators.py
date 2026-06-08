@@ -426,15 +426,17 @@ def last_atr(
     for i in range(1, period + 1):
         h = highs[i]
         l = lows[i]
-        pc = closes[i-1]
+        pc = closes[i - 1]
 
         hl = h - l
         hpc = abs(h - pc)
         lpc = abs(l - pc)
 
         tr = hl
-        if hpc > tr: tr = hpc
-        if lpc > tr: tr = lpc
+        if hpc > tr:
+            tr = hpc
+        if lpc > tr:
+            tr = lpc
         tr_sum += tr
 
     val = tr_sum * inv_period
@@ -443,15 +445,17 @@ def last_atr(
     for i in range(period + 1, n):
         h = highs[i]
         l = lows[i]
-        pc = closes[i-1]
+        pc = closes[i - 1]
 
         hl = h - l
         hpc = abs(h - pc)
         lpc = abs(l - pc)
 
         tr = hl
-        if hpc > tr: tr = hpc
-        if lpc > tr: tr = lpc
+        if hpc > tr:
+            tr = hpc
+        if lpc > tr:
+            tr = lpc
 
         # Smoothed ATR update rule: ATR_i = ATR_{i-1} + (TR_i - ATR_{i-1}) / period
         val = val + (tr - val) * inv_period

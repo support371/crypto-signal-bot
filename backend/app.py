@@ -1078,7 +1078,8 @@ def get_runtime_status():
 @app.get("/config/snapshot")
 def get_config_snapshot():
     """Return current config without secrets. Includes config hash."""
-    import hashlib, json as _json
+    import hashlib
+    import json as _json
     cfg = get_runtime_config()
     snapshot = {
         "trading_mode": TRADING_MODE,
