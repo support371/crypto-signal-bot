@@ -142,15 +142,12 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
     for i in range(period + 1, n):
         curr = values[i]
         change = curr - prev
+        avg_gain *= minus_one_over_period
+        avg_loss *= minus_one_over_period
         if change > 0:
-            avg_gain = avg_gain * minus_one_over_period + change * inv_period
-            avg_loss = avg_loss * minus_one_over_period
+            avg_gain += change * inv_period
         elif change < 0:
-            avg_gain = avg_gain * minus_one_over_period
-            avg_loss = avg_loss * minus_one_over_period - change * inv_period
-        else:
-            avg_gain = avg_gain * minus_one_over_period
-            avg_loss = avg_loss * minus_one_over_period
+            avg_loss -= change * inv_period
         prev = curr
 
     if avg_loss == 0:

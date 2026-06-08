@@ -1259,9 +1259,16 @@ def market_state_api(req: MarketStateRequest, _: None = Depends(require_auth)):
 
 @app.post("/intent/live", response_model=IntentResponse)
 def intent_live_api(req: IntentRequest, _: None = Depends(require_auth)):
-    # Live execution enabled — routes through CCXTSpotAdapter (Bitget mainnet)
-    # MainnetGate + guardian provide secondary safety layers
-    return _process_intent(req, "live")
+    # Live execution is hard-disabled in app.py for safety as per ARCHITECTURE_AUDIT.md
+    # and the project requirements. Use /intent/paper for trading simulations.
+    raise HTTPException(
+        status_code=403,
+        detail={
+            "mode": "safe",
+            "reason": "live_execution_disabled",
+            "message": "Live execution is hard-disabled for safety. Use /intent/paper for simulations."
+        }
+    )
 
 @app.post("/intent/paper", response_model=IntentResponse)
 def intent_paper_api(req: IntentRequest, _: None = Depends(require_auth)):
