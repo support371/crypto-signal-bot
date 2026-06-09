@@ -97,7 +97,8 @@ const Index = () => {
 
   const { health, config, exchangeStatus, paperBalance, isConnected, isLoading: backendLoading, endpointErrors, backendUrl, refetch: refetchStatus } = useBackendStatus();
   const systemMode = health?.mode ?? 'paper';
-  const preferBackendPrices = exchangeStatus?.market_data_mode === 'live_public_paper';
+  // Always prefer backend prices — backend caches CoinGecko and is rate-limit-safe
+  const preferBackendPrices = true;
   const { prices, isLoading, error, source: priceSource, refetch: refetchPrices } = useCryptoPrices(
     undefined,
     preferBackendPrices
