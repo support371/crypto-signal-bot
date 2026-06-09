@@ -94,36 +94,56 @@ async function fetchFromBackend(
 ): Promise<CryptoPrice[]> {
   if (coins.length === 0) return [];
 
-  // Optimization: Use batch endpoint instead of N individual calls
-  const symbols = coins.map((c) => c.backendSymbol).join(',');
-  const response = await fetchBackendJson<BatchPricesResponse>(
-    `/prices/batch?symbols=${encodeURIComponent(symbols)}`
+  // Fetch each coin from /price?symbol=XXUSDT in parallel
+  const now = new Date().toISOString();
+  const results = await Promise.all(
+    coins.map(async (coin): Promise<CryptoPrice> => {
+      try {
+        const data = await fetchBackendJson<BackendPriceResponse>(
+          `/price?symbol=${encodeURIComponent(coin.backendSymbol)}`
+        );
+
+        if (!sessionBaselineRef.current.has(coin.id)) {
+          sessionBaselineRef.current.set(coin.id, data.price);
+        }
+        const baseline = sessionBaselineRef.current.get(coin.id) || data.price;
+        const sessionChangePct =
+          baseline === 0 ? 0 : ((data.price - baseline) / baseline) * 100;
+        const change24h =
+          typeof data.change24h === 'number' && Number.isFinite(data.change24h)
+            ? data.change24h
+            : sessionChangePct;
+
+        return {
+          id: coin.id,
+          symbol: coin.symbol,
+          name: coin.name,
+          price: data.price,
+          change24h: Number(change24h.toFixed(2)),
+          volume24h: data.volume24h ?? 0,
+          marketCap: data.marketCap ?? 0,
+          lastUpdated: now,
+        } satisfies CryptoPrice;
+      } catch {
+        // Return a zero-priced placeholder so the array length stays consistent
+        return {
+          id: coin.id,
+          symbol: coin.symbol,
+          name: coin.name,
+          price: 0,
+          change24h: 0,
+          volume24h: 0,
+          marketCap: 0,
+          lastUpdated: now,
+        } satisfies CryptoPrice;
+      }
+    })
   );
 
-  return response.prices.map((item) => {
-    // Maintain session baseline for change calculation if backend 24h change is missing or zero
-    if (!sessionBaselineRef.current.has(item.id)) {
-      sessionBaselineRef.current.set(item.id, item.price);
-    }
-    const baseline = sessionBaselineRef.current.get(item.id) || item.price;
-    const sessionChangePct = baseline === 0 ? 0 : ((item.price - baseline) / baseline) * 100;
-
-    const change24h =
-      typeof item.change24h === 'number' && Number.isFinite(item.change24h)
-        ? item.change24h
-        : sessionChangePct;
-
-    return {
-      id: item.id,
-      symbol: item.symbol,
-      name: item.name,
-      price: item.price,
-      change24h: Number(change24h.toFixed(2)),
-      volume24h: item.volume24h,
-      marketCap: item.marketCap,
-      lastUpdated: item.lastUpdated,
-    } satisfies CryptoPrice;
-  });
+  // Filter out zero-priced placeholders (all failed calls)
+  const valid = results.filter((r) => r.price > 0);
+  if (valid.length === 0) throw new Error('All backend price fetches failed');
+  return results;
 }
 
 export function useCryptoPrices(symbols?: string[], preferBackend = false) {
