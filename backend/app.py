@@ -1058,11 +1058,12 @@ def get_runtime_status():
     mds = _get_market_data_status()
     from backend.services.guardian_bot import service as _gsvc
     ws_clients = len(getattr(ws_manager, "_connections", []))
+    _is_live = exchange_adapter.mode == "mainnet"
     return {
         "mode": TRADING_MODE,
         "network": NETWORK,
-        "safe_mode": True,
-        "live_execution_enabled": False,
+        "safe_mode": not _is_live,
+        "live_execution_enabled": _is_live,
         "withdrawals_enabled": False,
         "selected_exchange": MARKET_DATA_PUBLIC_EXCHANGE,
         "feed_connected": mds.get("connected", False),
@@ -1451,3 +1452,4 @@ async def serve_spa(path: str):
 
 
 # Background services are started inside lifespan() — see above.
+
