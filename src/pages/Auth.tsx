@@ -59,7 +59,7 @@ const Auth = () => {
   // Redirect if already logged in (including demo mode)
   useEffect(() => {
     if (user) {
-      navigate('/');
+      navigate('/dashboard');
     }
   }, [user, navigate]);
 

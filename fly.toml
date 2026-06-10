@@ -1,0 +1,38 @@
+app = "crypto-signal-bot-api"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile.render"
+
+[env]
+  PORT = "8080"
+  TRADING_MODE = "paper"
+  NETWORK = "testnet"
+  MARKET_DATA_PUBLIC_EXCHANGE = "coinbase"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 25
+    soft_limit = 20
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512
+
+[checks]
+  [checks.health]
+    grace_period = "30s"
+    interval = "15s"
+    method = "GET"
+    path = "/healthz"
+    port = 8080
+    timeout = "10s"
+    type = "http"
