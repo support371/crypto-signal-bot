@@ -212,27 +212,27 @@ async def lifespan(application):
     # ── Background services (must start after app is fully initialised) ──
     try:
         from backend.services.signal_service.service import start_signal_service as _start_ss
-        _start_ss(app)
+        await _start_ss(app)
     except Exception as _exc:
         logger.warning("Signal service start skipped: %s", _exc)
     try:
         from backend.services.portfolio.service import start_portfolio_service as _start_ps
-        _start_ps(app)
+        await _start_ps(app)
     except Exception as _exc:
         logger.warning("Portfolio service start skipped: %s", _exc)
     try:
         from backend.services.guardian_bot.monitor import start_guardian_monitor as _start_gm
-        _start_gm(app)
+        await _start_gm(app)
     except Exception as _exc:
         logger.warning("Guardian monitor start skipped: %s", _exc)
     try:
         from backend.services.monitoring.service import start_monitoring_service as _start_mon
-        _start_mon(app)
+        await _start_mon(app)
     except Exception as _exc:
         logger.warning("Monitoring service start skipped: %s", _exc)
     try:
         from backend.services.signal_executor.service import start_signal_executor as _start_exec
-        _start_exec(app)
+        await _start_exec(app)
     except Exception as _exc:
         logger.warning("Signal executor start skipped: %s", _exc)
     try:

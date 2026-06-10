@@ -206,7 +206,7 @@ async def _monitor_loop() -> None:
         await asyncio.sleep(PROBE_INTERVAL)
 
 
-def start_monitoring_service(app) -> None:
+async def start_monitoring_service(app) -> None:
     """Register the monitoring background loop with the FastAPI app."""
     # Direct task creation — called from lifespan() which is already async
     asyncio.create_task(_monitor_loop())
