@@ -26,7 +26,7 @@ npm run verify:paper-safety
 
 ## Deployment sequence
 
-1. Export fresh, rotated Cloudflare credentials in your terminal or CI secret store.
+1. Export Cloudflare credentials in your terminal or CI secret store without printing them.
 2. Create the D1 database:
    ```bash
    wrangler d1 create crypto-signal-bot-db
@@ -56,7 +56,7 @@ npm run verify:paper-safety
    npm run deploy
    ```
 9. Update Vercel so `VITE_BACKEND_URL=https://crypto-signal-bot-api.workers.dev`, then trigger a production redeploy.
-10. Add rotated `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` values to GitHub Actions secrets.
+10. Add `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `VERCEL_TOKEN`, `VERCEL_PROJECT_ID`, and optional `VERCEL_TEAM_ID` values to GitHub Actions secrets.
 
 ## Post-deploy checks
 
