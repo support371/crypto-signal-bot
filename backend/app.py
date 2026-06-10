@@ -183,7 +183,7 @@ async def lifespan(application):
     except Exception as exc:
         logger.warning("CoinGecko pre-warm skipped (non-fatal): %s", exc)
 
-    if PAPER_USE_LIVE_MARKET_DATA:  # Start coingecko market data in both paper and live modes
+    if TRADING_MODE == "paper" and PAPER_USE_LIVE_MARKET_DATA:
         svc = _get_market_data_service()
         await svc.start()
 
@@ -212,27 +212,27 @@ async def lifespan(application):
     # ── Background services (must start after app is fully initialised) ──
     try:
         from backend.services.signal_service.service import start_signal_service as _start_ss
-        await _start_ss(app)
+        _start_ss(app)
     except Exception as _exc:
         logger.warning("Signal service start skipped: %s", _exc)
     try:
         from backend.services.portfolio.service import start_portfolio_service as _start_ps
-        await _start_ps(app)
+        _start_ps(app)
     except Exception as _exc:
         logger.warning("Portfolio service start skipped: %s", _exc)
     try:
         from backend.services.guardian_bot.monitor import start_guardian_monitor as _start_gm
-        await _start_gm(app)
+        _start_gm(app)
     except Exception as _exc:
         logger.warning("Guardian monitor start skipped: %s", _exc)
     try:
         from backend.services.monitoring.service import start_monitoring_service as _start_mon
-        await _start_mon(app)
+        _start_mon(app)
     except Exception as _exc:
         logger.warning("Monitoring service start skipped: %s", _exc)
     try:
         from backend.services.signal_executor.service import start_signal_executor as _start_exec
-        await _start_exec(app)
+        _start_exec(app)
     except Exception as _exc:
         logger.warning("Signal executor start skipped: %s", _exc)
     try:
@@ -1078,17 +1078,16 @@ def get_runtime_status():
 @app.get("/config/snapshot")
 def get_config_snapshot():
     """Return current config without secrets. Includes config hash."""
-    import hashlib
-    import json as _json
+    import hashlib, json as _json
     cfg = get_runtime_config()
     snapshot = {
         "trading_mode": TRADING_MODE,
         "network": NETWORK,
         "market_data_source": MARKET_DATA_PUBLIC_EXCHANGE,
         "paper_use_live_market_data": PAPER_USE_LIVE_MARKET_DATA,
-        "live_execution_enabled": exchange_adapter.mode == "mainnet",
+        "live_execution_enabled": False,
         "withdrawals_enabled": False,
-        "safe_mode": exchange_adapter.mode != "mainnet",
+        "safe_mode": True,
         "risk": {
             "max_position_pct": cfg.risk.max_position_pct if hasattr(cfg, "risk") else None,
             "max_daily_loss_pct": cfg.risk.max_daily_loss_pct if hasattr(cfg, "risk") else None,
@@ -1260,8 +1259,12 @@ def market_state_api(req: MarketStateRequest, _: None = Depends(require_auth)):
 
 @app.post("/intent/live", response_model=IntentResponse)
 def intent_live_api(req: IntentRequest, _: None = Depends(require_auth)):
-    # Live execution is hard-disabled in app.py for safety
-    raise HTTPException(status_code=403, detail="Live execution is disabled.")
+    # Paper-only safety: live execution is disabled. Return 403 regardless of TRADING_MODE.
+    # The MainnetGate provides a second-layer check inside _process_intent if this is ever relaxed.
+    raise HTTPException(
+        status_code=403,
+        detail={"mode": "safe", "reason": "live_execution_disabled", "message": "Live order execution is permanently disabled. All execution routes through the paper adapter."}
+    )
 
 @app.post("/intent/paper", response_model=IntentResponse)
 def intent_paper_api(req: IntentRequest, _: None = Depends(require_auth)):

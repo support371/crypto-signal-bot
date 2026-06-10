@@ -42,14 +42,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from backend.replay.replayer import (
     ReplayCandle,
+    _compute_indicators,
     _classify,
-)
-from backend.logic.indicators import (
-    atr as compute_atr_series,
-    bollinger_bands as compute_bb_series,
-    ema as compute_ema_series,
-    macd as compute_macd_series,
-    rsi as compute_rsi_series,
 )
 
 # ---------------------------------------------------------------------------
@@ -300,41 +294,15 @@ class BacktestEngine:
         entry_ts = 0.0
         entry_confidence = 0.0
 
-        # Pre-compute indicators for the entire series to avoid O(N^2)
-        closes = [float(c.close) for c in candles]
-        highs = [float(c.high) for c in candles]
-        lows = [float(c.low) for c in candles]
-
-        rsi_s = compute_rsi_series(closes, 14)
-        ema20_s = compute_ema_series(closes, 20)
-        ema50_s = compute_ema_series(closes, 50)
-        ema200_s = compute_ema_series(closes, 200)
-        macd_l_s, macd_sig_s, macd_hist_s = compute_macd_series(closes, 12, 26, 9)
-        bb_u_s, bb_m_s, bb_l_s = compute_bb_series(closes, 20, 2.0)
-        atr_s = compute_atr_series(highs, lows, closes, 14)
-
         for i in range(MIN_CANDLES, len(candles)):
-            # window = candles[:i] -> indicators for candle at i-1
-            # BacktestEngine uses window = candles[:i] and then accesses indicators for the LAST candle in that window (i-1)
-            # to make decisions for trade at candle i.
-            idx = i - 1
-            indicators = {
-                "rsi": rsi_s[idx],
-                "ema20": ema20_s[idx],
-                "ema50": ema50_s[idx],
-                "ema200": ema200_s[idx],
-                "macd_line": macd_l_s[idx],
-                "macd_signal": macd_sig_s[idx],
-                "macd_hist": macd_hist_s[idx],
-                "bb_upper": bb_u_s[idx],
-                "bb_mid": bb_m_s[idx],
-                "bb_lower": bb_l_s[idx],
-                "atr": atr_s[idx],
-            }
-
+            window = candles[:i]
             candle = candles[i]            # current candle (no look-ahead)
+            indicators = _compute_indicators(window)
+            if not indicators:
+                continue
+
             atr = indicators.get("atr") or 0.0
-            current_close = float(candles[idx].close)
+            current_close = window[-1].close
             side, confidence = _classify(strategy_id, indicators, current_close)
 
             # --- Manage open position ---

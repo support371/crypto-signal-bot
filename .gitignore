@@ -10,11 +10,8 @@ backend/env/.env
 .env
 .env.local
 .env.*.local
-.env.cloudflare.local
-.dev.vars
 !backend/env/.env.example
 !.env.fullstack.example
-!.env.cloudflare.local.example
 
 .venv/
 .python-version
@@ -33,11 +30,6 @@ node_modules/
 .vite/
 bun.lockb
 
-# Cloudflare / Wrangler local state
-.wrangler/
-worker/.wrangler/
-
-# Build outputs
 dist/
 
 .vscode/
