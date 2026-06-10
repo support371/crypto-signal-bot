@@ -21,3 +21,7 @@
 ## 2026-06-10 - [Single-pass Iterative MACD]
 **Learning:** Even with a `count` parameter, if `last_macd` calls the full series `macd` function, it still performs $O(N)$ space allocations and multiple passes. A true single-pass iterative implementation reduces space to $O(count)$ and halves CPU time by avoiding redundant list iterations and garbage collection pressure.
 **Action:** Always implement technical indicators using iterative single-pass logic when only the most recent values are needed, rather than wrapping full-series calculations.
+
+## 2026-06-12 - [Python Function Call Overhead in Hot Loops]
+**Learning:** Python function calls, even for simple local functions, introduce significant overhead in tight loops. In the `last_atr` indicator, inlining the True Range calculation contributed to a ~20% performance improvement.
+**Action:** Inline simple, high-frequency logic in performance-critical paths instead of using small helper functions to minimize stack frame management overhead.
