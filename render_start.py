@@ -17,11 +17,11 @@ os.environ.setdefault("EXCHANGE",                "bitget")
 os.environ.setdefault("NETWORK",                 "mainnet")
 os.environ.setdefault("ALLOW_MAINNET",           "true")
 
-# Bitget GEM-Bot key (no IP restriction)
-os.environ.setdefault("BITGET_API_KEY",          "bg_4eb5f494e0d96c52c4d021a69232bd4f")
-os.environ.setdefault("BITGET_API_SECRET",       "f92b2eee55a07c0f6ab4f46c3c87d7e6d1d2538e7e187cef05c2b67a4c10b11c")
-os.environ.setdefault("BITGET_API_PASSPHRASE",   "9542715097")
-os.environ.setdefault("BITGET_PASSPHRASE",       "9542715097")   # pydantic field name
+# Bitget credentials
+os.environ.setdefault("BITGET_API_KEY",          "")
+os.environ.setdefault("BITGET_API_SECRET",       "")
+os.environ.setdefault("BITGET_API_PASSPHRASE",   "")
+os.environ.setdefault("BITGET_PASSPHRASE",       "")   # pydantic field name
 
 # Capital cap — $100 live test
 os.environ.setdefault("LIVE_CAPITAL_CAP_USDT",   "100")
@@ -39,7 +39,7 @@ os.environ.setdefault("GUARDIAN_MAX_FAILED_ORDERS",  "3")
 # Telegram alerts
 os.environ.setdefault("TELEGRAM_ALERTS_ENABLED", "true")
 os.environ.setdefault("TELEGRAM_CHANNEL_ID",     "-1003368597629")
-os.environ.setdefault("TELEGRAM_BOT_TOKEN",      "8327316373:AAEXeisn6svbs6JHtlIWBon7YOQzbu7upq4")
+os.environ.setdefault("TELEGRAM_BOT_TOKEN",      "")
 
 # ── Server startup ────────────────────────────────────────────────────────────
 PORT = os.getenv("PORT", "10000")
