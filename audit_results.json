@@ -1,0 +1,43 @@
+{
+  "tracked_files_scanned": 475,
+  "tracked_junk_files": [],
+  "secret_like_paths": [
+    "backend/env/.env.production.example"
+  ],
+  "secret_value_hits": [
+    "Dockerfile.frontend:17",
+    "backend/adapters/exchanges/__init__.py:60",
+    "backend/adapters/exchanges/__init__.py:61",
+    "backend/adapters/exchanges/__init__.py:69",
+    "backend/adapters/exchanges/__init__.py:70",
+    "backend/adapters/exchanges/__init__.py:79",
+    "backend/adapters/exchanges/__init__.py:80",
+    "backend/app.py:104",
+    "backend/config/loader.py:189",
+    "backend/config/loader.py:191",
+    "backend/config/loader.py:192",
+    "backend/config/loader.py:195",
+    "backend/config/loader.py:196",
+    "backend/config/loader.py:242",
+    "backend/config/loader.py:265",
+    "backend/engine/routing.py:82",
+    "backend/engine/routing.py:89",
+    "backend/engine/routing.py:96",
+    "backend/logic/context.py:20",
+    "backend/logic/exchange_adapter.py:238",
+    "backend/logic/exchange_adapter.py:239",
+    "backend/services/market_data/service.py:295",
+    "backend/services/market_data/service.py:302",
+    "backend/services/market_data/service.py:309",
+    "backend/tests/test_hardening.py:573",
+    "backend/tests/test_hardening.py:580",
+    "backend/tests/test_hardening.py:581",
+    "backend/tests/test_live_mode.py:269",
+    "backend/tests/test_live_mode.py:300",
+    "scripts/release_verify.py:23",
+    "scripts/render_manage.py:72",
+    "src/lib/backend.ts:62",
+    "src/lib/env.ts:59",
+    "src/lib/invokeEdgeFunction.ts:33"
+  ]
+}

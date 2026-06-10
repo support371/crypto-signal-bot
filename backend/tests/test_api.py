@@ -608,8 +608,8 @@ class TestIntentLive:
             "side": "BUY",
             "quantity": 0.001,
         })
-        # Live execution is now enabled in app.py
-        assert resp.status_code == 200
+        # Live execution is hard-disabled in app.py for safety
+        assert resp.status_code == 403
 
     def test_live_intent_blocked_by_kill_switch(self, client):
         context_module.kill_switch_active = True
@@ -619,10 +619,8 @@ class TestIntentLive:
             "side": "BUY",
             "quantity": 0.001,
         })
-        # Live execution is now enabled but should be blocked by kill switch if logic allowed,
-        # however app.py implementation for /intent/live currently returns 200 and handles
-        # rejection within the response body status for paper/risk reasons.
-        assert resp.status_code == 200
+        # Live execution is hard-disabled in app.py for safety
+        assert resp.status_code == 403
 
 
 class TestWithdraw:

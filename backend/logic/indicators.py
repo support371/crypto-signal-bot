@@ -112,7 +112,6 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
     """
     Return the most recent RSI value.
     Optimized to O(n) time and O(1) space by avoiding list allocations for changes, gains, and losses.
-    Further optimized by pre-calculating multiplicative inverses to avoid division in the main loop.
     """
     n = len(values)
     if n < period + 1 or period <= 0:
@@ -129,16 +128,16 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
         else:
             avg_loss -= change
 
-    inv_period = 1.0 / period
-    avg_gain *= inv_period
-    avg_loss *= inv_period
+    avg_gain /= period
+    avg_loss /= period
 
     # Wilder smoothing for the rest
-    p_minus_1 = float(period - 1)
     for i in range(period + 1, n):
         change = values[i] - values[i - 1]
-        avg_gain = (avg_gain * p_minus_1 + (change if change > 0 else 0.0)) * inv_period
-        avg_loss = (avg_loss * p_minus_1 + (-change if change < 0 else 0.0)) * inv_period
+        gain = change if change > 0 else 0.0
+        loss = -change if change < 0 else 0.0
+        avg_gain = (avg_gain * (period - 1) + gain) / period
+        avg_loss = (avg_loss * (period - 1) + loss) / period
 
     if avg_loss == 0:
         return 100.0
@@ -402,7 +401,6 @@ def last_atr(
     """
     Return the most recent ATR value.
     Optimized to O(n) time and O(1) space.
-    Further optimized by inlining TR calculation and using multiplicative inverses.
     """
     n = len(closes)
     if len(highs) != n or len(lows) != n:
@@ -410,24 +408,24 @@ def last_atr(
     if n < period + 1 or period <= 0:
         return None
 
+    # Calculate first True Range (tr0) to start seeding
+    # tr_list start at i=1
+    def get_tr(i):
+        hl = highs[i] - lows[i]
+        hpc = abs(highs[i] - closes[i - 1])
+        lpc = abs(lows[i] - closes[i - 1])
+        return max(hl, hpc, lpc)
+
     # Seed with average of first 'period' TRs
+    # Seed value is for result[period]
     tr_sum = 0.0
     for i in range(1, period + 1):
-        hl = highs[i] - lows[i]
-        hpc = abs(highs[i] - closes[i - 1])
-        lpc = abs(lows[i] - closes[i - 1])
-        tr_sum += max(hl, hpc, lpc)
+        tr_sum += get_tr(i)
 
-    inv_period = 1.0 / period
-    val = tr_sum * inv_period
+    val = tr_sum / period
 
     # Wilder smoothing for the rest
-    p_minus_1 = float(period - 1)
     for i in range(period + 1, n):
-        hl = highs[i] - lows[i]
-        hpc = abs(highs[i] - closes[i - 1])
-        lpc = abs(lows[i] - closes[i - 1])
-        tr = max(hl, hpc, lpc)
-        val = (val * p_minus_1 + tr) * inv_period
+        val = (val * (period - 1) + get_tr(i)) / period
 
     return val

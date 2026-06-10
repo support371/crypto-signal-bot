@@ -73,12 +73,6 @@ class CoinGeckoMarketDataService:
             return
         self._running = True
         self._client = httpx.AsyncClient(timeout=10.0)
-        # Seed immediately so snapshots are populated before the first request
-        try:
-            await self._fetch_all()
-            logger.info("CoinGeckoMarketDataService seeded %d symbols on startup", len(self._snapshots))
-        except Exception as exc:
-            logger.warning("CoinGecko initial seed failed (non-fatal, will retry in poll loop): %s", exc)
         self._task = asyncio.create_task(self._poll_loop())
         logger.info("CoinGeckoMarketDataService started for %d symbols", len(self._symbols))
 
@@ -170,4 +164,3 @@ class CoinGeckoMarketDataService:
         self._last_error = err
         self._last_update_ts = now
         logger.debug("CoinGecko poll OK — %d symbols updated", updated)
-

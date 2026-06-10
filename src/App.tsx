@@ -11,16 +11,13 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Loader2 } from "lucide-react";
 import { Analytics } from "@vercel/analytics/react";
 
-const Index       = lazy(() => import("./pages/Index"));
-const Auth        = lazy(() => import("./pages/Auth"));
-const NotFound    = lazy(() => import("./pages/NotFound"));
-const PublicHome  = lazy(() => import("./pages/PublicHome"));
+const Index = lazy(() => import("./pages/Index"));
+const Auth = lazy(() => import("./pages/Auth"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+const PublicHome = lazy(() => import("./pages/PublicHome"));
 const IntegrationsStatus = lazy(() => import("./pages/IntegrationsStatus"));
-const Waitlist    = lazy(() => import("./pages/Waitlist"));
-const Backtest    = lazy(() => import("./pages/Backtest"));
-const Dashboard   = lazy(() => import("./pages/Dashboard"));
-const HealthPage  = lazy(() => import("./pages/HealthPage"));
-const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const Waitlist = lazy(() => import("./pages/Waitlist"));
+const Backtest = lazy(() => import("./pages/Backtest"));
 
 const queryClient = new QueryClient();
 
@@ -44,41 +41,20 @@ const App = () => (
             <AuthBanner />
             <Suspense fallback={<RouteLoadingShell />}>
               <Routes>
-                {/* ── Public routes ─────────────────────────────────── */}
-                <Route path="/"            element={<PublicHome />} />
-                <Route path="/auth"        element={<Auth />} />
-                <Route path="/public"      element={<PublicHome />} />
+                <Route path="/auth" element={<Auth />} />
+                <Route path="/public" element={<PublicHome />} />
                 <Route path="/integrations" element={<IntegrationsStatus />} />
-                <Route path="/waitlist"    element={<Waitlist />} />
-                <Route path="/health"      element={<HealthPage />} />
-
-                {/* ── Protected routes ──────────────────────────────── */}
+                <Route path="/waitlist" element={<Waitlist />} />
                 <Route
-                  path="/dashboard"
+                  path="/"
                   element={
                     <ProtectedRoute>
-                      <Dashboard />
+                      <Index />
                     </ProtectedRoute>
                   }
                 />
-                <Route
-                  path="/backtest"
-                  element={
-                    <ProtectedRoute>
-                      <Backtest />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/settings"
-                  element={
-                    <ProtectedRoute>
-                      <SettingsPage />
-                    </ProtectedRoute>
-                  }
-                />
-
-                {/* ── Catch-all ─────────────────────────────────────── */}
+                {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+                <Route path="/backtest" element={<Backtest />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </Suspense>
