@@ -526,18 +526,10 @@ def _get_live_price_for_ticker(symbol: str) -> Optional[float]:
         return None
 
 def _get_market_data_status() -> Dict[str, Any]:
-    # Use live market data service in both paper and live modes when available
-    if PAPER_USE_LIVE_MARKET_DATA and context.market_data_service is not None:
+    if TRADING_MODE == "paper" and PAPER_USE_LIVE_MARKET_DATA:
         return _get_market_data_service().get_status()
 
-    # If service not yet started, try to start it and return its status
-    if PAPER_USE_LIVE_MARKET_DATA:
-        try:
-            return _get_market_data_service().get_status()
-        except Exception:
-            pass
-
-    # Fallback stub
+    # Mock status for synthetic/live modes
     mode_label = "synthetic_paper"
     if TRADING_MODE == "live":
         mode_label = "execution_only" if exchange_adapter.mode != "paper" else "synthetic_paper"
@@ -1066,12 +1058,11 @@ def get_runtime_status():
     mds = _get_market_data_status()
     from backend.services.guardian_bot import service as _gsvc
     ws_clients = len(getattr(ws_manager, "_connections", []))
-    _is_live = exchange_adapter.mode == "mainnet"
     return {
         "mode": TRADING_MODE,
         "network": NETWORK,
-        "safe_mode": not _is_live,
-        "live_execution_enabled": _is_live,
+        "safe_mode": True,
+        "live_execution_enabled": False,
         "withdrawals_enabled": False,
         "selected_exchange": MARKET_DATA_PUBLIC_EXCHANGE,
         "feed_connected": mds.get("connected", False),
@@ -1133,11 +1124,10 @@ def get_orders_api(symbol: Optional[str] = Query(None)):
 @app.get("/price", dependencies=[Depends(rate_limit.rate_limit)])
 def get_price_api(symbol: str = Query("BTCUSDT")):
     normalized_symbol = symbol.upper()
-    if PAPER_USE_LIVE_MARKET_DATA:
+    if TRADING_MODE == "paper" and PAPER_USE_LIVE_MARKET_DATA:
         svc = _get_market_data_service()
         snap = svc.get_snapshot(normalized_symbol)
         if snap:
-            mode_label = "live_public_paper" if TRADING_MODE == "paper" else "live_public"
             return {
                 "symbol": normalized_symbol,
                 "price": round(float(snap["price"]), 8),
@@ -1147,7 +1137,7 @@ def get_price_api(symbol: str = Query("BTCUSDT")):
                 "timestamp": snap["timestamp"],
                 "source": snap.get("source", f"{MARKET_DATA_PUBLIC_EXCHANGE}-public"),
                 "exchange": snap.get("exchange", MARKET_DATA_PUBLIC_EXCHANGE),
-                "market_data_mode": mode_label,
+                "market_data_mode": "live_public_paper",
             }
         status = svc.get_status()
         tracked = status.get("symbols", [])
@@ -1460,4 +1450,3 @@ async def serve_spa(path: str):
 
 
 # Background services are started inside lifespan() — see above.
-

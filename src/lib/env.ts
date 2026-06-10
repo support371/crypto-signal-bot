@@ -1,7 +1,7 @@
 const env = import.meta.env;
 
 const LOCAL_BACKEND_URL = 'http://localhost:8000';
-const HOSTED_BACKEND_URL = 'https://crypto-signal-bot-api.onrender.com';
+const HOSTED_BACKEND_URL = 'https://crypto-signal-bot-deqd.onrender.com';
 
 export type FrontendEnvValidation = {
   backendUrl: string;
@@ -48,8 +48,7 @@ export function isDemoModeEnabled() {
   const demoMode = env.VITE_DEMO_MODE;
   if (demoMode === 'false' || demoMode === '0') return false;
   if (demoMode === 'true' || demoMode === '1') return true;
-  // Do NOT default to true in production — only demo mode when explicitly set
-  return false;
+  return Boolean(env.PROD);
 }
 
 export function validateFrontendEnv(): FrontendEnvValidation {

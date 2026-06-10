@@ -2,7 +2,6 @@ import { useState, useCallback } from 'react';
 import { CryptoPrice } from '@/types/crypto';
 import { toast } from 'sonner';
 import { getConfiguredBackendUrl } from '@/lib/env';
-import { readOperatorApiKey } from '@/lib/operatorAuth';
 
 const BACKEND_URL = getConfiguredBackendUrl();
 
@@ -112,9 +111,7 @@ async function fetchWithRetry(url: string, retries = 2, timeoutMs = 12000): Prom
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const apiKey = readOperatorApiKey();
-      const headers: HeadersInit = apiKey ? { 'X-API-Key': apiKey } : {};
-      const res = await fetch(url, { signal: controller.signal, headers });
+      const res = await fetch(url, { signal: controller.signal });
       clearTimeout(timeoutId);
       return res;
     } catch (err) {

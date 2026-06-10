@@ -14,7 +14,6 @@ Protected routes (require X-API-Key):
   POST /intent/paper
   POST /intent/live
   POST /kill-switch
-  POST /kill-switch/scope
   PUT  /risk/config
   DELETE /risk/config
   POST /earnings/reset
@@ -42,7 +41,7 @@ import logging
 import time
 from typing import Optional
 
-from fastapi import Header, HTTPException, Request
+from fastapi import Depends, Header, HTTPException, Request
 from fastapi.security import APIKeyHeader
 
 from backend.config.loader import get_auth_config
@@ -57,7 +56,6 @@ WRITE_PATHS: set[str] = {
     "/intent/paper",
     "/intent/live",
     "/kill-switch",
-    "/kill-switch/scope",
     "/risk/config",
     "/earnings/reset",
     "/withdraw",
