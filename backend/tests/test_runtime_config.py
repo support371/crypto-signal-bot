@@ -16,8 +16,7 @@ class TestRuntimeConfig:
 
         assert config.trading_mode == "paper"
         assert config.network == "testnet"
-        # config.yaml says bitget is available, but exchange default in runtime.py might be binance
-        # In fact, config.yaml doesn't have a top-level "exchange" key, only market_data.public_exchange
+        assert config.exchange == "binance"
         assert config.market_data_public_exchange == "coingecko"
         assert config.paper.use_live_market_data is True
         assert config.guardian.max_api_errors == 5
