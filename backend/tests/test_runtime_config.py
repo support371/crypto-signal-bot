@@ -16,10 +16,10 @@ class TestRuntimeConfig:
 
         assert config.trading_mode == "paper"
         assert config.network == "testnet"
-        # config.yaml says coingecko for public_exchange
+        # config.yaml says bitget is available, but exchange default in runtime.py might be binance
+        # In fact, config.yaml doesn't have a top-level "exchange" key, only market_data.public_exchange
         assert config.market_data_public_exchange == "coingecko"
         assert config.paper.use_live_market_data is True
-        # config.yaml says 5 for max_api_errors (kill_switch.max_api_errors)
         assert config.guardian.max_api_errors == 5
         assert "http://localhost:5173" in config.server.cors_origins
 

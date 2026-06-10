@@ -175,8 +175,8 @@ async def _executor_sweep() -> None:
 
     # Get current signals
     try:
-        from backend.services.signal_service.service import get_all_signals
-        signals = await get_all_signals()
+        from backend.services.signal_service.service import get_all_cached_signals as get_all_signals
+        signals = [s.__dict__ for s in get_all_signals()]
     except Exception as exc:
         log.error("[executor] Failed to get signals: %s", exc)
         return
@@ -269,7 +269,7 @@ async def _executor_sweep() -> None:
 _executor_task: asyncio.Task | None = None
 
 
-async def start_executor() -> None:
+async def start_signal_executor() -> None:
     global _running, _executor_task
     if _running:
         return

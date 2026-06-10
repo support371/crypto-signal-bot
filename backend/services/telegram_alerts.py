@@ -19,7 +19,7 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
-_BOT_TOKEN    = os.getenv("TELEGRAM_BOT_TOKEN", "8327316373:AAEXeisn6svbs6JHtlIWBon7YOQzbu7upq4")
+_BOT_TOKEN    = os.getenv("TELEGRAM_BOT_TOKEN", "")
 _CHANNEL_ID   = os.getenv("TELEGRAM_CHANNEL_ID", "-1003368597629")
 _ENABLED      = os.getenv("TELEGRAM_ALERTS_ENABLED", "true").lower() in {"1", "true", "yes"}
 _MODE         = os.getenv("TRADING_MODE", "paper").lower()
