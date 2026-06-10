@@ -54,6 +54,6 @@ async def _monitor_loop() -> None:
             log.warning("[guardian_monitor] error: %s", exc)
 
 
-def start_guardian_monitor(app) -> None:
+async def start_guardian_monitor(app) -> None:
     # Direct task creation — called from lifespan() which is already async
     asyncio.create_task(_monitor_loop())

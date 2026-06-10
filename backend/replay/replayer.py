@@ -322,8 +322,9 @@ class Replayer:
         include_indicators: bool = True
     ) -> List[ReplaySignal]:
         """
-        Internal implementation of replay logic, optimized to O(N).
-        Pre-computes all indicators in full series instead of sliding window.
+        Replay signal generation on the given candle sequence.
+
+        Optimized to O(N) by pre-computing full indicator series once.
         """
         if len(candles) < self.MIN_CANDLES:
             return []
@@ -401,6 +402,7 @@ class Replayer:
         signals2 = self._run_replay_logic(symbol, candles, strategy_id, include_indicators=False)
         output_hash2 = _hash_signals(signals2)
         deterministic = (output_hash == output_hash2)
+        elapsed_ms = (time.perf_counter() - t0) * 1000
 
         return ReplayResult(
             symbol=symbol,

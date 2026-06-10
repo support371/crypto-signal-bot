@@ -107,10 +107,9 @@ def get_market_data_adapter(cfg: "ExchangeConfig") -> BaseExchangeAdapter:
 
     paper = cfg.mode == "paper"
 
-    if not paper:
-        # Live mode: use the execution adapter for market data too
-        return get_adapter(cfg)
-
+    # Always use CoinGecko for public market data (both paper and live modes)
+    # CoinGecko is globally accessible, no auth required, and provides reliable OHLCV
+    # The execution adapter (Bitget CCXTSpotAdapter) is used separately for order placement only
     # Paper mode: resolve from env, default to coingecko
     exchange_override = os.getenv("MARKET_DATA_PUBLIC_EXCHANGE", "coingecko").strip().lower()
 
