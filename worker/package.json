@@ -1,0 +1,21 @@
+{
+  "name": "crypto-signal-bot-worker",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev --config ../wrangler.toml",
+    "build": "tsc",
+    "deploy": "wrangler deploy --config ../wrangler.toml",
+    "migrate": "wrangler d1 execute crypto-signal-bot-db --config ../wrangler.toml --file=migrations/001_init.sql",
+    "verify:paper-safety": "node scripts/verify-paper-safety.mjs",
+    "smoke": "node scripts/smoke-check.mjs"
+  },
+  "dependencies": {
+    "hono": "^4.10.7"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260609.0",
+    "typescript": "^5.8.3",
+    "wrangler": "^4.86.0"
+  }
+}
