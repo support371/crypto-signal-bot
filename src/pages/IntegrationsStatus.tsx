@@ -24,29 +24,41 @@ export default function IntegrationsStatus() {
   if (loading) return <main className="p-8">Loading provider status...</main>;
   if (error) return <main className="p-8 text-red-600">{error}</main>;
 
+  const allUnknown =
+    providers.length === 0 ||
+    providers.every((provider) => !provider.status || provider.status === "unknown");
+
   return (
     <main className="mx-auto max-w-4xl px-4 py-8">
       <h1 className="mb-4 text-3xl font-bold">Integration Status</h1>
-      <table className="w-full table-auto border-collapse">
-        <thead>
-          <tr className="border-b">
-            <th className="py-2 text-left">Name</th>
-            <th className="py-2 text-left">Category</th>
-            <th className="py-2 text-left">Markets</th>
-            <th className="py-2 text-left">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {providers.map((provider) => (
-            <tr key={provider.name} className="border-b">
-              <td className="py-2 font-medium">{provider.name}</td>
-              <td className="py-2">{provider.category}</td>
-              <td className="py-2">{provider.markets.join(", ")}</td>
-              <td className="py-2">{provider.status || "unknown"}</td>
+
+      {allUnknown ? (
+        <div className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
+          Provider status data is not available yet. Once the backend records third-party
+          provider health, exchange status, or data-source status, it will appear here.
+        </div>
+      ) : (
+        <table className="w-full table-auto border-collapse">
+          <thead>
+            <tr className="border-b">
+              <th className="py-2 text-left">Name</th>
+              <th className="py-2 text-left">Category</th>
+              <th className="py-2 text-left">Markets</th>
+              <th className="py-2 text-left">Status</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {providers.map((provider) => (
+              <tr key={provider.name} className="border-b">
+                <td className="py-2 font-medium">{provider.name}</td>
+                <td className="py-2">{provider.category}</td>
+                <td className="py-2">{provider.markets.join(", ")}</td>
+                <td className="py-2">{provider.status || "unknown"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </main>
   );
 }

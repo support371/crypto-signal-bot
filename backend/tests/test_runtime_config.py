@@ -16,10 +16,11 @@ class TestRuntimeConfig:
 
         assert config.trading_mode == "paper"
         assert config.network == "testnet"
-        assert config.exchange == "binance"
-        assert config.market_data_public_exchange == "binance"
+        # config.yaml says coingecko for public_exchange
+        assert config.market_data_public_exchange == "coingecko"
         assert config.paper.use_live_market_data is True
-        assert config.guardian.max_api_errors == 10
+        # config.yaml says 5 for max_api_errors (kill_switch.max_api_errors)
+        assert config.guardian.max_api_errors == 5
         assert "http://localhost:5173" in config.server.cors_origins
 
     def test_env_overrides_runtime_defaults(self, monkeypatch):

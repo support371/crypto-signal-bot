@@ -11,18 +11,69 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
+
+      # ── LIVE MODE — $100 controlled test ─────────────────────────
+      - key: EXCHANGE_MODE
+        value: live
       - key: TRADING_MODE
-        value: paper
+        value: live
       - key: NETWORK
-        value: testnet
+        value: mainnet
+      - key: ALLOW_MAINNET
+        value: "true"
+
+      # ── Exchange ──────────────────────────────────────────────────
       - key: EXCHANGE
-        value: binance
+        value: bitget
       - key: PAPER_USE_LIVE_MARKET_DATA
         value: "true"
       - key: MARKET_DATA_PUBLIC_EXCHANGE
         value: coingecko
+
+      # ── Bitget credentials — set in Render dashboard, NOT here ───
+      # Go to: Render Dashboard → Service → Environment → Add env var
+      - key: BITGET_API_KEY
+        sync: false
+      - key: BITGET_API_SECRET
+        sync: false
+      - key: BITGET_API_PASSPHRASE
+        sync: false
+      - key: BITGET_PASSPHRASE
+        sync: false
+
+      # ── Capital cap — $100 live test ──────────────────────────────
+      - key: LIVE_CAPITAL_CAP_USDT
+        value: "100"
+      - key: EXECUTOR_POSITION_PCT
+        value: "0.05"
+      - key: EXECUTOR_MAX_POSITIONS
+        value: "4"
+      - key: EXECUTOR_MIN_CONFIDENCE
+        value: "0.80"
+      - key: EXECUTOR_INTERVAL
+        value: "60"
+
+      # ── Telegram alerts — set in Render dashboard ─────────────────
+      - key: TELEGRAM_ALERTS_ENABLED
+        value: "true"
+      - key: TELEGRAM_CHANNEL_ID
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+
+      # ── Guardian — tight for $100 live test ───────────────────────
+      - key: GUARDIAN_MAX_DRAWDOWN_PCT
+        value: "10"
+      - key: GUARDIAN_MAX_DAILY_LOSS_PCT
+        value: "5"
+      - key: GUARDIAN_MAX_API_ERRORS
+        value: "5"
+      - key: GUARDIAN_MAX_FAILED_ORDERS
+        value: "3"
+
+      # ── Infrastructure ────────────────────────────────────────────
       - key: CORS_ORIGINS
-        value: https://crypto-signal-bot-indol.vercel.app,https://crypto-signal-bot-admin-25521151s-projects.vercel.app,http://localhost:5173,http://localhost:8080,http://localhost:3000,https://*.base44.app,https://app.base44.com,https://*.onrender.com
+        value: https://crypto-signal-bot-indol.vercel.app,https://crypto-signal-bot-g2vy.vercel.app,https://crypto-signal-bot-admin-25521151s-projects.vercel.app,http://localhost:5173,http://localhost:8080,http://localhost:3000
       - key: EVENT_LOG_ENABLED
         value: "true"
       - key: EVENT_LOG_PATH
