@@ -19,7 +19,7 @@ CORS_ALLOWED_ORIGINS = "https://crypto-signal-bot-indol.vercel.app"
 [[d1_databases]]
 binding = "DB"
 database_name = "crypto-signal-bot-db"
-database_id = "REPLACE_AFTER_D1_CREATE"
+database_id = "d647c639-845a-414e-9bb4-513e42ef4451"
 
 [[r2_buckets]]
 binding = "STORAGE"
