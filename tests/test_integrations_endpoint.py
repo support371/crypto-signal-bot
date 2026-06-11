@@ -1,3 +1,4 @@
+"""Tests for integrations endpoint functionality."""
 import json
 
 from fastapi import FastAPI
