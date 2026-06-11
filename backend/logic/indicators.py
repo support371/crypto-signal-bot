@@ -73,37 +73,55 @@ def rsi(values: List[float], period: int = 14) -> List[Optional[float]]:
     """
     Relative Strength Index (Wilder smoothing).
     Returns list of same length; leading values are None.
+    Optimized to O(n) without intermediate list allocations.
     """
-    if len(values) < period + 1:
-        return [None] * len(values)
+    n = len(values)
+    if n < period + 1 or period <= 0:
+        return [None] * n
 
-    result: List[Optional[float]] = [None] * len(values)
-    changes = [values[i] - values[i - 1] for i in range(1, len(values))]
+    result: List[Optional[float]] = [None] * n
 
-    gains = [max(c, 0.0) for c in changes]
-    losses = [abs(min(c, 0.0)) for c in changes]
+    inv_period = 1.0 / period
+    minus_one = float(period - 1)
 
-    # Seed averages using simple mean of first `period` bars
-    avg_gain = sum(gains[:period]) / period
-    avg_loss = sum(losses[:period]) / period
+    avg_gain = 0.0
+    avg_loss = 0.0
 
-    seed_idx = period  # index into `values` (offset by 1 for changes)
+    # Initial seed: SMA of first 'period' gains/losses
+    prev = values[0]
+    for i in range(1, period + 1):
+        curr = values[i]
+        change = curr - prev
+        if change > 0:
+            avg_gain += change
+        else:
+            avg_loss -= change
+        prev = curr
+
+    avg_gain *= inv_period
+    avg_loss *= inv_period
 
     if avg_loss == 0:
-        result[seed_idx] = 100.0
+        result[period] = 100.0
     else:
-        rs = avg_gain / avg_loss
-        result[seed_idx] = 100.0 - (100.0 / (1 + rs))
+        result[period] = 100.0 - (100.0 / (1.0 + avg_gain / avg_loss))
 
-    for i in range(period + 1, len(values)):
-        ci = i - 1  # index into changes
-        avg_gain = (avg_gain * (period - 1) + gains[ci]) / period
-        avg_loss = (avg_loss * (period - 1) + losses[ci]) / period
+    # Wilder smoothing for the rest
+    for i in range(period + 1, n):
+        curr = values[i]
+        change = curr - prev
+
+        gain = change if change > 0 else 0.0
+        loss = -change if change < 0 else 0.0
+
+        avg_gain = (avg_gain * minus_one + gain) * inv_period
+        avg_loss = (avg_loss * minus_one + loss) * inv_period
+
         if avg_loss == 0:
             result[i] = 100.0
         else:
-            rs = avg_gain / avg_loss
-            result[i] = 100.0 - (100.0 / (1 + rs))
+            result[i] = 100.0 - (100.0 / (1.0 + avg_gain / avg_loss))
+        prev = curr
 
     return result
 
@@ -370,34 +388,49 @@ def atr(
     """
     Average True Range (Wilder smoothing).
     Returns list same length as inputs.
+    Optimized to O(n) without intermediate list allocations.
     """
     n = len(closes)
     if len(highs) != n or len(lows) != n:
         raise ValueError("highs, lows, closes must be same length")
-    if n < 2:
+    if n < period + 1 or period <= 0:
         return [None] * n
 
-    tr_list: List[float] = []
-    for i in range(1, n):
+    result: List[Optional[float]] = [None] * n
+    inv_period = 1.0 / period
+    minus_one = float(period - 1)
+
+    # Seed with simple average of first `period` TRs
+    tr_sum = 0.0
+    for i in range(1, period + 1):
         hl = highs[i] - lows[i]
         hpc = abs(highs[i] - closes[i - 1])
         lpc = abs(lows[i] - closes[i - 1])
-        tr_list.append(max(hl, hpc, lpc))
+        # Manually find max for performance
+        tr = hl
+        if hpc > tr:
+            tr = hpc
+        if lpc > tr:
+            tr = lpc
+        tr_sum += tr
 
-    result: List[Optional[float]] = [None] * n
-    if len(tr_list) < period:
-        return result
+    val = tr_sum * inv_period
+    result[period] = val
 
-    # Seed with simple average of first `period` TRs
-    seed = sum(tr_list[:period]) / period
-    result[period] = seed  # index in closes (offset by 1)
-
-    prev = seed
+    # Wilder smoothing for the rest
     for i in range(period + 1, n):
-        ti = i - 1  # index in tr_list
-        val = (prev * (period - 1) + tr_list[ti]) / period
+        hl = highs[i] - lows[i]
+        hpc = abs(highs[i] - closes[i - 1])
+        lpc = abs(lows[i] - closes[i - 1])
+
+        tr = hl
+        if hpc > tr:
+            tr = hpc
+        if lpc > tr:
+            tr = lpc
+
+        val = (val * minus_one + tr) * inv_period
         result[i] = val
-        prev = val
 
     return result
 
