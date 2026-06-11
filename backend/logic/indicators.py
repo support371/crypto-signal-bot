@@ -74,6 +74,11 @@ def rsi(values: List[float], period: int = 14) -> List[Optional[float]]:
     Relative Strength Index (Wilder smoothing).
     Returns list of same length; leading values are None.
     Optimized to O(n) without intermediate list allocations.
+    
+    Edge case handling:
+    - When avg_gain == 0 and avg_loss == 0 (flat series): RSI = 50.0
+    - When avg_loss == 0 but avg_gain > 0 (all gains): RSI = 100.0
+    - When avg_gain == 0 but avg_loss > 0 (all losses): RSI = 0.0
     """
     n = len(values)
     if n < period + 1 or period <= 0:
@@ -101,8 +106,13 @@ def rsi(values: List[float], period: int = 14) -> List[Optional[float]]:
     avg_gain *= inv_period
     avg_loss *= inv_period
 
-    if avg_loss == 0:
+    # Calculate RSI at period index with proper edge case handling
+    if avg_gain == 0 and avg_loss == 0:
+        result[period] = 50.0
+    elif avg_loss == 0:
         result[period] = 100.0
+    elif avg_gain == 0:
+        result[period] = 0.0
     else:
         result[period] = 100.0 - (100.0 / (1.0 + avg_gain / avg_loss))
 
@@ -117,8 +127,13 @@ def rsi(values: List[float], period: int = 14) -> List[Optional[float]]:
         avg_gain = (avg_gain * minus_one + gain) * inv_period
         avg_loss = (avg_loss * minus_one + loss) * inv_period
 
-        if avg_loss == 0:
+        # Calculate RSI with proper edge case handling
+        if avg_gain == 0 and avg_loss == 0:
+            result[i] = 50.0
+        elif avg_loss == 0:
             result[i] = 100.0
+        elif avg_gain == 0:
+            result[i] = 0.0
         else:
             result[i] = 100.0 - (100.0 / (1.0 + avg_gain / avg_loss))
         prev = curr
@@ -131,6 +146,11 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
     Return the most recent RSI value.
     Optimized to O(n) time and O(1) space by avoiding list allocations for changes, gains, and losses.
     Further optimized by reducing arithmetic operations and list indexing.
+    
+    Edge case handling:
+    - When avg_gain == 0 and avg_loss == 0 (flat series): RSI = 50.0
+    - When avg_loss == 0 but avg_gain > 0 (all gains): RSI = 100.0
+    - When avg_gain == 0 but avg_loss > 0 (all losses): RSI = 0.0
     """
     n = len(values)
     if n < period + 1 or period <= 0:
@@ -168,10 +188,15 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
             avg_loss -= change * inv_period
         prev = curr
 
-    if avg_loss == 0:
+    # Return RSI with proper edge case handling
+    if avg_gain == 0 and avg_loss == 0:
+        return 50.0
+    elif avg_loss == 0:
         return 100.0
-
-    return 100.0 - (100.0 / (1 + avg_gain / avg_loss))
+    elif avg_gain == 0:
+        return 0.0
+    else:
+        return 100.0 - (100.0 / (1 + avg_gain / avg_loss))
 
 
 # ---------------------------------------------------------------------------
