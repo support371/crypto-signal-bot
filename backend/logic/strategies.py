@@ -185,14 +185,14 @@ def momentum(
         conf = 0.40 + 0.15 * hist_mag
         return StrategyResult(
             sid, "BUY", round(conf, 3),
-            reasons=[f"MACD above signal (aligned)"],
+            reasons=["MACD above signal (aligned)"],
             tags=["momentum", "bullish", "continuation"],
         )
     if bear_aligned:
         conf = 0.40 + 0.15 * hist_mag
         return StrategyResult(
             sid, "SELL", round(conf, 3),
-            reasons=[f"MACD below signal (aligned)"],
+            reasons=["MACD below signal (aligned)"],
             tags=["momentum", "bearish", "continuation"],
         )
 

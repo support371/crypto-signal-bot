@@ -48,74 +48,6 @@ from backend.config.loader import ExchangeConfig, RedisConfig, get_exchange_conf
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Service-level CoinGecko dedup — prevents concurrent get_price() calls
-# from each firing a separate HTTP request during startup burst.
-# One asyncio.Lock gates the refresh; all waiters share the result.
-# ---------------------------------------------------------------------------
-_cg_dedup_lock:  asyncio.Lock | None = None
-_cg_dedup_ts:    float               = 0.0
-_cg_dedup_cache: dict                = {}   # symbol -> Ticker
-_CG_DEDUP_TTL   = 12.0   # seconds — slightly shorter than CoinGecko 15s TTL
-
-
-def _get_cg_lock() -> asyncio.Lock:
-    global _cg_dedup_lock
-    if _cg_dedup_lock is None:
-        _cg_dedup_lock = asyncio.Lock()
-    return _cg_dedup_lock
-
-
-async def _get_coingecko_ticker_deduped(symbol: str) -> "Ticker":
-    """Fetch CoinGecko ticker with service-level deduplication.
-    Multiple concurrent callers share a single HTTP request per TTL window."""
-    global _cg_dedup_ts, _cg_dedup_cache
-    import time as _time
-
-    # Fast path: cache hit, no lock needed
-    if _time.time() - _cg_dedup_ts < _CG_DEDUP_TTL and symbol in _cg_dedup_cache:
-        return _cg_dedup_cache[symbol]
-
-    async with _get_cg_lock():
-        # Double-check after acquiring lock
-        if _time.time() - _cg_dedup_ts < _CG_DEDUP_TTL and symbol in _cg_dedup_cache:
-            return _cg_dedup_cache[symbol]
-
-        # Refresh all symbols in one call
-        from backend.adapters.exchanges.coingecko import _fetch_all_cached, _GECKO_TO_SYMBOL
-        from backend.adapters.exchanges.coingecko import _SYMBOL_MAP
-        from decimal import Decimal as _D
-        import time as _t
-
-        data, err = await _fetch_all_cached()
-        if data:
-            now = _t.time()
-            for gecko_id, values in data.items():
-                sym = _GECKO_TO_SYMBOL.get(gecko_id)
-                if not sym:
-                    continue
-                price = float(values.get("usd", 0))
-                spread_val = _D(str(price * 0.0005))
-                price_dec  = _D(str(price))
-                from backend.adapters.exchanges.base import Ticker as _Ticker
-                _cg_dedup_cache[sym] = _Ticker(
-                    symbol=sym,
-                    price=price_dec,
-                    bid=price_dec - spread_val,
-                    ask=price_dec + spread_val,
-                    spread=spread_val * 2,
-                    change24h=float(values.get("usd_24h_change", 0)),
-                    volume24h=_D(str(round(float(values.get("usd_24h_vol", 0)), 2))),
-                    timestamp=int(now),
-                )
-            _cg_dedup_ts = _t.time()
-
-        if symbol not in _cg_dedup_cache:
-            raise Exception(f"CoinGecko: no data for {symbol}")
-        return _cg_dedup_cache[symbol]
-
-
-
-# ---------------------------------------------------------------------------
 # Typed exception — replaces silent synthetic fallback
 # ---------------------------------------------------------------------------
 
@@ -323,18 +255,13 @@ async def _fetch_ticker_with_failover(symbol: str) -> tuple[Ticker, str]:
     """
     Try each adapter in order. Return (ticker, adapter_name) on first success.
     If all adapters fail: raise MarketDataUnavailable.
-    Uses service-level dedup for CoinGecko to prevent startup 429 storms.
     """
     adapters = await _get_adapters()
     errors: dict[str, str] = {}
 
     for adapter in adapters:
         try:
-            # Use dedup wrapper for CoinGecko to prevent concurrent 429 storms
-            if adapter.exchange_name == "coingecko":
-                ticker = await _get_coingecko_ticker_deduped(symbol)
-            else:
-                ticker = await adapter.fetch_ticker(symbol)
+            ticker = await adapter.fetch_ticker(symbol)
             return ticker, adapter.exchange_name
         except (AdapterUnavailableError, AdapterRateLimitError) as exc:
             errors[adapter.exchange_name] = str(exc)

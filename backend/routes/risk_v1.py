@@ -172,49 +172,6 @@ async def guardian_thresholds() -> dict:
     }
 
 
-
-
-# ---------------------------------------------------------------------------
-# Guardian NAV Override
-# ---------------------------------------------------------------------------
-
-class SetNavRequest(BaseModel):
-    starting_nav: float
-    reason: Optional[str] = None
-
-class SetNavOut(BaseModel):
-    updated: bool
-    starting_nav: float
-    kill_switch_deactivated: bool
-    reason: str
-
-@router.post("/guardian/set-nav",
-             summary="Override guardian starting NAV and clear drawdown")
-async def guardian_set_nav(body: SetNavRequest) -> SetNavOut:
-    """
-    Directly sets guardian_starting_nav in memory.
-    Useful after a portfolio reset to eliminate stale drawdown calculations.
-    Also deactivates the kill switch and resets counters.
-    """
-    import backend.logic.context as _ctx
-    from backend.services.guardian_bot.service import reset_counters, deactivate_kill_switch, get_guardian_status
-
-    _ctx.guardian_starting_nav = body.starting_nav
-    _ctx.guardian_drawdown_pct = 0.0
-    reset_counters()
-
-    status = await get_guardian_status()
-    ks_deactivated = status.kill_switch_active
-    if ks_deactivated:
-        await deactivate_kill_switch(reason=body.reason or "NAV override reset")
-
-    return SetNavOut(
-        updated=True,
-        starting_nav=body.starting_nav,
-        kill_switch_deactivated=ks_deactivated,
-        reason=body.reason or "NAV override reset",
-    )
-
 # ---------------------------------------------------------------------------
 # Paper Portfolio Reset
 # ---------------------------------------------------------------------------
@@ -248,9 +205,7 @@ async def paper_reset(body: PaperResetRequest) -> PaperResetOut:
     # 1) reset portfolio in-memory state
     reset_portfolio(starting_cash=Decimal(str(body.starting_cash)))
 
-    # 2) reset guardian — also anchor starting NAV to new cash so drawdown is 0%
-    import backend.logic.context as _ctx
-    _ctx.guardian_starting_nav = float(body.starting_cash)
+    # 2) reset guardian
     reset_counters()
     status = await get_guardian_status()
     if status.kill_switch_active:

@@ -254,7 +254,7 @@ async def execute_intent(intent: ExecutionIntent) -> ExecutionResult:
     # --- 1. Validate ---
     try:
         validate_intent(intent)
-    except IntentValidationError as exc:
+    except IntentValidationError:
         raise
 
     # --- 2. Kill switch check (Rule 5: risk overrides strategy) ---

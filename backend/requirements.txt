@@ -26,5 +26,6 @@ pytest
 pytest-asyncio
 ruff>=0.4
 
-# Live trading execution via ccxt
-ccxt>=4.3.0
+# Optional: required only when TRADING_MODE=live
+# Install with: pip install ccxt
+# ccxt

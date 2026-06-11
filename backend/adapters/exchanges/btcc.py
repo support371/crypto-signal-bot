@@ -134,7 +134,7 @@ class BtccAdapter(BaseExchangeAdapter):
     async def fetch_ticker(self, symbol: str) -> Ticker:
         symbol = self._normalize_symbol(symbol)
         # BTCC ticker endpoint — adjust path to match actual BTCC API spec
-        data = await self._get_public(f"/v1/market/ticker", {"symbol": symbol})
+        data = await self._get_public("/v1/market/ticker", {"symbol": symbol})
         assert isinstance(data, dict)
         price = Decimal(str(data.get("last", data.get("price", 0))))
         bid   = Decimal(str(data.get("best_bid", data.get("bid", price))))

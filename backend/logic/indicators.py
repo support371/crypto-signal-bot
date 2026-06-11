@@ -73,55 +73,37 @@ def rsi(values: List[float], period: int = 14) -> List[Optional[float]]:
     """
     Relative Strength Index (Wilder smoothing).
     Returns list of same length; leading values are None.
-    Optimized to O(n) without intermediate list allocations.
     """
-    n = len(values)
-    if n < period + 1 or period <= 0:
-        return [None] * n
+    if len(values) < period + 1:
+        return [None] * len(values)
 
-    result: List[Optional[float]] = [None] * n
+    result: List[Optional[float]] = [None] * len(values)
+    changes = [values[i] - values[i - 1] for i in range(1, len(values))]
 
-    inv_period = 1.0 / period
-    minus_one = float(period - 1)
+    gains = [max(c, 0.0) for c in changes]
+    losses = [abs(min(c, 0.0)) for c in changes]
 
-    avg_gain = 0.0
-    avg_loss = 0.0
+    # Seed averages using simple mean of first `period` bars
+    avg_gain = sum(gains[:period]) / period
+    avg_loss = sum(losses[:period]) / period
 
-    # Initial seed: SMA of first 'period' gains/losses
-    prev = values[0]
-    for i in range(1, period + 1):
-        curr = values[i]
-        change = curr - prev
-        if change > 0:
-            avg_gain += change
-        else:
-            avg_loss -= change
-        prev = curr
-
-    avg_gain *= inv_period
-    avg_loss *= inv_period
+    seed_idx = period  # index into `values` (offset by 1 for changes)
 
     if avg_loss == 0:
-        result[period] = 100.0
+        result[seed_idx] = 100.0
     else:
-        result[period] = 100.0 - (100.0 / (1.0 + avg_gain / avg_loss))
+        rs = avg_gain / avg_loss
+        result[seed_idx] = 100.0 - (100.0 / (1 + rs))
 
-    # Wilder smoothing for the rest
-    for i in range(period + 1, n):
-        curr = values[i]
-        change = curr - prev
-
-        gain = change if change > 0 else 0.0
-        loss = -change if change < 0 else 0.0
-
-        avg_gain = (avg_gain * minus_one + gain) * inv_period
-        avg_loss = (avg_loss * minus_one + loss) * inv_period
-
+    for i in range(period + 1, len(values)):
+        ci = i - 1  # index into changes
+        avg_gain = (avg_gain * (period - 1) + gains[ci]) / period
+        avg_loss = (avg_loss * (period - 1) + losses[ci]) / period
         if avg_loss == 0:
             result[i] = 100.0
         else:
-            result[i] = 100.0 - (100.0 / (1.0 + avg_gain / avg_loss))
-        prev = curr
+            rs = avg_gain / avg_loss
+            result[i] = 100.0 - (100.0 / (1 + rs))
 
     return result
 
@@ -130,48 +112,38 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
     """
     Return the most recent RSI value.
     Optimized to O(n) time and O(1) space by avoiding list allocations for changes, gains, and losses.
-    Further optimized by reducing arithmetic operations and list indexing.
     """
     n = len(values)
     if n < period + 1 or period <= 0:
         return None
 
-    inv_period = 1.0 / period
-    minus_one_over_period = (period - 1) * inv_period
-
     # Initial averages
     avg_gain = 0.0
     avg_loss = 0.0
 
-    prev = values[0]
     for i in range(1, period + 1):
-        curr = values[i]
-        change = curr - prev
+        change = values[i] - values[i - 1]
         if change > 0:
             avg_gain += change
         else:
             avg_loss -= change
-        prev = curr
 
-    avg_gain *= inv_period
-    avg_loss *= inv_period
+    avg_gain /= period
+    avg_loss /= period
 
     # Wilder smoothing for the rest
     for i in range(period + 1, n):
-        curr = values[i]
-        change = curr - prev
-        avg_gain *= minus_one_over_period
-        avg_loss *= minus_one_over_period
-        if change > 0:
-            avg_gain += change * inv_period
-        elif change < 0:
-            avg_loss -= change * inv_period
-        prev = curr
+        change = values[i] - values[i - 1]
+        gain = change if change > 0 else 0.0
+        loss = -change if change < 0 else 0.0
+        avg_gain = (avg_gain * (period - 1) + gain) / period
+        avg_loss = (avg_loss * (period - 1) + loss) / period
 
     if avg_loss == 0:
         return 100.0
 
-    return 100.0 - (100.0 / (1 + avg_gain / avg_loss))
+    rs = avg_gain / avg_loss
+    return 100.0 - (100.0 / (1 + rs))
 
 
 # ---------------------------------------------------------------------------
@@ -388,49 +360,34 @@ def atr(
     """
     Average True Range (Wilder smoothing).
     Returns list same length as inputs.
-    Optimized to O(n) without intermediate list allocations.
     """
     n = len(closes)
     if len(highs) != n or len(lows) != n:
         raise ValueError("highs, lows, closes must be same length")
-    if n < period + 1 or period <= 0:
+    if n < 2:
         return [None] * n
 
+    tr_list: List[float] = []
+    for i in range(1, n):
+        hl = highs[i] - lows[i]
+        hpc = abs(highs[i] - closes[i - 1])
+        lpc = abs(lows[i] - closes[i - 1])
+        tr_list.append(max(hl, hpc, lpc))
+
     result: List[Optional[float]] = [None] * n
-    inv_period = 1.0 / period
-    minus_one = float(period - 1)
+    if len(tr_list) < period:
+        return result
 
     # Seed with simple average of first `period` TRs
-    tr_sum = 0.0
-    for i in range(1, period + 1):
-        hl = highs[i] - lows[i]
-        hpc = abs(highs[i] - closes[i - 1])
-        lpc = abs(lows[i] - closes[i - 1])
-        # Manually find max for performance
-        tr = hl
-        if hpc > tr:
-            tr = hpc
-        if lpc > tr:
-            tr = lpc
-        tr_sum += tr
+    seed = sum(tr_list[:period]) / period
+    result[period] = seed  # index in closes (offset by 1)
 
-    val = tr_sum * inv_period
-    result[period] = val
-
-    # Wilder smoothing for the rest
+    prev = seed
     for i in range(period + 1, n):
-        hl = highs[i] - lows[i]
-        hpc = abs(highs[i] - closes[i - 1])
-        lpc = abs(lows[i] - closes[i - 1])
-
-        tr = hl
-        if hpc > tr:
-            tr = hpc
-        if lpc > tr:
-            tr = lpc
-
-        val = (val * minus_one + tr) * inv_period
+        ti = i - 1  # index in tr_list
+        val = (prev * (period - 1) + tr_list[ti]) / period
         result[i] = val
+        prev = val
 
     return result
 
@@ -444,7 +401,6 @@ def last_atr(
     """
     Return the most recent ATR value.
     Optimized to O(n) time and O(1) space.
-    Further optimized by removing internal function calls and streamlining Wilder smoothing.
     """
     n = len(closes)
     if len(highs) != n or len(lows) != n:
@@ -452,45 +408,24 @@ def last_atr(
     if n < period + 1 or period <= 0:
         return None
 
-    inv_period = 1.0 / period
-    tr_sum = 0.0
+    # Calculate first True Range (tr0) to start seeding
+    # tr_list start at i=1
+    def get_tr(i):
+        hl = highs[i] - lows[i]
+        hpc = abs(highs[i] - closes[i - 1])
+        lpc = abs(lows[i] - closes[i - 1])
+        return max(hl, hpc, lpc)
 
     # Seed with average of first 'period' TRs
+    # Seed value is for result[period]
+    tr_sum = 0.0
     for i in range(1, period + 1):
-        h = highs[i]
-        low_val = lows[i]
-        pc = closes[i - 1]
+        tr_sum += get_tr(i)
 
-        hl = h - low_val
-        hpc = abs(h - pc)
-        lpc = abs(low_val - pc)
-
-        tr = hl
-        if hpc > tr:
-            tr = hpc
-        if lpc > tr:
-            tr = lpc
-        tr_sum += tr
-
-    val = tr_sum * inv_period
+    val = tr_sum / period
 
     # Wilder smoothing for the rest
     for i in range(period + 1, n):
-        h = highs[i]
-        low_val = lows[i]
-        pc = closes[i - 1]
-
-        hl = h - low_val
-        hpc = abs(h - pc)
-        lpc = abs(low_val - pc)
-
-        tr = hl
-        if hpc > tr:
-            tr = hpc
-        if lpc > tr:
-            tr = lpc
-
-        # Smoothed ATR update rule: ATR_i = ATR_{i-1} + (TR_i - ATR_{i-1}) / period
-        val = val + (tr - val) * inv_period
+        val = (val * (period - 1) + get_tr(i)) / period
 
     return val
