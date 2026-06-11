@@ -1,0 +1,221 @@
+openapi: 3.1.0
+info:
+  title: CryptoOps Worker API
+  version: 2.0.0
+  description: >-
+    Paper-only crypto-signal-bot Worker API. Live trading and withdrawals are
+    permanently blocked by policy and must return HTTP 403.
+servers:
+  - url: https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
+    description: Current Cloudflare Worker backend
+paths:
+  /healthz:
+    get:
+      operationId: getHealthz
+      summary: Check Worker health
+      responses:
+        '200':
+          description: Worker health response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /runtime/status:
+    get:
+      operationId: getRuntimeStatus
+      summary: Verify runtime paper-safety configuration
+      responses:
+        '200':
+          description: Runtime status and paper-safety values
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /guardian/status:
+    get:
+      operationId: getGuardianStatus
+      summary: Get guardian and circuit-breaker status
+      responses:
+        '200':
+          description: Guardian status
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /surge/status:
+    get:
+      operationId: getSurgeStatus
+      summary: Get surge-monitoring status
+      responses:
+        '200':
+          description: Surge status
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /portfolio/summary:
+    get:
+      operationId: getPortfolioSummary
+      summary: Get paper portfolio summary
+      responses:
+        '200':
+          description: Paper portfolio summary
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /market/feed/status:
+    get:
+      operationId: getMarketFeedStatus
+      summary: Check public market data feed status
+      responses:
+        '200':
+          description: Market feed status
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /exchange/circuit-breakers:
+    get:
+      operationId: getExchangeCircuitBreakers
+      summary: Get exchange circuit-breaker configuration and state
+      responses:
+        '200':
+          description: Exchange circuit-breaker state
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /market/price/{symbol}:
+    get:
+      operationId: getMarketPrice
+      summary: Get public market price for a symbol
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          description: Market symbol, for example BTC, ETH, or BTC-USD.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Market price response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '404':
+          description: Symbol not found
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /signals:
+    get:
+      operationId: getSignals
+      summary: Get current paper-mode signals
+      responses:
+        '200':
+          description: Signal list or signal status
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /intent/paper:
+    post:
+      operationId: postPaperIntent
+      summary: Submit a paper-only trade intent
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              properties:
+                symbol:
+                  type: string
+                  examples: [BTC-USD]
+                side:
+                  type: string
+                  enum: [buy, sell]
+                quantity:
+                  type: number
+                notional_usdt:
+                  type: number
+      responses:
+        '200':
+          description: Paper trade intent accepted or simulated
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid paper intent
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /intent/live:
+    post:
+      operationId: postLiveIntentBlocked
+      summary: Live trade intent is permanently blocked
+      description: This endpoint must always return HTTP 403 in this paper-only project.
+      responses:
+        '403':
+          description: Live trading is blocked
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /withdraw:
+    post:
+      operationId: postWithdrawBlocked
+      summary: Withdrawals are permanently blocked
+      description: This endpoint must always return HTTP 403 in this paper-only project.
+      responses:
+        '403':
+          description: Withdrawals are blocked
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /backtest:
+    post:
+      operationId: postBacktest
+      summary: Run a paper-mode strategy backtest
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Backtest response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+components:
+  schemas:
+    GenericObject:
+      type: object
+      additionalProperties: true
+security: []
