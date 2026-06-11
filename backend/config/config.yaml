@@ -1,32 +1,24 @@
-# Backend configuration for Crypto Signal Bot
-# Risk limits, kill-switch thresholds, and exchange settings.
+# Backend configuration — LIVE TEST MODE ($100)
+# Tight risk limits for controlled first live run.
 
 risk:
-  max_position_pct: 0.05       # Max 5% of portfolio in a single position
-  max_daily_loss_pct: 0.03     # Max 3% daily loss before halt
-  volatility_threshold: 0.08   # Spread > 8% triggers CHAOS regime
-  max_leverage: 1.0            # No leverage (spot only)
-  max_slippage_pct: 0.005      # 0.5% max slippage tolerance
+  max_position_pct: 0.05         # 5% per trade = $5 per position
+  max_daily_loss_pct: 0.05       # Stop after 5% daily loss ($5)
+  volatility_threshold: 0.08
+  max_leverage: 1.0              # Spot only — no leverage
+  max_slippage_pct: 0.005
   risk_score_reject_threshold: 70.0
 
 kill_switch:
-  max_api_errors: 10           # Halt after 10 consecutive API errors
-  max_failed_orders: 5         # Halt after 5 consecutive failed orders
-  max_daily_loss_pct: 0.05     # Halt after 5% daily loss (risk gate)
-  max_drawdown_pct: 15.0       # Guardian kill switch: halt after 15% portfolio drawdown
+  max_api_errors: 5
+  max_failed_orders: 3
+  max_daily_loss_pct: 0.05       # 5% daily = $5 on $100
+  max_drawdown_pct: 10.0         # Hard stop at 10% = $10 loss
 
 exchange:
-  # Primary exchange (auto-detected from env vars)
-  # Set BITGET_API_KEY + BITGET_SECRET + BITGET_PASSPHRASE for Bitget
-  # Set BTCC_API_KEY + BTCC_SECRET for BTCC
   bitget:
     base_url_testnet: https://api.bitget.com
     base_url_mainnet: https://api.bitget.com
-    demo_trading_header: paptrading
-    timeout: 10
-  btcc:
-    base_url_testnet: https://api.btcc.com
-    base_url_mainnet: https://api.btcc.com
     timeout: 10
 
 paper:
@@ -35,14 +27,13 @@ paper:
   use_live_market_data: true
 
 market_data:
-  public_exchange: binance
-  mode: synthetic_paper
+  public_exchange: coingecko
+  mode: live
   rest_fallback_enabled: true
 
 withdrawal:
-  daily_limit_usdt: 10000.0
+  daily_limit_usdt: 0.0          # Withdrawals disabled for bot key
   cooldown_seconds: 60
-  # Add whitelisted withdrawal addresses here
   whitelisted_addresses: []
 
 server:

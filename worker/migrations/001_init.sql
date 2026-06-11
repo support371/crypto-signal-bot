@@ -1,0 +1,46 @@
+CREATE TABLE IF NOT EXISTS signals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  symbol TEXT NOT NULL, timeframe TEXT NOT NULL, side TEXT NOT NULL,
+  confidence REAL NOT NULL, entry_price REAL, stop_loss REAL, take_profit REAL,
+  strategy TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS portfolio (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  symbol TEXT NOT NULL, side TEXT NOT NULL, quantity REAL NOT NULL,
+  entry_price REAL NOT NULL, current_price REAL, pnl REAL DEFAULT 0,
+  status TEXT DEFAULT 'open', created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS orders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  symbol TEXT NOT NULL, side TEXT NOT NULL, quantity REAL NOT NULL,
+  price REAL NOT NULL, status TEXT DEFAULT 'filled', mode TEXT DEFAULT 'paper',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS audit_trail (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event TEXT NOT NULL, detail TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS earnings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  date TEXT NOT NULL, pnl REAL DEFAULT 0, cumulative_pnl REAL DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS guardian_state (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  triggered INTEGER DEFAULT 0, reason TEXT, error_count INTEGER DEFAULT 0,
+  drawdown_pct REAL DEFAULT 0, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS market_snapshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  symbol TEXT NOT NULL, price REAL NOT NULL, source TEXT NOT NULL,
+  stale INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS surge_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  symbol TEXT NOT NULL, change_pct REAL NOT NULL, allocation_pct REAL NOT NULL,
+  triggered_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+INSERT OR IGNORE INTO guardian_state (id, triggered, reason, error_count, drawdown_pct)
+  VALUES (1, 0, NULL, 0, 0.0);
+INSERT OR IGNORE INTO portfolio (symbol, side, quantity, entry_price, current_price, pnl, status)
+  VALUES ('USDT', 'balance', 10000, 1.0, 1.0, 0, 'balance');
