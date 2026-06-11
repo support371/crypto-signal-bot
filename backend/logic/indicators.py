@@ -458,12 +458,12 @@ def last_atr(
     # Seed with average of first 'period' TRs
     for i in range(1, period + 1):
         h = highs[i]
-        l = lows[i]
+        low_val = lows[i]
         pc = closes[i - 1]
 
-        hl = h - l
+        hl = h - low_val
         hpc = abs(h - pc)
-        lpc = abs(l - pc)
+        lpc = abs(low_val - pc)
 
         tr = hl
         if hpc > tr:
@@ -477,12 +477,12 @@ def last_atr(
     # Wilder smoothing for the rest
     for i in range(period + 1, n):
         h = highs[i]
-        l = lows[i]
+        low_val = lows[i]
         pc = closes[i - 1]
 
-        hl = h - l
+        hl = h - low_val
         hpc = abs(h - pc)
-        lpc = abs(l - pc)
+        lpc = abs(low_val - pc)
 
         tr = hl
         if hpc > tr:
