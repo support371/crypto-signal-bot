@@ -25,3 +25,7 @@
 ## 2026-06-17 - [Replayer & Backtest O(N^2) Windowing Bottleneck]
 **Learning:** Iteratively calculating technical indicators on an expanding window for a full historical series results in $O(N^2)$ complexity. For long backtests or replays (e.g., 10,000 candles), this becomes exponentially slower.
 **Action:** Always pre-calculate technical indicator series in a single $O(N)$ pass using batch functions (`ema`, `rsi`, `macd`, etc.) before entering the simulation or replay loop.
+
+## 2026-06-24 - [Intermediate List Allocation in Series Indicators]
+**Learning:** Functions like `rsi` and `atr` that calculate a full series often use intermediate list comprehensions (e.g., `changes`, `gains`, `losses`, `tr_list`). For large $N$, these allocations and subsequent iterations significantly increase memory pressure and execution time.
+**Action:** Always implement series technical indicators using a single-pass O(N) loop that calculates all components (like True Range or Gains/Losses) on the fly, eliminating intermediate list storage. Use multiplicative inverses to replace division inside hot loops.
