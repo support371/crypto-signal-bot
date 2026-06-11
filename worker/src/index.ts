@@ -145,8 +145,25 @@ app.post('/intent/paper', async (c) => {
 app.get('/guardian/status', async (c) => {
   const state = await c.env.DB.prepare(
     'SELECT * FROM guardian_state WHERE id = 1'
-  ).first()
-  return c.json(state || { triggered: false, reason: null, error_count: 0, drawdown_pct: 0 })
+  ).first<{ triggered?: number | boolean, reason?: string | null, error_count?: number, drawdown_pct?: number, updated_at?: string }>()
+
+  const drawdownLimit = parseFloat(c.env.GUARDIAN_MAX_DRAWDOWN_PCT || '15')
+
+  return c.json({
+    ...(state || {}),
+    triggered: !!state?.triggered,
+    reason: state?.reason || null,
+    error_count: state?.error_count || 0,
+    drawdown_pct: state?.drawdown_pct || 0,
+    max_drawdown_pct: drawdownLimit,
+    max_api_errors: parseInt(c.env.GUARDIAN_MAX_API_ERRORS || '10'),
+    max_failed_orders: parseInt(c.env.GUARDIAN_MAX_FAILED_ORDERS || '5'),
+    mode: 'paper',
+    allow_mainnet: false,
+    live_trading_enabled: false,
+    withdrawals_enabled: false,
+    ts: Date.now()
+  })
 })
 
 app.post('/guardian/kill', async (c) => {
