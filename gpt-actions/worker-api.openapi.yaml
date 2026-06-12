@@ -1,347 +1,131 @@
 openapi: 3.1.0
 info:
-  title: CryptoOps Worker API
-  version: 2.0.1
-  description: >-
-    Paper-only crypto-signal-bot Worker API. Live trading and withdrawals are
-    permanently blocked by policy and must return HTTP 403.
+  title: crypto-signal-bot Worker API Action
+  version: 2.1.0
+  description: Paper-only Worker API. Live trading and withdrawals must remain blocked with HTTP 403. Coinbase is public read-only market data only.
 servers:
   - url: https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
     description: Current Cloudflare Worker backend
-paths:
-  /healthz:
-    get:
-      operationId: getHealthz
-      summary: Check Worker health
-      responses:
-        "200":
-          description: Worker health response
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/HealthResponse"
-  /runtime/status:
-    get:
-      operationId: getRuntimeStatus
-      summary: Verify runtime paper-safety configuration
-      responses:
-        "200":
-          description: Runtime status and paper-safety values
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RuntimeStatusResponse"
-  /guardian/status:
-    get:
-      operationId: getGuardianStatus
-      summary: Get guardian and circuit-breaker status
-      responses:
-        "200":
-          description: Guardian status
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GuardianStatusResponse"
-  /surge/status:
-    get:
-      operationId: getSurgeStatus
-      summary: Get surge-monitoring status
-      responses:
-        "200":
-          description: Surge status
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SurgeStatusResponse"
-  /portfolio/summary:
-    get:
-      operationId: getPortfolioSummary
-      summary: Get paper portfolio summary
-      responses:
-        "200":
-          description: Paper portfolio summary
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PortfolioSummaryResponse"
-  /market/feed/status:
-    get:
-      operationId: getMarketFeedStatus
-      summary: Check public market data feed status
-      responses:
-        "200":
-          description: Market feed status
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MarketFeedStatusResponse"
-  /exchange/circuit-breakers:
-    get:
-      operationId: getExchangeCircuitBreakers
-      summary: Get exchange circuit-breaker configuration and state
-      responses:
-        "200":
-          description: Exchange circuit-breaker state
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CircuitBreakersResponse"
-  /market/price/{symbol}:
-    get:
-      operationId: getMarketPrice
-      summary: Get public market price for a symbol
-      parameters:
-        - name: symbol
-          in: path
-          required: true
-          description: Market symbol, for example BTC, ETH, or BTC-USD.
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Market price response
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MarketPriceResponse"
-        "404":
-          description: Symbol not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-  /signals:
-    get:
-      operationId: getSignals
-      summary: Get current paper-mode signals
-      responses:
-        "200":
-          description: Signal list or signal status
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SignalsResponse"
-  /intent/paper:
-    post:
-      operationId: postPaperIntent
-      summary: Submit a paper-only trade intent
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PaperIntentRequest"
-      responses:
-        "200":
-          description: Paper trade intent accepted or simulated
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PaperIntentResponse"
-        "400":
-          description: Invalid paper intent
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-  /intent/live:
-    post:
-      operationId: postLiveIntentBlocked
-      summary: Live trade intent is permanently blocked
-      description: This endpoint must always return HTTP 403 in this paper-only project.
-      responses:
-        "403":
-          description: Live trading is blocked
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BlockedResponse"
-  /withdraw:
-    post:
-      operationId: postWithdrawBlocked
-      summary: Withdrawals are permanently blocked
-      description: This endpoint must always return HTTP 403 in this paper-only project.
-      responses:
-        "403":
-          description: Withdrawals are blocked
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BlockedResponse"
-  /backtest:
-    post:
-      operationId: postBacktest
-      summary: Run a paper-mode strategy backtest
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/BacktestRequest"
-      responses:
-        "200":
-          description: Backtest response
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BacktestResponse"
 components:
   schemas:
-    HealthResponse:
+    GenericObject:
       type: object
       properties:
         status:
           type: string
-          description: Worker health status.
         mode:
           type: string
-          description: Runtime mode.
-        timestamp:
-          type: string
-          description: Response timestamp.
+        ts:
+          type: number
       additionalProperties: true
-    RuntimeStatusResponse:
+    ErrorObject:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        code:
+          type: integer
+        mode:
+          type: string
+      additionalProperties: true
+    RuntimeStatus:
       type: object
       properties:
         trading_mode:
           type: string
-          description: Expected value is paper.
         exchange_mode:
           type: string
-          description: Expected value is paper.
         allow_mainnet:
           type: boolean
-          description: Expected value is false.
-        market_data_public_exchange:
+        market_data_source:
           type: string
-          description: Public read-only market data exchange.
+        starting_balance:
+          type: number
+        guardian_max_drawdown:
+          type: number
+        network:
+          type: string
+        runtime:
+          type: string
+        region:
+          type: string
       additionalProperties: true
-    GuardianStatusResponse:
+    GuardianStatus:
       type: object
       properties:
-        status:
-          type: string
-          description: Guardian status.
-        enabled:
+        triggered:
           type: boolean
-          description: Whether guardian checks are active.
+        reason:
+          type: string
+        error_count:
+          type: number
+        drawdown_pct:
+          type: number
         max_drawdown_pct:
           type: number
-          description: Maximum paper drawdown threshold.
-      additionalProperties: true
-    SurgeStatusResponse:
-      type: object
-      properties:
-        status:
-          type: string
-          description: Surge monitor status.
-        active:
-          type: boolean
-          description: Whether surge mode is active.
-      additionalProperties: true
-    PortfolioSummaryResponse:
-      type: object
-      properties:
         mode:
           type: string
-          description: Expected value is paper.
+        allow_mainnet:
+          type: boolean
+        live_trading_enabled:
+          type: boolean
+        withdrawals_enabled:
+          type: boolean
+      additionalProperties: true
+    PortfolioSummary:
+      type: object
+      properties:
         balance_usdt:
           type: number
-          description: Paper USDT balance.
+        cash_usdt:
+          type: number
         equity_usdt:
           type: number
-          description: Paper portfolio equity.
+        realized_pnl:
+          type: number
+        unrealized_pnl:
+          type: number
+        total_pnl:
+          type: number
+        open_positions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
         positions:
           type: array
           items:
             type: object
-            properties:
-              symbol:
-                type: string
-              quantity:
-                type: number
-              value_usdt:
-                type: number
             additionalProperties: true
-      additionalProperties: true
-    MarketFeedStatusResponse:
-      type: object
-      properties:
-        status:
-          type: string
-          description: Feed status.
-        exchange:
-          type: string
-          description: Public read-only exchange source.
+        position_count:
+          type: integer
         mode:
           type: string
-          description: Expected value is public_data_only.
       additionalProperties: true
-    CircuitBreakersResponse:
-      type: object
-      properties:
-        status:
-          type: string
-          description: Circuit-breaker status.
-        breakers:
-          type: array
-          items:
-            type: object
-            properties:
-              name:
-                type: string
-              triggered:
-                type: boolean
-              reason:
-                type: string
-            additionalProperties: true
-      additionalProperties: true
-    MarketPriceResponse:
+    MarketPrice:
       type: object
       properties:
         symbol:
           type: string
-          description: Market symbol.
         price:
           type: number
-          description: Current public market price.
-        currency:
-          type: string
-          description: Quote currency.
         source:
           type: string
-          description: Public data source.
-        timestamp:
-          type: string
-          description: Price timestamp.
-      additionalProperties: true
-    SignalsResponse:
-      type: object
-      properties:
-        mode:
-          type: string
-          description: Expected value is paper.
-        signals:
-          type: array
-          items:
-            type: object
-            properties:
-              symbol:
-                type: string
-              action:
-                type: string
-              confidence:
-                type: number
-              reason:
-                type: string
-            additionalProperties: true
+        stale:
+          type: boolean
+        ts:
+          type: number
       additionalProperties: true
     PaperIntentRequest:
       type: object
+      required:
+        - symbol
+        - side
       properties:
         symbol:
           type: string
-          description: Symbol to simulate, for example BTC-USD.
         side:
           type: string
           enum:
@@ -349,84 +133,406 @@ components:
             - sell
         quantity:
           type: number
-          description: Optional paper quantity.
+          exclusiveMinimum: 0
+        qty:
+          type: number
+          exclusiveMinimum: 0
         notional_usdt:
           type: number
-          description: Optional paper notional value in USDT.
-      additionalProperties: true
-    PaperIntentResponse:
-      type: object
-      properties:
-        status:
-          type: string
-          description: Paper intent status.
-        mode:
-          type: string
-          description: Expected value is paper.
-        order_id:
-          type: string
-          description: Simulated paper order id.
-        message:
-          type: string
-          description: Result message.
-      additionalProperties: true
-    BacktestRequest:
+          exclusiveMinimum: 0
+        amount:
+          type: number
+          exclusiveMinimum: 0
+        price:
+          type: number
+          exclusiveMinimum: 0
+      additionalProperties: false
+    SignalGenerateRequest:
       type: object
       properties:
         symbol:
           type: string
-          description: Symbol to backtest.
+      additionalProperties: false
+    SignalResponse:
+      type: object
+      properties:
+        symbol:
+          type: string
+        timeframe:
+          type: string
+        side:
+          type: string
+        action:
+          type: string
+        confidence:
+          type: number
+        entry_price:
+          type: number
+        stop_loss:
+          type: number
+        take_profit:
+          type: number
         strategy:
           type: string
-          description: Strategy identifier.
-        start:
+        indicators:
+          type: object
+          additionalProperties: true
+        mode:
           type: string
-          description: Start date or timestamp.
-        end:
+      additionalProperties: true
+    BacktestRequest:
+      type: object
+      required:
+        - symbol
+      properties:
+        symbol:
           type: string
-          description: End date or timestamp.
+        timeframe:
+          type: string
+        lookback:
+          type: integer
+          minimum: 1
+        strategy:
+          type: string
       additionalProperties: true
     BacktestResponse:
       type: object
       properties:
         status:
           type: string
-          description: Backtest status.
+        symbol:
+          type: string
+        strategy:
+          type: string
+        trades:
+          type: integer
+        trade_log:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        win_rate:
+          type: number
+        pnl_usdt:
+          type: number
+        no_trade_reason:
+          type: string
         mode:
           type: string
-          description: Expected value is paper.
-        result:
-          type: object
-          properties:
-            pnl_usdt:
-              type: number
-            win_rate:
-              type: number
-            trades:
-              type: integer
-          additionalProperties: true
       additionalProperties: true
-    BlockedResponse:
-      type: object
-      properties:
-        error:
-          type: string
-          description: Blocked action error.
-        status:
-          type: string
-          description: Blocked status.
-        message:
-          type: string
-          description: Safety policy message.
-      additionalProperties: true
-    ErrorResponse:
-      type: object
-      properties:
-        error:
-          type: string
-          description: Error code or type.
-        message:
-          type: string
-          description: Human-readable error message.
-      additionalProperties: true
+paths:
+  /healthz:
+    get:
+      operationId: getHealthz
+      summary: Check Worker liveness
+      responses:
+        "200":
+          description: Health check
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericObject"
+  /health:
+    get:
+      operationId: getHealth
+      summary: Check Worker health
+      responses:
+        "200":
+          description: Health check
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericObject"
+  /runtime/status:
+    get:
+      operationId: getRuntimeStatus
+      summary: Verify paper runtime status
+      responses:
+        "200":
+          description: Runtime status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeStatus"
+  /guardian/status:
+    get:
+      operationId: getGuardianStatus
+      summary: Get guardian status
+      responses:
+        "200":
+          description: Guardian status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuardianStatus"
+  /portfolio/summary:
+    get:
+      operationId: getPortfolioSummary
+      summary: Get paper portfolio summary
+      responses:
+        "200":
+          description: Portfolio summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioSummary"
+  /portfolio/trades:
+    get:
+      operationId: getPortfolioTrades
+      summary: Get paper portfolio trades
+      responses:
+        "200":
+          description: Portfolio trades
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+  /market/price/{symbol}:
+    get:
+      operationId: getMarketPrice
+      summary: Get public Coinbase market price for a symbol
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Market price
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketPrice"
+  /market/feed/status:
+    get:
+      operationId: getMarketFeedStatus
+      summary: Get public market feed status
+      responses:
+        "200":
+          description: Market feed status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericObject"
+  /signals:
+    get:
+      operationId: getSignals
+      summary: Get latest signal
+      parameters:
+        - name: symbol
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Signals
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignalResponse"
+  /signals/history:
+    get:
+      operationId: getSignalsHistory
+      summary: Get signal history
+      parameters:
+        - name: symbol
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Signal history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+  /signals/generate:
+    post:
+      operationId: postSignalsGenerate
+      summary: Generate and store a paper-mode signal using EMA(9), EMA(21), and RSI(14)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignalGenerateRequest"
+      responses:
+        "200":
+          description: Generated signal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignalResponse"
+  /dashboard:
+    get:
+      operationId: getDashboard
+      summary: Get stable dashboard/report aggregation from live Worker API data
+      responses:
+        "200":
+          description: Dashboard aggregation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericObject"
+  /surge/status:
+    get:
+      operationId: getSurgeStatus
+      summary: Get surge scanner status
+      responses:
+        "200":
+          description: Surge status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericObject"
+  /exchange/circuit-breakers:
+    get:
+      operationId: getExchangeCircuitBreakers
+      summary: Get exchange circuit breaker status
+      responses:
+        "200":
+          description: Exchange circuit breakers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericObject"
+  /audit:
+    get:
+      operationId: getAudit
+      summary: Get audit trail
+      responses:
+        "200":
+          description: Audit trail
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+  /intent/paper:
+    post:
+      operationId: postPaperIntent
+      summary: Submit a paper-only simulated trade intent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaperIntentRequest"
+      responses:
+        "200":
+          description: Paper intent accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericObject"
+        "400":
+          description: Invalid paper intent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorObject"
+        "403":
+          description: Guardian blocked paper intent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorObject"
+  /backtest:
+    get:
+      operationId: getBacktestStatus
+      summary: Get backtest engine status
+      responses:
+        "200":
+          description: Backtest status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericObject"
+    post:
+      operationId: postBacktest
+      summary: Run paper-mode backtest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BacktestRequest"
+      responses:
+        "200":
+          description: Backtest result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BacktestResponse"
+  /guardian/kill:
+    post:
+      operationId: postGuardianKill
+      summary: Activate paper guardian kill switch
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+              additionalProperties: false
+      responses:
+        "200":
+          description: Guardian kill switch activated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericObject"
+  /guardian/reset:
+    post:
+      operationId: postGuardianReset
+      summary: Reset paper guardian kill switch
+      responses:
+        "200":
+          description: Guardian reset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericObject"
+  /intent/live:
+    post:
+      operationId: verifyLiveTradingBlocked
+      summary: Verify live trading is blocked
+      responses:
+        "403":
+          description: Live trading blocked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorObject"
+  /withdraw:
+    post:
+      operationId: verifyWithdrawBlocked
+      summary: Verify withdrawals are blocked
+      responses:
+        "403":
+          description: Withdrawals blocked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorObject"
 security: []
