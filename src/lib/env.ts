@@ -1,7 +1,7 @@
 const env = import.meta.env;
 
 const LOCAL_BACKEND_URL = 'http://localhost:8000';
-const HOSTED_BACKEND_URL = 'https://crypto-signal-bot-deqd.onrender.com';
+const HOSTED_BACKEND_URL = 'https://crypto-signal-bot-api.gr8r9bfzry.workers.dev';
 
 export type FrontendEnvValidation = {
   backendUrl: string;
@@ -29,7 +29,7 @@ export function getConfiguredBackendUrl() {
   }
 
   if (env.PROD && explicitUrl && !/^https?:\/\//i.test(explicitUrl)) {
-    console.warn(`[env] Ignoring relative production backend URL "${explicitUrl}". Using hosted Render backend instead.`);
+    console.warn(`[env] Ignoring relative production backend URL "${explicitUrl}". Using hosted Cloudflare Worker backend instead.`);
     return HOSTED_BACKEND_URL;
   }
 
@@ -63,7 +63,7 @@ export function validateFrontendEnv(): FrontendEnvValidation {
 
   if (isProductionBuild && isLocalBackend) {
     missingRequired.push('VITE_BACKEND_URL or VITE_CRYPTOCORE_API_BASE');
-    warnings.push('Backend URL is unset or points to localhost in a production build. Set VITE_BACKEND_URL or VITE_CRYPTOCORE_API_BASE to the HTTPS backend origin.');
+    warnings.push('Backend URL is unset or points to localhost in a production build. Set VITE_BACKEND_URL or VITE_CRYPTOCORE_API_BASE to the HTTPS Cloudflare Worker backend origin.');
   }
 
   if (isProductionBuild && backendUrl.startsWith('http://') && !isLocalBackend) {
