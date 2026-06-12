@@ -38,7 +38,9 @@ async function getPrice(env: Env, value?: string | null) {
       await env.DB.prepare('INSERT INTO market_snapshots (symbol, price, source, stale) VALUES (?, ?, ?, 0)').bind(symbol, price, 'coinbase').run().catch(() => undefined)
       return { symbol, price, source: 'coinbase', stale: false, ts: ts() }
     }
-  } catch {}
+  } catch (err) {
+    // Ignore fetch errors and fallback to cache
+  }
   const cached = await env.DB.prepare('SELECT price FROM market_snapshots WHERE symbol = ? ORDER BY created_at DESC LIMIT 1').bind(symbol).first<{ price: number }>().catch(() => null)
   return { symbol, price: cached?.price || FALLBACK[symbol] || 1, source: cached ? 'cache' : 'fallback', stale: true, ts: ts() }
 }
