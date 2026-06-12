@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { registerCompatibilityRoutes } from './compat'
+import { registerRenderParityRoutes } from './renderParity'
 
 const app = new Hono<{ Bindings: Env }>()
 
@@ -241,6 +242,7 @@ app.get('/backtest', async (c) => {
 
 // ── RENDER / FASTAPI COMPATIBILITY ROUTES ─────────────
 registerCompatibilityRoutes(app)
+registerRenderParityRoutes(app)
 
 // ── CRON TRIGGERS ─────────────────────────────────────
 export default {
