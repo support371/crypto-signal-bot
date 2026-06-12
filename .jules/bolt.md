@@ -29,3 +29,7 @@
 ## 2026-06-24 - [Intermediate List Allocation in Series Indicators]
 **Learning:** Functions like `rsi` and `atr` that calculate a full series often use intermediate list comprehensions (e.g., `changes`, `gains`, `losses`, `tr_list`). For large $N$, these allocations and subsequent iterations significantly increase memory pressure and execution time.
 **Action:** Always implement series technical indicators using a single-pass O(N) loop that calculates all components (like True Range or Gains/Losses) on the fly, eliminating intermediate list storage. Use multiplicative inverses to replace division inside hot loops.
+
+## 2026-07-01 - [RSI Correctness on Flat Series]
+**Learning:** A common edge case in RSI implementations is a flat price series (zero gains and zero losses). If not handled explicitly, dividing by a zero average loss can lead to incorrect results (like 100.0) or errors. Technicially, if both gain and loss are zero, RSI should be 50.0.
+**Action:** Always handle the `avg_loss == 0` case in RSI by checking if `avg_gain` is also zero; return 50.0 if both are zero, and 100.0 only if `avg_gain > 0`.

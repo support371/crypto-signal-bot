@@ -40,8 +40,8 @@ app.get('/market/price/:symbol', async (c) => {
       `https://api.coinbase.com/v2/prices/${symbol}-USD/spot`,
       { headers: { 'Content-Type': 'application/json' } }
     )
-    const data: any = await res.json()
-    const price = parseFloat(data?.data?.amount)
+    const data = await res.json() as { data?: { amount?: string } }
+    const price = parseFloat(data?.data?.amount || '')
     if (!isNaN(price)) {
       await c.env.DB.prepare(
         'INSERT INTO market_snapshots (symbol, price, source, stale) VALUES (?, ?, ?, 0)'
@@ -123,7 +123,7 @@ app.get('/portfolio/trades', async (c) => {
 
 // ── PAPER TRADE EXECUTION ─────────────────────────────
 app.post('/intent/paper', async (c) => {
-  const body: any = await c.req.json()
+  const body = await c.req.json() as { symbol?: string, side?: string, quantity?: number, price?: number }
   const { symbol, side, quantity, price } = body
   if (!symbol || !side || !quantity || !price) {
     return c.json({ error: 'Missing required fields' }, 400)
@@ -169,7 +169,7 @@ app.get('/guardian/status', async (c) => {
 })
 
 app.post('/guardian/kill', async (c) => {
-  const body: any = await c.req.json().catch(() => ({}))
+  const body = await c.req.json().catch(() => ({})) as { reason?: string }
   const reason = body?.reason || 'Manual kill switch activated'
   await c.env.DB.prepare(
     'UPDATE guardian_state SET triggered = 1, reason = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1'
@@ -255,14 +255,16 @@ export default {
       for (const sym of symbols) {
         try {
           const res = await fetch(`https://api.coinbase.com/v2/prices/${sym}-USD/spot`)
-          const data: any = await res.json()
-          const price = parseFloat(data?.data?.amount)
+          const data = await res.json() as { data?: { amount?: string } }
+          const price = parseFloat(data?.data?.amount || '')
           if (!isNaN(price)) {
             await env.DB.prepare(
               'INSERT INTO market_snapshots (symbol, price, source, stale) VALUES (?, ?, ?, 0)'
             ).bind(sym, price, 'coinbase').run()
           }
-        } catch (e) {}
+        } catch (err) {
+          // Ignore errors during scheduled price fetch
+        }
       }
     }
     if (cron === '*/20 * * * *') {
@@ -287,7 +289,9 @@ export default {
               ).bind('surge_detected', JSON.stringify({ sym, changePct, allocationPct })).run()
             }
           }
-        } catch (e) {}
+        } catch (err) {
+          // Ignore errors during scheduled surge check
+        }
       }
     }
 

@@ -102,7 +102,7 @@ def rsi(values: List[float], period: int = 14) -> List[Optional[float]]:
     avg_loss *= inv_period
 
     if avg_loss == 0:
-        result[period] = 100.0
+        result[period] = 100.0 if avg_gain > 0 else 50.0
     else:
         result[period] = 100.0 - (100.0 / (1.0 + avg_gain / avg_loss))
 
@@ -118,7 +118,7 @@ def rsi(values: List[float], period: int = 14) -> List[Optional[float]]:
         avg_loss = (avg_loss * minus_one + loss) * inv_period
 
         if avg_loss == 0:
-            result[i] = 100.0
+            result[i] = 100.0 if avg_gain > 0 else 50.0
         else:
             result[i] = 100.0 - (100.0 / (1.0 + avg_gain / avg_loss))
         prev = curr
@@ -169,7 +169,7 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
         prev = curr
 
     if avg_loss == 0:
-        return 100.0
+        return 100.0 if avg_gain > 0 else 50.0
 
     return 100.0 - (100.0 / (1 + avg_gain / avg_loss))
 
@@ -187,37 +187,76 @@ def macd(
     """
     MACD line, signal line, histogram.
     Returns three lists of same length as `values`.
+    Optimized to O(N) using a single-pass iterative implementation to avoid
+    multiple EMA passes and intermediate list allocations.
     """
-    ema_fast = ema(values, fast)
-    ema_slow = ema(values, slow)
+    n = len(values)
+    macd_line: List[Optional[float]] = [None] * n
+    signal_line: List[Optional[float]] = [None] * n
+    histogram: List[Optional[float]] = [None] * n
 
-    macd_line: List[Optional[float]] = []
-    for f, s in zip(ema_fast, ema_slow):
-        if f is None or s is None:
-            macd_line.append(None)
-        else:
-            macd_line.append(f - s)
+    p_max = max(fast, slow)
+    if n < p_max or fast <= 0 or slow <= 0 or signal_period <= 0:
+        return macd_line, signal_line, histogram
 
-    # Signal = EMA of MACD line (using only non-None values)
-    # Build a dense list for EMA calculation
-    non_none_indices = [i for i, v in enumerate(macd_line) if v is not None]
-    if not non_none_indices:
-        nones = [None] * len(values)
-        return macd_line, nones, nones
+    k_fast = 2.0 / (fast + 1)
+    k_slow = 2.0 / (slow + 1)
+    k_sig = 2.0 / (signal_period + 1)
 
-    dense_macd = [macd_line[i] for i in non_none_indices]  # type: ignore[misc]
-    dense_signal = ema(dense_macd, signal_period)  # type: ignore[arg-type]
+    # 1. Seed fast and slow EMAs
+    ema_f = sum(values[:fast]) / fast
+    for i in range(fast, p_max):
+        ema_f = values[i] * k_fast + ema_f * (1 - k_fast)
 
-    # Map back to full-length list
-    signal_line: List[Optional[float]] = [None] * len(values)
-    histogram: List[Optional[float]] = [None] * len(values)
+    ema_s = sum(values[:slow]) / slow
+    for i in range(slow, p_max):
+        ema_s = values[i] * k_slow + ema_s * (1 - k_slow)
 
-    for offset, orig_idx in enumerate(non_none_indices):
-        sig = dense_signal[offset]
-        ml = macd_line[orig_idx]
-        signal_line[orig_idx] = sig
-        if sig is not None and ml is not None:
-            histogram[orig_idx] = ml - sig
+    # First MACD value at index p_max - 1
+    m_val = ema_f - ema_s
+    macd_line[p_max - 1] = m_val
+
+    # 2. Progress until we can seed the signal line
+    # Signal starts after 'signal_period' MACD values.
+    # The first signal value is the SMA of the first 'signal_period' MACD values.
+    macd_sum = m_val
+    signal_start_idx = p_max + signal_period - 2
+    curr = p_max
+
+    while curr < n and curr < signal_start_idx:
+        v = values[curr]
+        ema_f = v * k_fast + ema_f * (1 - k_fast)
+        ema_s = v * k_slow + ema_s * (1 - k_slow)
+        m_val = ema_f - ema_s
+        macd_line[curr] = m_val
+        macd_sum += m_val
+        curr += 1
+
+    if curr == signal_start_idx and curr < n:
+        # Seed signal SMA at signal_start_idx
+        v = values[curr]
+        ema_f = v * k_fast + ema_f * (1 - k_fast)
+        ema_s = v * k_slow + ema_s * (1 - k_slow)
+        m_val = ema_f - ema_s
+        macd_line[curr] = m_val
+        macd_sum += m_val
+
+        sig_ema = macd_sum / signal_period
+        signal_line[curr] = sig_ema
+        histogram[curr] = m_val - sig_ema
+        curr += 1
+
+        # 3. Process remaining bars
+        for i in range(curr, n):
+            v = values[i]
+            ema_f = v * k_fast + ema_f * (1 - k_fast)
+            ema_s = v * k_slow + ema_s * (1 - k_slow)
+            m_val = ema_f - ema_s
+            sig_ema = m_val * k_sig + sig_ema * (1 - k_sig)
+
+            macd_line[i] = m_val
+            signal_line[i] = sig_ema
+            histogram[i] = m_val - sig_ema
 
     return macd_line, signal_line, histogram
 
