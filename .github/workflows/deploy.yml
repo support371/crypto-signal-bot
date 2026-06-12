@@ -10,8 +10,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  WORKER_URL: https://crypto-signal-bot-api.workers.dev
-  VERCEL_BACKEND_URL: https://crypto-signal-bot-api.workers.dev
+  WORKER_URL: https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
+  VERCEL_BACKEND_URL: https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
 
 jobs:
   validate:
@@ -37,6 +37,8 @@ jobs:
         run: cd worker && npm run build
       - name: Verify paper safety
         run: cd worker && npm run verify:paper-safety
+      - name: Verify critical Worker routes
+        run: cd worker && npm run verify:critical-routes
       - name: Validate Wrangler bundle
         run: npx wrangler deploy --dry-run --outdir /tmp/crypto-signal-bot-worker-dry-run --config wrangler.toml
 
