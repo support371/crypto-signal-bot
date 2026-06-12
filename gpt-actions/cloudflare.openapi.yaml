@@ -1,0 +1,157 @@
+openapi: 3.1.0
+info:
+  title: crypto-signal-bot Cloudflare Action
+  version: 1.0.1
+  description: Cloudflare operational access for the paper-only crypto-signal-bot Worker, D1, and R2 resources. Do not store, print, or use live exchange order-execution keys.
+servers:
+  - url: https://api.cloudflare.com/client/v4
+components:
+  securitySchemes:
+    CloudflareBearer:
+      type: http
+      scheme: bearer
+  schemas:
+    D1QueryRequest:
+      type: object
+      required:
+        - sql
+      properties:
+        sql:
+          type: string
+          description: SQL statement for D1. Prefer read-only SELECT queries unless an approved paper-mode maintenance task requires otherwise.
+        params:
+          type: array
+          items:
+            oneOf:
+              - type: string
+              - type: number
+              - type: boolean
+              - type: 'null'
+      additionalProperties: false
+    CloudflareEnvelope:
+      type: object
+      properties:
+        success:
+          type: boolean
+        errors:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        messages:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        result:
+          type: object
+          additionalProperties: true
+      additionalProperties: true
+    CloudflareListEnvelope:
+      type: object
+      properties:
+        success:
+          type: boolean
+        errors:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        result:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        result_info:
+          type: object
+          additionalProperties: true
+      additionalProperties: true
+security:
+  - CloudflareBearer: []
+paths:
+  /accounts/{account_id}/d1/database/{database_id}/query:
+    post:
+      operationId: queryD1
+      summary: Query Cloudflare D1 database
+      description: Use for paper-mode operational verification and diagnostics. Avoid destructive SQL unless explicitly approved and backed up.
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: database_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/D1QueryRequest"
+      responses:
+        "200":
+          description: D1 query result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CloudflareEnvelope"
+  /accounts/{account_id}/d1/database:
+    get:
+      operationId: listD1Databases
+      summary: List D1 databases
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: D1 databases
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CloudflareListEnvelope"
+  /accounts/{account_id}/r2/buckets:
+    get:
+      operationId: listR2Buckets
+      summary: List R2 buckets
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: R2 buckets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CloudflareListEnvelope"
+  /accounts/{account_id}/workers/scripts/{script_name}/logs:
+    get:
+      operationId: getWorkerLogs
+      summary: Get Worker logs when available
+      description: Cloudflare log availability depends on account plan and logging configuration.
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: script_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Worker logs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CloudflareEnvelope"
