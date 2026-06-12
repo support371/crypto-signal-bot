@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
+import { registerCompatibilityRoutes } from './compat'
 
 const app = new Hono<{ Bindings: Env }>()
 
@@ -238,6 +239,9 @@ app.get('/backtest', async (c) => {
   })
 })
 
+// ── RENDER / FASTAPI COMPATIBILITY ROUTES ─────────────
+registerCompatibilityRoutes(app)
+
 // ── CRON TRIGGERS ─────────────────────────────────────
 export default {
   fetch: app.fetch,
@@ -259,7 +263,6 @@ export default {
         } catch (e) {}
       }
     }
-
     if (cron === '*/20 * * * *') {
       const symbols = ['BTC', 'ETH', 'SOL', 'BNB']
       for (const sym of symbols) {
