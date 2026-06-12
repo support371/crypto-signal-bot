@@ -1,0 +1,164 @@
+openapi: 3.1.0
+info:
+  title: crypto-signal-bot Vercel Action
+  version: 1.0.1
+  description: Vercel operational access for crypto-signal-bot frontend deployment. Verify Worker paper safety before triggering production deployment.
+servers:
+  - url: https://api.vercel.com
+components:
+  securitySchemes:
+    VercelBearer:
+      type: http
+      scheme: bearer
+  schemas:
+    DeploymentListResponse:
+      type: object
+      properties:
+        deployments:
+          type: array
+          items:
+            type: object
+            properties:
+              uid:
+                type: string
+              name:
+                type: string
+              url:
+                type: string
+              state:
+                type: string
+              target:
+                type: string
+              createdAt:
+                type: integer
+            additionalProperties: true
+        pagination:
+          type: object
+          additionalProperties: true
+      additionalProperties: true
+    TriggerDeploymentRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        project:
+          type: string
+        target:
+          type: string
+          enum:
+            - production
+            - preview
+        gitSource:
+          type: object
+          properties:
+            type:
+              type: string
+              enum:
+                - github
+            repo:
+              type: string
+            org:
+              type: string
+            ref:
+              type: string
+          additionalProperties: true
+      additionalProperties: true
+    DeploymentResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        uid:
+          type: string
+        name:
+          type: string
+        url:
+          type: string
+        state:
+          type: string
+        target:
+          type: string
+      additionalProperties: true
+    EnvVarsResponse:
+      type: object
+      properties:
+        envs:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              key:
+                type: string
+              target:
+                type: array
+                items:
+                  type: string
+              type:
+                type: string
+            additionalProperties: true
+      additionalProperties: true
+security:
+  - VercelBearer: []
+paths:
+  /v6/deployments:
+    get:
+      operationId: listDeployments
+      summary: List Vercel deployments
+      parameters:
+        - name: projectId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Deployments
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentListResponse"
+  /v13/deployments:
+    post:
+      operationId: triggerDeployment
+      summary: Trigger a Vercel deployment
+      description: Run Worker safety checks before triggering deployment. Production deployment should only point to the paper-only Worker backend.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TriggerDeploymentRequest"
+      responses:
+        "200":
+          description: Deployment triggered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentResponse"
+  /v10/projects/{projectIdOrName}/env:
+    get:
+      operationId: getEnvVars
+      summary: Get Vercel environment variable metadata
+      parameters:
+        - name: projectIdOrName
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Environment variables metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvVarsResponse"
