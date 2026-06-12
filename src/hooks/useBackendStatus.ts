@@ -12,7 +12,6 @@ export interface BackendHealth {
   mode?: string;
   network?: string;
   uptime_seconds?: number;
-  // Extended fields (may not be present in minimal response)
   kill_switch_active?: boolean;
   kill_switch_reason?: string | null;
   api_error_count?: number;
@@ -71,8 +70,22 @@ export interface BackendExchangeStatus {
 }
 
 interface BalanceResponse {
-  balances: Record<string, number>;
-  positions: Record<string, number>;
+  balances?: Record<string, number>;
+  positions?: Record<string, number>;
+  asset?: string;
+  free?: number;
+  total?: number;
+  balance_usdt?: number;
+}
+
+interface PortfolioResponse {
+  cash_balance?: number;
+  cash_usdt?: number;
+  balance_usdt?: number;
+  equity?: number;
+  equity_usdt?: number;
+  open_positions?: unknown[];
+  positions?: unknown[];
 }
 
 export interface EndpointErrors {
@@ -96,14 +109,11 @@ export interface UseBackendStatusResult {
   refetch: () => Promise<void>;
 }
 
-/**
- * Normalize a raw /health response into a consistent shape with safe defaults.
- */
 function normalizeHealth(raw: BackendHealth): NormalizedBackendHealth {
   return {
     status: raw.status ?? 'unknown',
-    service: raw.service ?? 'crypto-signal-bot-backend',
-    runtime: raw.runtime ?? 'unknown',
+    service: raw.service ?? 'crypto-signal-bot-worker',
+    runtime: raw.runtime ?? 'cloudflare-workers',
     mode: raw.mode ?? 'paper',
     network: raw.network ?? 'testnet',
     uptime_seconds: raw.uptime_seconds ?? 0,
@@ -113,23 +123,26 @@ function normalizeHealth(raw: BackendHealth): NormalizedBackendHealth {
     failed_order_count: raw.failed_order_count ?? 0,
     halted: raw.halted ?? false,
     guardian_triggered: raw.guardian_triggered ?? false,
-    market_data_mode: raw.market_data_mode ?? 'paper',
-    market_data_connected: raw.market_data_connected ?? false,
-    market_data_source: raw.market_data_source ?? 'health',
+    market_data_mode: raw.market_data_mode ?? 'coinbase_public',
+    market_data_connected: raw.market_data_connected ?? raw.status === 'ok',
+    market_data_source: raw.market_data_source ?? 'worker-health',
   };
 }
 
-/**
- * useBackendStatus hook with resilient endpoint handling.
- *
- * Rules:
- * - /health is the source of truth for backend connectivity.
- * - If /health succeeds, isConnected = true.
- * - /balance, /config, /exchange/status are optional diagnostics.
- * - If an optional endpoint fails, keep previous value or set safe default,
- *   but do NOT mark the whole backend offline.
- * - Exposes per-endpoint errors for diagnostics.
- */
+function parsePaperBalance(portfolio?: PortfolioResponse, balance?: BalanceResponse) {
+  if (portfolio) {
+    const candidate = portfolio.cash_usdt ?? portfolio.balance_usdt ?? portfolio.cash_balance ?? portfolio.equity_usdt ?? portfolio.equity;
+    if (candidate !== undefined) return parseFloat(String(candidate));
+  }
+
+  if (balance) {
+    const candidate = balance.balance_usdt ?? balance.total ?? balance.free ?? balance.balances?.USDT;
+    if (candidate !== undefined) return parseFloat(String(candidate));
+  }
+
+  return null;
+}
+
 export function useBackendStatus(pollIntervalMs = 30000): UseBackendStatusResult {
   const [health, setHealth] = useState<NormalizedBackendHealth | null>(null);
   const [config, setConfig] = useState<BackendConfig | null>(null);
@@ -156,50 +169,42 @@ export function useBackendStatus(pollIntervalMs = 30000): UseBackendStatusResult
       exchangeStatusError: null,
     };
 
-    // Use Promise.allSettled for resilient fetching
     const [healthResult, balanceResult, configResult, exchangeResult, portfolioResult] = await Promise.allSettled([
       fetchBackendJson<BackendHealth>('/health'),
       fetchBackendJson<BalanceResponse>('/balance'),
       fetchBackendJson<BackendConfig>('/config'),
       fetchBackendJson<BackendExchangeStatus>('/exchange/status'),
-      fetchBackendJson<{ cash_balance: number; equity: number }>('/api/v1/portfolio'),
+      fetchBackendJson<PortfolioResponse>('/portfolio/summary'),
     ]);
 
-    // /health is the source of truth for connectivity
     if (healthResult.status === 'fulfilled') {
-      console.log('[v0] Health check succeeded:', healthResult.value);
       const normalized = normalizeHealth(healthResult.value);
       setHealth(normalized);
-      setIsConnected(true);
+      setIsConnected(normalized.status === 'ok' || normalized.status === 'healthy');
       setError(null);
       setLastSuccessfulHealthAt(new Date());
     } else {
-      console.log('[v0] Health check failed:', healthResult.reason);
       const healthErr = healthResult.reason instanceof Error
         ? healthResult.reason.message
         : 'Failed to reach backend';
       newErrors.healthError = healthErr;
       setIsConnected(false);
       setError(healthErr);
-      // Don't clear health data - keep last known state for reference
     }
 
-    // /balance + /api/v1/portfolio — prefer portfolio cash_balance as authoritative source
-    if (portfolioResult.status === 'fulfilled' && portfolioResult.value?.cash_balance !== undefined) {
-      // Portfolio endpoint is the authoritative source for paper balance
-      setPaperBalance(parseFloat(String(portfolioResult.value.cash_balance)));
-    } else if (balanceResult.status === 'fulfilled') {
-      const rawUsdt = balanceResult.value?.balances?.USDT;
-      setPaperBalance(rawUsdt !== undefined ? parseFloat(String(rawUsdt)) : 0);
-    } else {
+    const portfolio = portfolioResult.status === 'fulfilled' ? portfolioResult.value : undefined;
+    const balance = balanceResult.status === 'fulfilled' ? balanceResult.value : undefined;
+    const nextBalance = parsePaperBalance(portfolio, balance);
+
+    if (nextBalance !== null && !Number.isNaN(nextBalance)) {
+      setPaperBalance(nextBalance);
+    } else if (balanceResult.status === 'rejected' && portfolioResult.status === 'rejected') {
       const balErr = balanceResult.reason instanceof Error
         ? balanceResult.reason.message
         : 'Failed to fetch balance';
       newErrors.balanceError = balErr;
-      // Keep previous paperBalance value
     }
 
-    // /config - optional, keep previous value on failure
     if (configResult.status === 'fulfilled') {
       setConfig(configResult.value);
     } else {
@@ -207,10 +212,8 @@ export function useBackendStatus(pollIntervalMs = 30000): UseBackendStatusResult
         ? configResult.reason.message
         : 'Failed to fetch config';
       newErrors.configError = configErr;
-      // Keep previous config value
     }
 
-    // /exchange/status - optional, keep previous value on failure
     if (exchangeResult.status === 'fulfilled') {
       setExchangeStatus(exchangeResult.value);
     } else {
@@ -218,7 +221,6 @@ export function useBackendStatus(pollIntervalMs = 30000): UseBackendStatusResult
         ? exchangeResult.reason.message
         : 'Failed to fetch exchange status';
       newErrors.exchangeStatusError = exchErr;
-      // Keep previous exchangeStatus value
     }
 
     setEndpointErrors(newErrors);
