@@ -12,6 +12,7 @@
     "migrate:local": "wrangler d1 execute crypto-signal-bot-db --config ../wrangler.toml --local --file=migrations/001_init.sql",
     "migrate:remote": "wrangler d1 execute crypto-signal-bot-db --config ../wrangler.toml --remote --file=migrations/001_init.sql",
     "verify:paper-safety": "node scripts/verify-paper-safety.mjs",
+    "verify:critical-routes": "node scripts/verify-critical-routes.mjs",
     "smoke": "node scripts/smoke-check.mjs"
   },
   "dependencies": {
