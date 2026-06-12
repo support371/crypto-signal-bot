@@ -2,6 +2,8 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { registerCompatibilityRoutes } from './compat'
 import { registerRenderParityRoutes } from './renderParity'
+import { registerDashboardRoutes } from './dashboardRoutes'
+import { executePaperOrder } from './paperEngine'
 
 const app = new Hono<{ Bindings: Env }>()
 
@@ -123,24 +125,9 @@ app.get('/portfolio/trades', async (c) => {
 
 // ── PAPER TRADE EXECUTION ─────────────────────────────
 app.post('/intent/paper', async (c) => {
-  const body: any = await c.req.json()
-  const { symbol, side, quantity, price } = body
-  if (!symbol || !side || !quantity || !price) {
-    return c.json({ error: 'Missing required fields' }, 400)
-  }
-  const guardian = await c.env.DB.prepare(
-    'SELECT triggered FROM guardian_state WHERE id = 1'
-  ).first<{ triggered: number }>()
-  if (guardian?.triggered) {
-    return c.json({ error: 'Guardian kill switch active — trading paused' }, 403)
-  }
-  await c.env.DB.prepare(
-    'INSERT INTO orders (symbol, side, quantity, price, status, mode) VALUES (?, ?, ?, ?, ?, ?)'
-  ).bind(symbol, side, quantity, price, 'filled', 'paper').run()
-  await c.env.DB.prepare(
-    'INSERT INTO audit_trail (event, detail) VALUES (?, ?)'
-  ).bind('paper_trade', JSON.stringify({ symbol, side, quantity, price })).run()
-  return c.json({ status: 'filled', symbol, side, quantity, price, mode: 'paper', ts: Date.now() })
+  const payload: any = await c.req.json().catch(() => ({}))
+  const result = await executePaperOrder(c.env, payload)
+  return c.json(result.body, result.status)
 })
 
 // ── GUARDIAN ──────────────────────────────────────────
@@ -235,10 +222,13 @@ app.get('/backtest', async (c) => {
   return c.json({
     symbol, status: 'ready',
     message: 'Backtest engine available — submit POST /backtest with strategy config',
-    supported_strategies: ['ema_cross', 'rsi_mean_reversion', 'macd_momentum'],
+    supported_strategies: ['ema9_ema21_rsi14', 'ema_cross', 'rsi_mean_reversion', 'macd_momentum'],
     ts: Date.now()
   })
 })
+
+// ── DASHBOARD / REPORT CONTRACT ROUTES ────────────────
+registerDashboardRoutes(app)
 
 // ── RENDER / FASTAPI COMPATIBILITY ROUTES ─────────────
 registerCompatibilityRoutes(app)
