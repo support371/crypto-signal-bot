@@ -95,7 +95,9 @@ async function getPrice(env: Env, raw?: string | null) {
         .catch(() => undefined)
       return { symbol, price, source: 'coinbase', stale: false, ts: ts() }
     }
-  } catch {}
+  } catch (err) {
+    // Silent catch for price fetch failures
+  }
 
   const cached = await env.DB.prepare('SELECT price FROM market_snapshots WHERE symbol = ? ORDER BY created_at DESC LIMIT 1')
     .bind(symbol)

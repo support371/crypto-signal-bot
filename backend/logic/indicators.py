@@ -131,15 +131,13 @@ def rsi(values: List[float], period: int = 14) -> List[Optional[float]]:
 def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
     """
     Return the most recent RSI value.
-    Optimized to O(n) time and O(1) space by avoiding list allocations for changes, gains, and losses.
-    Further optimized by reducing arithmetic operations and list indexing.
+    Optimized to O(n) time and O(1) space.
     """
     n = len(values)
     if n < period + 1 or period <= 0:
         return None
 
     inv_period = 1.0 / period
-    minus_one_over_period = (period - 1) * inv_period
 
     # Initial averages
     avg_gain = 0.0
@@ -162,12 +160,12 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
     for i in range(period + 1, n):
         curr = values[i]
         change = curr - prev
-        avg_gain *= minus_one_over_period
-        avg_loss *= minus_one_over_period
-        if change > 0:
-            avg_gain += change * inv_period
-        elif change < 0:
-            avg_loss -= change * inv_period
+        gain = change if change > 0 else 0.0
+        loss = -change if change < 0 else 0.0
+
+        # Optimized Wilder smoothing formula: val += (input - val) / period
+        avg_gain += (gain - avg_gain) * inv_period
+        avg_loss += (loss - avg_loss) * inv_period
         prev = curr
 
     if avg_loss == 0:
@@ -534,6 +532,6 @@ def last_atr(
             tr = lpc
 
         # Smoothed ATR update rule: ATR_i = ATR_{i-1} + (TR_i - ATR_{i-1}) / period
-        val = val + (tr - val) * inv_period
+        val += (tr - val) * inv_period
 
     return val
