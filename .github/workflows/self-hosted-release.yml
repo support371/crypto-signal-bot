@@ -1,0 +1,170 @@
+name: self-hosted-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_worker:
+        description: "Deploy Cloudflare Worker after all validation passes"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      update_vercel:
+        description: "Update Vercel only after Worker deploy and smoke checks pass"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+permissions:
+  contents: read
+
+env:
+  TRADING_MODE: paper
+  EXCHANGE_MODE: paper
+  ALLOW_MAINNET: "false"
+  WORKER_SMOKE_BASE_URL: https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
+
+jobs:
+  release-check:
+    name: Self-hosted release validation
+    runs-on: [self-hosted, cryptoops, linux]
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Confirm paper-safety environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$TRADING_MODE" = "paper"
+          test "$EXCHANGE_MODE" = "paper"
+          test "$ALLOW_MAINNET" = "false"
+          echo "Paper-safety environment confirmed."
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build frontend
+        env:
+          VITE_BACKEND_URL: /api
+          VITE_API_BASE_URL: /api
+        run: npm run build
+
+      - name: Verify frontend build artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f dist/index.html
+          test -d dist/assets
+          echo "Frontend build artifacts verified."
+
+      - name: Install backend Python dependencies when present
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          if [ -f backend/requirements.txt ]; then
+            python -m pip install -r backend/requirements.txt
+          else
+            echo "backend/requirements.txt not found; skipping backend dependency install."
+          fi
+
+      - name: Compile backend imports
+        run: python -m py_compile backend/app.py backend/public_app.py
+
+      - name: Run backend tests
+        run: python -m pytest backend/tests/ -x -q
+
+      - name: Run repository audit
+        run: python scripts/repo_audit.py
+
+      - name: Install Worker dependencies
+        working-directory: worker
+        run: npm ci
+
+      - name: Build Worker
+        working-directory: worker
+        run: npm run build
+
+      - name: Verify Worker paper safety
+        working-directory: worker
+        env:
+          TRADING_MODE: paper
+          EXCHANGE_MODE: paper
+          ALLOW_MAINNET: "false"
+        run: npm run verify:paper-safety
+
+      - name: Validate Wrangler bundle with dry run
+        working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TRADING_MODE: paper
+          EXCHANGE_MODE: paper
+          ALLOW_MAINNET: "false"
+        run: wrangler deploy --dry-run --outdir .wrangler-dry-run
+
+      - name: Deploy Cloudflare Worker when manually enabled
+        if: ${{ github.event.inputs.deploy_worker == 'true' }}
+        working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TRADING_MODE: paper
+          EXCHANGE_MODE: paper
+          ALLOW_MAINNET: "false"
+        run: wrangler deploy
+
+      - name: Smoke check Worker endpoints after deploy
+        if: ${{ github.event.inputs.deploy_worker == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS "$WORKER_SMOKE_BASE_URL/healthz" | tee /tmp/worker-healthz.json
+          curl -fsS "$WORKER_SMOKE_BASE_URL/runtime/status" | tee /tmp/worker-runtime.json
+          curl -fsS "$WORKER_SMOKE_BASE_URL/guardian/status" | tee /tmp/worker-guardian.json
+          curl -fsS "$WORKER_SMOKE_BASE_URL/market/feed/status" | tee /tmp/worker-market-feed.json
+          curl -fsS "$WORKER_SMOKE_BASE_URL/exchange/circuit-breakers" | tee /tmp/worker-circuit-breakers.json
+
+          grep -q '"trading_mode":"paper"' /tmp/worker-runtime.json
+          grep -q '"exchange_mode":"paper"' /tmp/worker-runtime.json
+          grep -q '"allow_mainnet":false' /tmp/worker-runtime.json
+          grep -q '"mode":"paper"' /tmp/worker-guardian.json
+          grep -q '"live_trading_enabled":false' /tmp/worker-guardian.json
+          grep -q '"withdrawals_enabled":false' /tmp/worker-guardian.json
+
+          live_status="$(curl -sS -o /tmp/live-block.json -w "%{http_code}" -X POST "$WORKER_SMOKE_BASE_URL/intent/live")"
+          withdraw_status="$(curl -sS -o /tmp/withdraw-block.json -w "%{http_code}" -X POST "$WORKER_SMOKE_BASE_URL/withdraw")"
+
+          test "$live_status" = "403"
+          test "$withdraw_status" = "403"
+          echo "Worker smoke checks passed after deploy."
+
+      - name: Update Vercel when manually enabled after Worker smoke checks
+        if: ${{ github.event.inputs.deploy_worker == 'true' && github.event.inputs.update_vercel == 'true' }}
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN" --scope "$VERCEL_TEAM_ID"
