@@ -95,7 +95,7 @@ async function getPrice(env: Env, raw?: string | null) {
         .catch(() => undefined)
       return { symbol, price, source: 'coinbase', stale: false, ts: ts() }
     }
-  } catch {}
+  } catch { /* Ignore errors and fall back to cache */ }
 
   const cached = await env.DB.prepare('SELECT price FROM market_snapshots WHERE symbol = ? ORDER BY created_at DESC LIMIT 1')
     .bind(symbol)
@@ -304,7 +304,6 @@ async function backtest(env: Env, input: Record<string, unknown>) {
     max_drawdown_pct: 3.5,
     starting_balance_usdt: n(env.PAPER_STARTING_BALANCE_USDT, 10000),
     ending_balance_usdt: n(env.PAPER_STARTING_BALANCE_USDT, 10000) + pnl,
-    live_trading_enabled: false,
     ...safe(env),
     ts: ts(),
   }
