@@ -33,3 +33,7 @@
 ## 2026-07-01 - [RSI Correctness on Flat Series]
 **Learning:** A common edge case in RSI implementations is a flat price series (zero gains and zero losses). If not handled explicitly, dividing by a zero average loss can lead to incorrect results (like 100.0) or errors. Technicially, if both gain and loss are zero, RSI should be 50.0.
 **Action:** Always handle the `avg_loss == 0` case in RSI by checking if `avg_gain` is also zero; return 50.0 if both are zero, and 100.0 only if `avg_gain > 0`.
+
+## 2026-07-08 - [Numerical Instability in One-pass Variance]
+**Learning:** The naive one-pass variance formula ($E[X^2] - (E[X])^2$) is prone to catastrophic cancellation, especially with high-value assets like BTC where values are large but relative variance might be small. Python's floating-point precision can lead to negative variance results.
+**Action:** Favor stable two-pass variance or Welford's algorithm over the naive one-pass formula in technical indicators. For typical indicator periods (N < 500), Python's `sum()` on a slice is often faster than an explicit `for` loop due to its C implementation.
