@@ -1,32 +1,33 @@
-# Deployment Status — Updated by Superagent
+# Deployment Status — CryptoOps
 
-## ✅ Completed
-- Frontend: https://crypto-signal-bot-indol.vercel.app (LIVE)
-- Backend env vars updated on Vercel → pointing to Cloudflare Workers URL
-- Vercel secrets set (VERCEL_TOKEN, VERCEL_TEAM_ID)
-- GitHub Action variables set (VERCEL_PROJECT_ID, CLOUDFLARE_ACCOUNT_ID)
-- Worker code: TypeScript ✅ type-checks clean
-- Backend tests: 413 passing ✅
-- Frontend build: passes ✅
+## Current Active Architecture
 
-## ⏳ Remaining: One Step
-**Set `CLOUDFLARE_API_TOKEN` as a GitHub secret** to enable CI/CD auto-deploy.
+- Frontend: https://crypto-signal-bot-indol.vercel.app
+- Backend Worker: https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
+- Database: Cloudflare D1 (`crypto-signal-bot-db`)
+- Storage: Cloudflare R2 (`crypto-signal-bot-storage`)
 
-Then run: `bash scripts/deploy-worker.sh` (with CF token set) to:
-1. Create D1 database `crypto-signal-bot-db`
-2. Create R2 bucket `crypto-signal-bot-storage`
-3. Deploy Cloudflare Worker
-4. Run D1 migrations (create tables)
-5. Verify all endpoints
+## Paper Safety
 
-## Architecture
-- Backend: `https://crypto-signal-bot-api.workers.dev` (Cloudflare Workers)
-- Frontend: `https://crypto-signal-bot-indol.vercel.app` (Vercel)
-- Database: Cloudflare D1 (SQLite-compatible)
-- Storage: Cloudflare R2
+- TRADING_MODE=paper
+- EXCHANGE_MODE=paper
+- ALLOW_MAINNET=false
+- NETWORK=testnet
+- `/intent/live` must return HTTP 403
+- `/withdraw` must return HTTP 403
 
-## Paper Safety (PERMANENT)
-- TRADING_MODE=paper ✅
-- ALLOW_MAINNET=false ✅
-- /intent/live → 403 ✅
-- /withdraw → 403 ✅
+## Release Lane
+
+Prefer `.github/workflows/self-hosted-release.yml` for guarded releases. It is manual, paper-safe, and verifies live/withdrawal blocks after Worker checks.
+
+Avoid legacy Render release paths. Render keepalive is disabled after migration to Cloudflare Workers.
+
+## Frontend Backend URL
+
+Vercel should point `VITE_BACKEND_URL` to:
+
+```text
+https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
+```
+
+Do not store real secrets in VITE-prefixed variables because Vite exposes them to the browser bundle.
