@@ -1,19 +1,12 @@
-const SETTINGS_STORAGE_KEY = 'crypto-signal-bot:settings:v1';
-
+/**
+ * Backend auth compatibility shim.
+ *
+ * SECURITY: Do not read backend API keys from localStorage or any other
+ * browser-persistent storage. Vite client bundles are public, and browser
+ * storage is not a safe place for server/operator credentials.
+ *
+ * Kept as a compatibility export for any older imports.
+ */
 export function getStoredBackendApiKey(): string {
-  if (typeof window === 'undefined') {
-    return '';
-  }
-
-  try {
-    const raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
-    if (!raw) {
-      return '';
-    }
-
-    const parsed = JSON.parse(raw) as { backendApiKey?: unknown };
-    return typeof parsed.backendApiKey === 'string' ? parsed.backendApiKey.trim() : '';
-  } catch {
-    return '';
-  }
+  return '';
 }
