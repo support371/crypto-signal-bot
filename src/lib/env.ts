@@ -1,7 +1,7 @@
 const env = import.meta.env;
 
 const LOCAL_BACKEND_URL = 'http://localhost:8000';
-const HOSTED_BACKEND_URL = 'https://crypto-signal-bot-deqd.onrender.com';
+const HOSTED_BACKEND_URL = 'https://crypto-signal-bot-api.gr8r9bfzry.workers.dev';
 
 export type FrontendEnvValidation = {
   backendUrl: string;
@@ -29,11 +29,11 @@ export function getConfiguredBackendUrl() {
   }
 
   if (env.PROD && explicitUrl && !/^https?:\/\//i.test(explicitUrl)) {
-    console.warn(`[env] Ignoring relative production backend URL "${explicitUrl}". Using hosted Render backend instead.`);
+    console.warn(`[env] Ignoring relative production backend URL "${explicitUrl}". Using hosted Cloudflare Worker backend instead.`);
     return HOSTED_BACKEND_URL;
   }
 
-  return trimTrailingSlash(explicitUrl || (env.PROD ? HOSTED_BACKEND_URL : LOCAL_BACKEND_URL));
+  return trimTrailingSlash(explicitUrl || (env.PROD ? HOSTED_BBACKEND_URL : LOCAL_BACKEND_URL));
 }
 
 export function getSupabasePublishableKey() {
