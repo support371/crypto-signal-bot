@@ -1,17 +1,38 @@
-name: Deploy to Cloudflare Workers
+name: Deploy to Cloudflare Workers (manual)
 
+# Manual-only release lane. Pushes to main should validate through CI/Vercel,
+# but Cloudflare Worker deploys and Vercel backend URL sync must be explicitly
+# requested from workflow_dispatch after paper-safety checks pass.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      deploy_worker:
+        description: "Deploy the Cloudflare Worker after validation"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      update_vercel:
+        description: "Sync Vercel backend URL and request a production redeploy"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 concurrency:
   group: cloudflare-worker-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  WORKER_URL: https://crypto-signal-bot-api.workers.dev
-  VERCEL_BACKEND_URL: https://crypto-signal-bot-api.workers.dev
+  WORKER_URL: https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
+  VERCEL_BACKEND_URL: https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
+  TRADING_MODE: paper
+  EXCHANGE_MODE: paper
+  ALLOW_MAINNET: "false"
 
 jobs:
   validate:
@@ -42,6 +63,7 @@ jobs:
 
   deploy-worker:
     needs: validate
+    if: ${{ github.event.inputs.deploy_worker == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -65,12 +87,14 @@ jobs:
         run: cd worker && npm run smoke -- "$WORKER_URL"
 
   update-vercel:
-    needs: deploy-worker
+    needs: validate
+    if: ${{ github.event.inputs.update_vercel == 'true' }}
     runs-on: ubuntu-latest
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+      VERCEL_BACKEND_URL: https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
