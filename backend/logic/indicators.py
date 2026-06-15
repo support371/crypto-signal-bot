@@ -39,9 +39,10 @@ def ema(values: List[float], period: int) -> List[Optional[float]]:
 
     prev = seed
     for i in range(seed_idx + 1, len(values)):
-        val = values[i] * k + prev * (1 - k)
-        result[i] = val
-        prev = val
+        # Simplified formula: val = val_prev + k * (price - val_prev)
+        # This reduces from 2 multiplications to 1 and improves numerical stability.
+        prev += k * (values[i] - prev)
+        result[i] = prev
 
     return result
 
@@ -60,7 +61,8 @@ def last_ema(values: List[float], period: int) -> Optional[float]:
 
     # Progressively calculate EMA for the rest
     for i in range(period, len(values)):
-        val = values[i] * k + val * (1 - k)
+        # Optimized: val += k * (input - val)
+        val += k * (values[i] - val)
 
     return val
 
@@ -82,7 +84,6 @@ def rsi(values: List[float], period: int = 14) -> List[Optional[float]]:
     result: List[Optional[float]] = [None] * n
 
     inv_period = 1.0 / period
-    minus_one = float(period - 1)
 
     avg_gain = 0.0
     avg_loss = 0.0
@@ -114,8 +115,9 @@ def rsi(values: List[float], period: int = 14) -> List[Optional[float]]:
         gain = change if change > 0 else 0.0
         loss = -change if change < 0 else 0.0
 
-        avg_gain = (avg_gain * minus_one + gain) * inv_period
-        avg_loss = (avg_loss * minus_one + loss) * inv_period
+        # Optimized Wilder smoothing: avg += (val - avg) / period
+        avg_gain += (gain - avg_gain) * inv_period
+        avg_loss += (loss - avg_loss) * inv_period
 
         if avg_loss == 0:
             result[i] = 100.0 if avg_gain > 0 else 50.0
@@ -137,7 +139,6 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
         return None
 
     inv_period = 1.0 / period
-    minus_one_over_period = (period - 1) * inv_period
 
     # Initial averages
     avg_gain = 0.0
@@ -160,12 +161,12 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
     for i in range(period + 1, n):
         curr = values[i]
         change = curr - prev
-        avg_gain *= minus_one_over_period
-        avg_loss *= minus_one_over_period
-        if change > 0:
-            avg_gain += change * inv_period
-        elif change < 0:
-            avg_loss -= change * inv_period
+        gain = change if change > 0 else 0.0
+        loss = -change if change < 0 else 0.0
+
+        # Optimized Wilder smoothing: avg += (val - avg) / period
+        avg_gain += (gain - avg_gain) * inv_period
+        avg_loss += (loss - avg_loss) * inv_period
         prev = curr
 
     if avg_loss == 0:
@@ -206,11 +207,11 @@ def macd(
     # 1. Seed fast and slow EMAs
     ema_f = sum(values[:fast]) / fast
     for i in range(fast, p_max):
-        ema_f = values[i] * k_fast + ema_f * (1 - k_fast)
+        ema_f += k_fast * (values[i] - ema_f)
 
     ema_s = sum(values[:slow]) / slow
     for i in range(slow, p_max):
-        ema_s = values[i] * k_slow + ema_s * (1 - k_slow)
+        ema_s += k_slow * (values[i] - ema_s)
 
     # First MACD value at index p_max - 1
     m_val = ema_f - ema_s
@@ -225,8 +226,8 @@ def macd(
 
     while curr < n and curr < signal_start_idx:
         v = values[curr]
-        ema_f = v * k_fast + ema_f * (1 - k_fast)
-        ema_s = v * k_slow + ema_s * (1 - k_slow)
+        ema_f += k_fast * (v - ema_f)
+        ema_s += k_slow * (v - ema_s)
         m_val = ema_f - ema_s
         macd_line[curr] = m_val
         macd_sum += m_val
@@ -235,8 +236,8 @@ def macd(
     if curr == signal_start_idx and curr < n:
         # Seed signal SMA at signal_start_idx
         v = values[curr]
-        ema_f = v * k_fast + ema_f * (1 - k_fast)
-        ema_s = v * k_slow + ema_s * (1 - k_slow)
+        ema_f += k_fast * (v - ema_f)
+        ema_s += k_slow * (v - ema_s)
         m_val = ema_f - ema_s
         macd_line[curr] = m_val
         macd_sum += m_val
@@ -249,10 +250,10 @@ def macd(
         # 3. Process remaining bars
         for i in range(curr, n):
             v = values[i]
-            ema_f = v * k_fast + ema_f * (1 - k_fast)
-            ema_s = v * k_slow + ema_s * (1 - k_slow)
+            ema_f += k_fast * (v - ema_f)
+            ema_s += k_slow * (v - ema_s)
             m_val = ema_f - ema_s
-            sig_ema = m_val * k_sig + sig_ema * (1 - k_sig)
+            sig_ema += k_sig * (m_val - sig_ema)
 
             macd_line[i] = m_val
             signal_line[i] = sig_ema
@@ -291,11 +292,11 @@ def last_macd(
     # Seed short period EMA first, then progress it to p_max-1
     ema_f = sum(values[:fast]) / fast
     for i in range(fast, p_max):
-        ema_f = values[i] * k_fast + ema_f * (1 - k_fast)
+        ema_f += k_fast * (values[i] - ema_f)
 
     ema_s = sum(values[:slow]) / slow
     for i in range(slow, p_max):
-        ema_s = values[i] * k_slow + ema_s * (1 - k_slow)
+        ema_s += k_slow * (values[i] - ema_s)
 
     # Both EMAs are now at index p_max - 1. Calculate first MACD value.
     macd_val = ema_f - ema_s
@@ -306,8 +307,8 @@ def last_macd(
     curr = p_max
     while len(macd_history) < signal_period:
         v = values[curr]
-        ema_f = v * k_fast + ema_f * (1 - k_fast)
-        ema_s = v * k_slow + ema_s * (1 - k_slow)
+        ema_f += k_fast * (v - ema_f)
+        ema_s += k_slow * (v - ema_s)
         macd_val = ema_f - ema_s
         macd_history.append(macd_val)
         curr += 1
@@ -324,10 +325,10 @@ def last_macd(
     # 3. Process remaining bars iteratively
     for i in range(curr, n):
         v = values[i]
-        ema_f = v * k_fast + ema_f * (1 - k_fast)
-        ema_s = v * k_slow + ema_s * (1 - k_slow)
+        ema_f += k_fast * (v - ema_f)
+        ema_s += k_slow * (v - ema_s)
         macd_val = ema_f - ema_s
-        sig_ema = macd_val * k_sig + sig_ema * (1 - k_sig)
+        sig_ema += k_sig * (macd_val - sig_ema)
 
         if i >= n - count:
             results.append((macd_val, sig_ema, macd_val - sig_ema))
@@ -365,6 +366,7 @@ def bollinger_bands(
     # Use rolling sums to achieve O(n) complexity instead of O(n * period)
     current_sum = 0.0
     current_sq_sum = 0.0
+    inv_period = 1.0 / period
 
     for i in range(n):
         val = values[i]
@@ -380,8 +382,8 @@ def bollinger_bands(
         if i >= period - 1:
             # Calculate SMA and Variance
             # Variance = E[X^2] - (E[X])^2
-            sma = current_sum / period
-            variance = (current_sq_sum / period) - (sma * sma)
+            sma = current_sum * inv_period
+            variance = (current_sq_sum * inv_period) - (sma * sma)
             # Safeguard against tiny negative numbers due to floating point precision
             std = max(variance, 0.0) ** 0.5
 
@@ -407,8 +409,9 @@ def last_bollinger(
 
     # We only need the last 'period' values
     window = values[-period:]
-    sma = sum(window) / period
-    variance = sum((x - sma) ** 2 for x in window) / period
+    inv_period = 1.0 / period
+    sma = sum(window) * inv_period
+    variance = sum((x - sma) ** 2 for x in window) * inv_period
     std = max(variance, 0.0) ** 0.5
 
     return sma + num_std * std, sma, sma - num_std * std
@@ -437,7 +440,6 @@ def atr(
 
     result: List[Optional[float]] = [None] * n
     inv_period = 1.0 / period
-    minus_one = float(period - 1)
 
     # Seed with simple average of first `period` TRs
     tr_sum = 0.0
@@ -468,7 +470,8 @@ def atr(
         if lpc > tr:
             tr = lpc
 
-        val = (val * minus_one + tr) * inv_period
+        # Optimized Wilder smoothing: val += (tr - val) / period
+        val += (tr - val) * inv_period
         result[i] = val
 
     return result
@@ -530,6 +533,6 @@ def last_atr(
             tr = lpc
 
         # Smoothed ATR update rule: ATR_i = ATR_{i-1} + (TR_i - ATR_{i-1}) / period
-        val = val + (tr - val) * inv_period
+        val += (tr - val) * inv_period
 
     return val
