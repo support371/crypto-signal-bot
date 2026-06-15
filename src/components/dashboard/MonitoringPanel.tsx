@@ -67,8 +67,10 @@ function ProbeRow({ name, entry }: { name: string; entry: ProbeEntry }) {
 }
 
 export function MonitoringPanel({ status, isLoading, onRunNow, onRefetch }: MonitoringPanelProps) {
-  const probeCount = status ? Object.keys(status.probes).length : 0;
-  const failCount  = status ? Object.values(status.probes).filter(p => p.ok === false).length : 0;
+  const probes = status?.probes ?? {};
+  const probeEntries = Object.entries(probes);
+  const probeCount = probeEntries.length;
+  const failCount = probeEntries.filter(([, p]) => p.ok === false).length;
 
   return (
     <div className="cyber-card p-4 space-y-3">
@@ -85,8 +87,7 @@ export function MonitoringPanel({ status, isLoading, onRunNow, onRefetch }: Moni
           {status && (
             <Badge
               variant={status.overall_ok ? 'outline' : 'destructive'}
-              className={cn(
-                'text-[10px] px-1.5 py-0',
+              className={cn(\n                'text-[10px] px-1.5 py-0',
                 status.overall_ok && 'border-accent/50 text-accent'
               )}
             >
@@ -121,11 +122,11 @@ export function MonitoringPanel({ status, isLoading, onRunNow, onRefetch }: Moni
       {/* Meta */}
       {status && (
         <div className="flex items-center gap-3 text-[10px] font-mono text-muted-foreground">
-          <span>INTERVAL {status.probe_interval}s</span>
-          <span>RUNS #{status.run_count}</span>
-          {status.last_run_at > 0 && (
+          <span>INTERVAL {status.probe_interval ?? '—#}s</span>
+          <span>RUNS #{status.run_count ?? 0}</span>
+          {(status.last_run_at ?? 0) > 0 && (
             <span>
-              LAST {new Date(status.last_run_at * 1000).toLocaleTimeString([], {
+              LAST {new Date((status.last_run_at ?? 0) * 1000).toLocaleTimeString([], {
                 hour: '2-digit', minute: '2-digit', second: '2-digit'
               })}
             </span>
@@ -145,7 +146,7 @@ export function MonitoringPanel({ status, isLoading, onRunNow, onRefetch }: Moni
         </div>
       ) : status && probeCount > 0 ? (
         <div className="space-y-1.5">
-          {Object.entries(status.probes).map(([name, entry]) => (
+          {probeEntries.map((name, entry]) => (
             <ProbeRow key={name} name={name} entry={entry} />
           ))}
         </div>
@@ -158,7 +159,7 @@ export function MonitoringPanel({ status, isLoading, onRunNow, onRefetch }: Moni
       {/* Error details */}
       {status && failCount > 0 && (
         <div className="space-y-1">
-          {Object.entries(status.probes)
+          {probeEntries
             .filter(([, e]) => !e.ok && e.error)
             .map(([name, entry]) => (
               <p key={name} className="text-[10px] font-mono text-destructive/80 truncate">
