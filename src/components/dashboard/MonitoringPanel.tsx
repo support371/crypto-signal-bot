@@ -87,7 +87,8 @@ export function MonitoringPanel({ status, isLoading, onRunNow, onRefetch }: Moni
           {status && (
             <Badge
               variant={status.overall_ok ? 'outline' : 'destructive'}
-              className={cn(\n                'text-[10px] px-1.5 py-0',
+              className={cn(
+                'text-[10px] px-1.5 py-0',
                 status.overall_ok && 'border-accent/50 text-accent'
               )}
             >
@@ -122,7 +123,7 @@ export function MonitoringPanel({ status, isLoading, onRunNow, onRefetch }: Moni
       {/* Meta */}
       {status && (
         <div className="flex items-center gap-3 text-[10px] font-mono text-muted-foreground">
-          <span>INTERVAL {status.probe_interval ?? '—#}s</span>
+          <span>INTERVAL {status.probe_interval ?? '—'}s</span>
           <span>RUNS #{status.run_count ?? 0}</span>
           {(status.last_run_at ?? 0) > 0 && (
             <span>
@@ -146,7 +147,7 @@ export function MonitoringPanel({ status, isLoading, onRunNow, onRefetch }: Moni
         </div>
       ) : status && probeCount > 0 ? (
         <div className="space-y-1.5">
-          {probeEntries.map((name, entry]) => (
+          {probeEntries.map(([name, entry]) => (
             <ProbeRow key={name} name={name} entry={entry} />
           ))}
         </div>
