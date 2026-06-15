@@ -1,7 +1,9 @@
 const token = process.env.VERCEL_TOKEN;
 const projectId = process.env.VERCEL_PROJECT_ID;
 const teamId = process.env.VERCEL_TEAM_ID;
-const backendUrl = process.env.VERCEL_BACKEND_URL ?? "https://crypto-signal-bot-api.workers.dev";
+const backendUrl =
+  process.env.VERCEL_BACKEND_URL ??
+  "https://crypto-signal-bot-api.gr8r9bfzry.workers.dev";
 
 if (!token || !projectId) {
   throw new Error("VERCEL_TOKEN and VERCEL_PROJECT_ID secrets are required to update Vercel automatically.");
