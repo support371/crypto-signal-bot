@@ -1,4 +1,4 @@
-const baseUrl = process.argv[2] ?? "https://crypto-signal-bot-api.workers.dev";
+const baseUrl = process.argv[2] ?? "https://crypto-signal-bot-api.gr8r9bfzry.workers.dev";
 
 const checks = [
   ["GET", "/healthz", 200, (body) => body.status === "ok"],
