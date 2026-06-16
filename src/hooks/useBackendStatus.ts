@@ -1,32 +1,27 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchBackendJson, getBackendBaseUrl } from '@/lib/backend';
 
-/**
- * BackendHealth represents the health response from /health.
- * The backend may return a minimal payload, so most fields are optional.
- */
 export interface BackendHealth {
   status?: string;
   service?: string;
   runtime?: string;
   mode?: string;
+  trading_mode?: string;
   network?: string;
   uptime_seconds?: number;
-  // Extended fields (may not be present in minimal response)
   kill_switch_active?: boolean;
   kill_switch_reason?: string | null;
   api_error_count?: number;
   failed_order_count?: number;
   halted?: boolean;
   guardian_triggered?: boolean;
+  triggered?: boolean;
+  reason?: string | null;
   market_data_mode?: string;
   market_data_connected?: boolean;
   market_data_source?: string;
 }
 
-/**
- * Normalized BackendHealth with safe defaults for dashboard display.
- */
 export interface NormalizedBackendHealth {
   status: string;
   service: string;
@@ -71,8 +66,19 @@ export interface BackendExchangeStatus {
 }
 
 interface BalanceResponse {
-  balances: Record<string, number>;
-  positions: Record<string, number>;
+  balances?: Record<string, number>;
+  positions?: Record<string, number>;
+  balance_usdt?: number | string;
+  free?: number | string;
+  total?: number | string;
+}
+
+interface PortfolioSummaryResponse {
+  cash_balance?: number | string;
+  balance_usdt?: number | string;
+  cash_usdt?: number | string;
+  equity?: number | string;
+  equity_usdt?: number | string;
 }
 
 export interface EndpointErrors {
@@ -96,40 +102,71 @@ export interface UseBackendStatusResult {
   refetch: () => Promise<void>;
 }
 
-/**
- * Normalize a raw /health response into a consistent shape with safe defaults.
- */
+function numberOr(value: unknown, fallback = 0): number {
+  const parsed = typeof value === 'number' ? value : Number.parseFloat(String(value ?? ''));
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function firstNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    const parsed = typeof value === 'number' ? value : Number.parseFloat(String(value ?? ''));
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
 function normalizeHealth(raw: BackendHealth): NormalizedBackendHealth {
+  const triggered = raw.kill_switch_active ?? raw.guardian_triggered ?? raw.triggered ?? false;
   return {
     status: raw.status ?? 'unknown',
     service: raw.service ?? 'crypto-signal-bot-backend',
-    runtime: raw.runtime ?? 'unknown',
-    mode: raw.mode ?? 'paper',
+    runtime: raw.runtime ?? 'cloudflare-workers',
+    mode: raw.mode ?? raw.trading_mode ?? 'paper',
     network: raw.network ?? 'testnet',
     uptime_seconds: raw.uptime_seconds ?? 0,
-    kill_switch_active: raw.kill_switch_active ?? false,
-    kill_switch_reason: raw.kill_switch_reason ?? null,
+    kill_switch_active: Boolean(triggered),
+    kill_switch_reason: raw.kill_switch_reason ?? raw.reason ?? null,
     api_error_count: raw.api_error_count ?? 0,
     failed_order_count: raw.failed_order_count ?? 0,
-    halted: raw.halted ?? false,
-    guardian_triggered: raw.guardian_triggered ?? false,
-    market_data_mode: raw.market_data_mode ?? 'paper',
-    market_data_connected: raw.market_data_connected ?? false,
-    market_data_source: raw.market_data_source ?? 'health',
+    halted: raw.halted ?? Boolean(triggered),
+    guardian_triggered: raw.guardian_triggered ?? Boolean(triggered),
+    market_data_mode: raw.market_data_mode ?? 'live_public_paper',
+    market_data_connected: raw.market_data_connected ?? true,
+    market_data_source: raw.market_data_source ?? 'coinbase',
   };
 }
 
-/**
- * useBackendStatus hook with resilient endpoint handling.
- *
- * Rules:
- * - /health is the source of truth for backend connectivity.
- * - If /health succeeds, isConnected = true.
- * - /balance, /config, /exchange/status are optional diagnostics.
- * - If an optional endpoint fails, keep previous value or set safe default,
- *   but do NOT mark the whole backend offline.
- * - Exposes per-endpoint errors for diagnostics.
- */
+function normalizeConfig(raw: Partial<BackendConfig> & Record<string, unknown>): BackendConfig {
+  return {
+    trading_mode: String(raw.trading_mode ?? raw.mode ?? 'paper'),
+    network: String(raw.network ?? 'testnet'),
+    adapter: String(raw.adapter ?? raw.market_data_source ?? 'coinbase_public'),
+    auth_enabled: Boolean(raw.auth_enabled ?? false),
+    rate_limit_rpm: numberOr(raw.rate_limit_rpm, 60),
+    paper_use_live_market_data: Boolean(raw.paper_use_live_market_data ?? raw.market_data_source ?? true),
+  };
+}
+
+function normalizeExchangeStatus(raw: Partial<BackendExchangeStatus> & Record<string, unknown>): BackendExchangeStatus {
+  const status = String(raw.status ?? '').toLowerCase();
+  const connected = Boolean(raw.connected ?? raw.public_market_data ?? status.includes('paper') ?? true);
+  return {
+    trading_mode: String(raw.trading_mode ?? raw.mode ?? 'paper'),
+    execution_mode: String(raw.execution_mode ?? 'paper'),
+    paper_use_live_market_data: Boolean(raw.paper_use_live_market_data ?? raw.public_market_data ?? true),
+    exchange: typeof raw.exchange === 'string' ? raw.exchange : 'coinbase_public',
+    market_data_mode: String(raw.market_data_mode ?? 'live_public_paper'),
+    connected,
+    connection_state: String(raw.connection_state ?? (connected ? 'connected' : 'degraded')),
+    fallback_active: Boolean(raw.fallback_active ?? false),
+    last_update_ts: firstNumber(raw.last_update_ts) ?? Date.now(),
+    last_error: typeof raw.last_error === 'string' ? raw.last_error : null,
+    stale: Boolean(raw.stale ?? false),
+    symbols: Array.isArray(raw.symbols) ? raw.symbols.map(String) : ['BTC', 'ETH', 'SOL', 'BNB'],
+    source: String(raw.source ?? raw.public_market_data ?? 'coinbase'),
+  };
+}
+
 export function useBackendStatus(pollIntervalMs = 30000): UseBackendStatusResult {
   const [health, setHealth] = useState<NormalizedBackendHealth | null>(null);
   const [config, setConfig] = useState<BackendConfig | null>(null);
@@ -156,69 +193,69 @@ export function useBackendStatus(pollIntervalMs = 30000): UseBackendStatusResult
       exchangeStatusError: null,
     };
 
-    // Use Promise.allSettled for resilient fetching
     const [healthResult, balanceResult, configResult, exchangeResult, portfolioResult] = await Promise.allSettled([
       fetchBackendJson<BackendHealth>('/health'),
       fetchBackendJson<BalanceResponse>('/balance'),
-      fetchBackendJson<BackendConfig>('/config'),
-      fetchBackendJson<BackendExchangeStatus>('/exchange/status'),
-      fetchBackendJson<{ cash_balance: number; equity: number }>('/api/v1/portfolio'),
+      fetchBackendJson<Record<string, unknown>>('/config'),
+      fetchBackendJson<Record<string, unknown>>('/exchange/status'),
+      fetchBackendJson<PortfolioSummaryResponse>('/api/v1/portfolio'),
     ]);
 
-    // /health is the source of truth for connectivity
     if (healthResult.status === 'fulfilled') {
-      console.log('[v0] Health check succeeded:', healthResult.value);
       const normalized = normalizeHealth(healthResult.value);
       setHealth(normalized);
-      setIsConnected(true);
+      setIsConnected(normalized.status === 'ok' || normalized.status === 'healthy' || normalized.status === 'unknown');
       setError(null);
       setLastSuccessfulHealthAt(new Date());
     } else {
-      console.log('[v0] Health check failed:', healthResult.reason);
       const healthErr = healthResult.reason instanceof Error
         ? healthResult.reason.message
         : 'Failed to reach backend';
       newErrors.healthError = healthErr;
       setIsConnected(false);
       setError(healthErr);
-      // Don't clear health data - keep last known state for reference
     }
 
-    // /balance + /api/v1/portfolio — prefer portfolio cash_balance as authoritative source
-    if (portfolioResult.status === 'fulfilled' && portfolioResult.value?.cash_balance !== undefined) {
-      // Portfolio endpoint is the authoritative source for paper balance
-      setPaperBalance(parseFloat(String(portfolioResult.value.cash_balance)));
+    if (portfolioResult.status === 'fulfilled') {
+      const balance = firstNumber(
+        portfolioResult.value.cash_balance,
+        portfolioResult.value.balance_usdt,
+        portfolioResult.value.cash_usdt,
+        portfolioResult.value.equity,
+        portfolioResult.value.equity_usdt,
+      );
+      if (balance !== null) setPaperBalance(balance);
     } else if (balanceResult.status === 'fulfilled') {
-      const rawUsdt = balanceResult.value?.balances?.USDT;
-      setPaperBalance(rawUsdt !== undefined ? parseFloat(String(rawUsdt)) : 0);
+      const rawUsdt = firstNumber(
+        balanceResult.value?.balances?.USDT,
+        balanceResult.value?.balance_usdt,
+        balanceResult.value?.free,
+        balanceResult.value?.total,
+      );
+      if (rawUsdt !== null) setPaperBalance(rawUsdt);
     } else {
       const balErr = balanceResult.reason instanceof Error
         ? balanceResult.reason.message
         : 'Failed to fetch balance';
       newErrors.balanceError = balErr;
-      // Keep previous paperBalance value
     }
 
-    // /config - optional, keep previous value on failure
     if (configResult.status === 'fulfilled') {
-      setConfig(configResult.value);
+      setConfig(normalizeConfig(configResult.value));
     } else {
       const configErr = configResult.reason instanceof Error
         ? configResult.reason.message
         : 'Failed to fetch config';
       newErrors.configError = configErr;
-      // Keep previous config value
     }
 
-    // /exchange/status - optional, keep previous value on failure
     if (exchangeResult.status === 'fulfilled') {
-      setExchangeStatus(exchangeResult.value);
+      setExchangeStatus(normalizeExchangeStatus(exchangeResult.value));
     } else {
       const exchErr = exchangeResult.reason instanceof Error
         ? exchangeResult.reason.message
         : 'Failed to fetch exchange status';
       newErrors.exchangeStatusError = exchErr;
-      // Keep previous exchangeStatus value
     }
 
     setEndpointErrors(newErrors);
