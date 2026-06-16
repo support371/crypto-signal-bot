@@ -149,7 +149,9 @@ function normalizeConfig(raw: Partial<BackendConfig> & Record<string, unknown>):
 
 function normalizeExchangeStatus(raw: Partial<BackendExchangeStatus> & Record<string, unknown>): BackendExchangeStatus {
   const status = String(raw.status ?? '').toLowerCase();
-  const connected = Boolean(raw.connected ?? raw.public_market_data ?? status.includes('paper') ?? true);
+  const connected = raw.connected !== undefined || raw.public_market_data !== undefined
+    ? Boolean(raw.connected ?? raw.public_market_data)
+    : status.includes('paper') || status === '';
   return {
     trading_mode: String(raw.trading_mode ?? raw.mode ?? 'paper'),
     execution_mode: String(raw.execution_mode ?? 'paper'),
