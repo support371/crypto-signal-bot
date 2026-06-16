@@ -33,3 +33,7 @@
 ## 2026-07-01 - [RSI Correctness on Flat Series]
 **Learning:** A common edge case in RSI implementations is a flat price series (zero gains and zero losses). If not handled explicitly, dividing by a zero average loss can lead to incorrect results (like 100.0) or errors. Technicially, if both gain and loss are zero, RSI should be 50.0.
 **Action:** Always handle the `avg_loss == 0` case in RSI by checking if `avg_gain` is also zero; return 50.0 if both are zero, and 100.0 only if `avg_gain > 0`.
+
+## 2026-07-08 - [Algebraic Simplification and Branch Removal in Hot Loops]
+**Learning:** In Python, the number of operations and branches in a tight loop significantly impacts performance. Replacing `val = x * k + val * (1 - k)` with `val += k * (x - val)` reduces multiplications. Separately, unrolling the initial phase of a rolling window calculation to remove `if i >= period` checks from the main loop eliminates thousands of branch mispredictions and comparisons.
+**Action:** Always use the `val += k * (x - val)` pattern for EMA/Wilder smoothing and unroll initial window seeding to keep the main processing loop branch-free.
