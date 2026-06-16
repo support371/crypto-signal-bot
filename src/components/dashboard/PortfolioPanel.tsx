@@ -29,24 +29,28 @@ interface QuickTradeProps {
 function QuickTrade({ symbol, signal, risk, price, tradingMode, onFilled }: QuickTradeProps) {
   const [submitting, setSubmitting] = useState(false);
 
-  const canTrade = signal && risk && risk.approved && risk.positionSize > 0;
+  const canTrade = signal && risk && risk.approved && risk.positionSize > 0 && price > 0;
 
   const handleTrade = async (side: 'BUY' | 'SELL') => {
     if (!risk) return;
+    if (tradingMode === 'live') {
+      toast.error('Live execution is disabled. Paper mode is the only enabled execution path.');
+      return;
+    }
     setSubmitting(true);
     try {
       const qty = price > 0 ? Number(((risk.positionSize * 1000) / price).toFixed(6)) : 0.001;
-      const executionMode = tradingMode === 'live' ? 'live' : 'paper';
-      await fetchBackendJson(`/intent/${executionMode}`, {
+      await fetchBackendJson('/intent/paper', {
         method: 'POST',
         body: JSON.stringify({
           symbol: `${symbol}USDT`,
           side,
           order_type: 'MARKET',
           quantity: Math.max(qty, 0.0001),
+          price,
         }),
       });
-      toast.success(`${executionMode.toUpperCase()} ${side} submitted for ${symbol}`);
+      toast.success(`PAPER ${side} submitted for ${symbol}`);
       onFilled();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Trade failed');
@@ -70,7 +74,7 @@ function QuickTrade({ symbol, signal, risk, price, tradingMode, onFilled }: Quic
         )}
         onClick={() => handleTrade(side)}
         disabled={submitting || !canTrade}
-        title={!canTrade ? 'Signal not approved for trading' : `Execute ${tradingMode} ${side}`}
+        title={!canTrade ? 'Signal, risk, and live price must be ready for paper trading' : `Execute paper ${side}`}
       >
         {submitting ? (
           <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
@@ -79,7 +83,7 @@ function QuickTrade({ symbol, signal, risk, price, tradingMode, onFilled }: Quic
         ) : (
           <TrendingDown className="w-3 h-3 mr-1" />
         )}
-        {tradingMode === 'live' ? 'LIVE' : 'PAPER'} {side}
+        PAPER {side}
       </Button>
     </div>
   );
@@ -90,7 +94,7 @@ const compact = new Intl.NumberFormat('en-US', { maximumFractionDigits: 6 });
 
 function orderTimeLabel(ts: number): string {
   const d = new Date(ts * 1000);
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 function statusColor(status: string): string {
@@ -147,29 +151,9 @@ export function PortfolioPanel({
   const recentOrders: PaperOrder[] = (portfolio?.orders ?? []).slice(-5).reverse();
 
   const handleWithdraw = async () => {
-    const amount = Number(withdrawAmount);
-    if (!withdrawAsset.trim() || !withdrawAddress.trim() || !Number.isFinite(amount) || amount <= 0) {
-      toast.error('Enter a valid asset, amount, and destination');
-      return;
-    }
-
     setWithdrawing(true);
     try {
-      await fetchBackendJson('/withdraw', {
-        method: 'POST',
-        body: JSON.stringify({
-          asset: withdrawAsset.trim().toUpperCase(),
-          amount,
-          address: withdrawAddress.trim(),
-        }),
-      });
-      toast.success(`Paper withdrawal recorded for ${amount} ${withdrawAsset.trim().toUpperCase()}`);
-      setWithdrawAmount('');
-      setWithdrawAddress('paper-vault');
-      setWithdrawOpen(false);
-      onActionComplete?.();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Withdraw failed');
+      toast.error('Withdrawals are blocked by the paper-safety release. The backend /withdraw route must remain HTTP 403.');
     } finally {
       setWithdrawing(false);
     }
@@ -191,9 +175,10 @@ export function PortfolioPanel({
               variant="ghost"
               className="h-7 px-2 text-[11px] font-mono"
               onClick={() => setWithdrawOpen(true)}
+              title="Withdrawals are blocked in paper-safety mode"
             >
               <Landmark className="w-3 h-3 mr-1" />
-              WITHDRAW
+              WITHDRAW BLOCKED
             </Button>
             <button
               className="text-muted-foreground hover:text-foreground transition-colors"
@@ -206,7 +191,6 @@ export function PortfolioPanel({
         )}
       </div>
 
-      {/* Balances */}
       <div className="space-y-2 mb-4">
         <div className="flex justify-between items-center">
           <span className="text-xs text-muted-foreground font-mono">USDT</span>
@@ -225,7 +209,6 @@ export function PortfolioPanel({
         )}
       </div>
 
-      {/* Recent orders */}
       {recentOrders.length > 0 && (
         <div className="border-t border-border/50 pt-3">
           <div className="flex items-center gap-1.5 mb-2">
@@ -257,7 +240,6 @@ export function PortfolioPanel({
         </div>
       )}
 
-      {/* Quick trade */}
       <QuickTrade
         symbol={selectedSymbol}
         signal={signal ?? null}
@@ -270,13 +252,13 @@ export function PortfolioPanel({
       <Dialog open={withdrawOpen} onOpenChange={setWithdrawOpen}>
         <DialogContent className="sm:max-w-[420px] bg-card border-border">
           <DialogHeader>
-            <DialogTitle>Record Paper Withdrawal</DialogTitle>
+            <DialogTitle>Withdrawals Blocked</DialogTitle>
             <DialogDescription>
-              This reduces the paper portfolio balance and writes an audit entry through the backend.
+              Paper mode keeps all withdrawals disabled. This protects the release while still allowing portfolio, signal, and paper-order testing.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
+          <div className="space-y-4 opacity-60">
             <div className="space-y-2">
               <Label htmlFor="withdraw-asset">Asset</Label>
               <Input
@@ -285,6 +267,7 @@ export function PortfolioPanel({
                 onChange={(event) => setWithdrawAsset(event.target.value)}
                 placeholder="USDT"
                 autoComplete="off"
+                disabled
               />
             </div>
             <div className="space-y-2">
@@ -298,6 +281,7 @@ export function PortfolioPanel({
                 onChange={(event) => setWithdrawAmount(event.target.value)}
                 placeholder="250"
                 autoComplete="off"
+                disabled
               />
             </div>
             <div className="space-y-2">
@@ -308,16 +292,17 @@ export function PortfolioPanel({
                 onChange={(event) => setWithdrawAddress(event.target.value)}
                 placeholder="paper-vault"
                 autoComplete="off"
+                disabled
               />
             </div>
           </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setWithdrawOpen(false)} disabled={withdrawing}>
-              Cancel
+              Close
             </Button>
-            <Button onClick={handleWithdraw} disabled={withdrawing}>
-              {withdrawing ? 'Submitting...' : 'Record Withdrawal'}
+            <Button onClick={handleWithdraw} disabled={withdrawing} variant="destructive">
+              Confirm Blocked
             </Button>
           </DialogFooter>
         </DialogContent>
