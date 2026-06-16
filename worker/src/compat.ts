@@ -5,11 +5,24 @@ type Ctx = Context<{ Bindings: Env }>
 const PAPER = 'paper'
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'BNB']
 const FALLBACK: Record<string, number> = { BTC: 100000, ETH: 3500, SOL: 160, BNB: 650 }
+const COIN_META: Record<string, { id: string; name: string }> = {
+  BTC: { id: 'bitcoin', name: 'Bitcoin' },
+  ETH: { id: 'ethereum', name: 'Ethereum' },
+  SOL: { id: 'solana', name: 'Solana' },
+  BNB: { id: 'binancecoin', name: 'BNB' },
+  ADA: { id: 'cardano', name: 'Cardano' },
+  XRP: { id: 'ripple', name: 'XRP' },
+  DOT: { id: 'polkadot', name: 'Polkadot' },
+  AVAX: { id: 'avalanche-2', name: 'Avalanche' },
+  DOGE: { id: 'dogecoin', name: 'Dogecoin' },
+  LINK: { id: 'chainlink', name: 'Chainlink' },
+}
 
 type PositionRow = { id: number; symbol: string; side: string; quantity: number; entry_price: number; current_price: number | null; pnl: number | null; status: string; created_at: string }
 type OrderRow = { id: number; symbol: string; side: string; quantity: number; price: number; status: string; mode: string; created_at: string }
 type SignalRow = { symbol: string; side: string; confidence: number; entry_price?: number | null; stop_loss?: number | null; take_profit?: number | null; strategy?: string | null; created_at?: string }
 type OrderInput = { symbol?: string; side?: string; quantity?: number | string; qty?: number | string; amount?: number | string; notional_usdt?: number | string; price?: number | string }
+type PriceSnapshot = { symbol: string; price: number; source: string; stale: boolean; ts: number }
 
 const ts = () => Date.now()
 const day = () => new Date().toISOString().split('T')[0]
@@ -17,7 +30,11 @@ const n = (value: unknown, fallback = 0) => {
   const parsed = typeof value === 'number' ? value : parseFloat(String(value ?? ''))
   return Number.isFinite(parsed) ? parsed : fallback
 }
-const sym = (value?: string | null) => (value || 'BTC').toUpperCase().trim().replace('/USDT', '').replace('-USDT', '').replace('/USD', '').replace('-USD', '')
+const sym = (value?: string | null) => (value || 'BTC')
+  .toUpperCase()
+  .trim()
+  .replace(/[-/](USDT|USD)$/i, '')
+  .replace(/(USDT|USD)$/i, '')
 const safe = (env: Env) => ({ mode: PAPER, trading_mode: env.TRADING_MODE || PAPER, exchange_mode: env.EXCHANGE_MODE || PAPER, allow_mainnet: false, live_trading_enabled: false, withdrawals_enabled: false })
 
 async function body(c: Ctx): Promise<Record<string, unknown>> {
@@ -28,7 +45,23 @@ async function audit(env: Env, event: string, detail: unknown) {
   await env.DB.prepare('INSERT INTO audit_trail (event, detail) VALUES (?, ?)').bind(event, typeof detail === 'string' ? detail : JSON.stringify(detail)).run().catch(() => undefined)
 }
 
-async function getPrice(env: Env, value?: string | null) {
+function frontendPriceItem(item: PriceSnapshot) {
+  const meta = COIN_META[item.symbol] || { id: item.symbol.toLowerCase(), name: item.symbol }
+  return {
+    id: meta.id,
+    symbol: item.symbol,
+    name: meta.name,
+    price: item.price,
+    change24h: 0,
+    volume24h: 0,
+    marketCap: 0,
+    lastUpdated: new Date(item.ts).toISOString(),
+    stale: item.stale,
+    source: item.source,
+  }
+}
+
+async function getPrice(env: Env, value?: string | null): Promise<PriceSnapshot> {
   const symbol = sym(value)
   try {
     const res = await fetch(`https://api.coinbase.com/v2/prices/${symbol}-USD/spot`)
@@ -39,7 +72,7 @@ async function getPrice(env: Env, value?: string | null) {
       return { symbol, price, source: 'coinbase', stale: false, ts: ts() }
     }
   } catch (err) {
-    // Ignore fetch errors and fallback to cache
+    // Ignore fetch errors and fallback to cache.
   }
   const cached = await env.DB.prepare('SELECT price FROM market_snapshots WHERE symbol = ? ORDER BY created_at DESC LIMIT 1').bind(symbol).first<{ price: number }>().catch(() => null)
   return { symbol, price: cached?.price || FALLBACK[symbol] || 1, source: cached ? 'cache' : 'fallback', stale: true, ts: ts() }
@@ -66,7 +99,7 @@ async function openPositions(env: Env) {
 
 async function getOrders(env: Env, limit = 50) {
   const rows = await env.DB.prepare('SELECT * FROM orders ORDER BY created_at DESC LIMIT ?').bind(limit).all<OrderRow>().catch(() => ({ results: [] as OrderRow[] }))
-  return rows.results || []
+  return (rows.results || []).map((order) => ({ ...order, side: String(order.side).toUpperCase(), status: String(order.status).toUpperCase(), order_type: 'MARKET' }))
 }
 
 async function portfolio(env: Env) {
@@ -75,7 +108,7 @@ async function portfolio(env: Env) {
     const px = await getPrice(env, pos.symbol)
     const qty = n(pos.quantity)
     const pnl = (px.price - n(pos.entry_price)) * qty
-    return { ...pos, current_price: px.price, market_value_usdt: qty * px.price, unrealized_pnl: pnl, pnl }
+    return { ...pos, symbol: sym(pos.symbol), current_price: px.price, market_value_usdt: qty * px.price, unrealized_pnl: pnl, pnl }
   }))
   const earned = await env.DB.prepare('SELECT SUM(pnl) as realized_pnl FROM earnings').first<{ realized_pnl: number }>().catch(() => null)
   const positionValue = priced.reduce((sum, pos) => sum + n(pos.market_value_usdt), 0)
@@ -123,11 +156,11 @@ async function placePaperOrder(env: Env, input: OrderInput) {
       else await env.DB.prepare('UPDATE portfolio SET quantity = ?, current_price = ?, pnl = ? WHERE id = ?').bind(newQty, px, (px - n(lot.entry_price)) * newQty, lot.id).run()
       remaining -= closed
     }
-    await setBalance(env, cash + value + realized)
+    await setBalance(env, cash + value)
     await recordPnl(env, realized)
   }
-  await env.DB.prepare('INSERT INTO orders (symbol, side, quantity, price, status, mode) VALUES (?, ?, ?, ?, ?, ?)').bind(symbol, side, qty, px, 'filled', PAPER).run()
-  const result = { status: 'filled', id: `paper-${Date.now()}`, symbol, side, quantity: qty, price: px, notional_usdt: value, realized_pnl: realized, mode: PAPER, ts: ts() }
+  await env.DB.prepare('INSERT INTO orders (symbol, side, quantity, price, status, mode) VALUES (?, ?, ?, ?, ?, ?)').bind(symbol, side.toUpperCase(), qty, px, 'FILLED', PAPER).run()
+  const result = { status: 'FILLED', id: `paper-${Date.now()}`, symbol, side: side.toUpperCase(), quantity: qty, price: px, fill_price: px, notional_usdt: value, realized_pnl: realized, mode: PAPER, ts: ts() }
   await audit(env, 'paper_trade', result)
   return { status: 200 as const, body: result }
 }
@@ -135,7 +168,7 @@ async function placePaperOrder(env: Env, input: OrderInput) {
 async function latestSignal(env: Env, raw?: string | null, persist = false) {
   const symbol = sym(raw)
   const row = await env.DB.prepare('SELECT * FROM signals WHERE symbol = ? ORDER BY created_at DESC LIMIT 1').bind(symbol).first<SignalRow>().catch(() => null)
-  if (row && !persist) return { ...row, action: row.side, mode: PAPER, ts: ts() }
+  if (row && !persist) return { ...row, symbol, action: row.side, mode: PAPER, ts: ts() }
   const px = await getPrice(env, symbol)
   const snapshots = await env.DB.prepare('SELECT price FROM market_snapshots WHERE symbol = ? ORDER BY created_at DESC LIMIT 20').bind(symbol).all<{ price: number }>().catch(() => ({ results: [] as { price: number }[] }))
   const values = (snapshots.results || []).map((item) => n(item.price)).filter((value) => value > 0)
@@ -197,21 +230,36 @@ async function backtest(env: Env, input: Record<string, unknown>) {
 }
 
 export function registerCompatibilityRoutes(app: App) {
-  app.get('/', (c) => c.json({ service: 'crypto-signal-bot', status: 'ok', provider: 'cloudflare-worker', ...safe(c.env), ts: ts() }))
-  app.get('/api/health', (c) => c.json({ status: 'ok', ...safe(c.env), ts: ts() }))
+  app.get('/', (c) => c.json({ service: 'crypto-signal-bot', status: 'ok', provider: 'cloudflare-worker', runtime: 'cloudflare-workers', ...safe(c.env), ts: ts() }))
+  app.get('/api/health', (c) => c.json({ status: 'ok', service: 'crypto-signal-bot', runtime: 'cloudflare-workers', network: c.env.NETWORK || 'testnet', market_data_mode: 'live_public_paper', market_data_connected: true, market_data_source: 'coinbase', ...safe(c.env), ts: ts() }))
   app.get('/ping', (c) => c.json({ pong: true, status: 'ok', ...safe(c.env), ts: ts() }))
   app.get('/ready', (c) => c.json({ ready: true, status: 'ok', ...safe(c.env), ts: ts() }))
   app.get('/api/ready', (c) => c.json({ ready: true, status: 'ok', ...safe(c.env), ts: ts() }))
-  app.get('/version', (c) => c.json({ name: 'crypto-signal-bot-worker', version: '2.1.0-worker-compat', provider: 'cloudflare-worker', ...safe(c.env), ts: ts() }))
-  app.get('/config', (c) => c.json({ ...safe(c.env), market_data_source: c.env.MARKET_DATA_PUBLIC_EXCHANGE, starting_balance_usdt: n(c.env.PAPER_STARTING_BALANCE_USDT, 10000), guardian_max_drawdown_pct: n(c.env.GUARDIAN_MAX_DRAWDOWN_PCT, 15), ts: ts() }))
-  app.get('/config/snapshot', (c) => c.json({ config: { ...safe(c.env), market_data_source: c.env.MARKET_DATA_PUBLIC_EXCHANGE, supported_symbols: SYMBOLS }, ts: ts() }))
+  app.get('/version', (c) => c.json({ name: 'crypto-signal-bot-worker', version: '2.4.0-worker-compat', provider: 'cloudflare-worker', ...safe(c.env), ts: ts() }))
+  app.get('/config', (c) => c.json({ ...safe(c.env), network: c.env.NETWORK || 'testnet', adapter: 'coinbase_public', auth_enabled: false, rate_limit_rpm: n(c.env.RATE_LIMIT_RPM, 60), paper_use_live_market_data: true, market_data_source: c.env.MARKET_DATA_PUBLIC_EXCHANGE || 'coinbase', starting_balance_usdt: n(c.env.PAPER_STARTING_BALANCE_USDT, 10000), guardian_max_drawdown_pct: n(c.env.GUARDIAN_MAX_DRAWDOWN_PCT, 15), ts: ts() }))
+  app.get('/config/snapshot', (c) => c.json({ config: { ...safe(c.env), market_data_source: c.env.MARKET_DATA_PUBLIC_EXCHANGE || 'coinbase', supported_symbols: SYMBOLS }, ts: ts() }))
 
   app.get('/price', async (c) => c.json(await getPrice(c.env, c.req.query('symbol') || c.req.query('asset') || 'BTC')))
-  app.get('/prices/batch', async (c) => c.json({ prices: await Promise.all((c.req.query('symbols') || SYMBOLS.join(',')).split(',').map((item) => getPrice(c.env, item))), mode: PAPER, ts: ts() }))
+  app.get('/prices/batch', async (c) => {
+    const symbols = (c.req.query('symbols') || SYMBOLS.join(',')).split(',').map((item) => sym(item)).filter(Boolean)
+    const unique = Array.from(new Set(symbols))
+    const prices = await Promise.all(unique.map((item) => getPrice(c.env, item)))
+    return c.json({ prices: prices.map(frontendPriceItem), source: 'coinbase_public_worker', as_of: ts(), cached: prices.some((item) => item.stale), mode: PAPER })
+  })
   app.post('/market-state', async (c) => { const payload = await body(c); const selected = sym(String(payload.symbol || 'BTC')); return c.json({ price: await getPrice(c.env, selected), signal: await latestSignal(c.env, selected), portfolio: await portfolio(c.env), guardian: await guardian(c.env), mode: PAPER, ts: ts() }) })
   app.get('/signal/latest', async (c) => c.json(await latestSignal(c.env, c.req.query('symbol') || 'BTC')))
 
-  app.get('/balance', async (c) => { const value = await getBalance(c.env); return c.json({ asset: 'USDT', free: value, total: value, balance_usdt: value, mode: PAPER, ts: ts() }) })
+  app.get('/balance', async (c) => {
+    const value = await getBalance(c.env)
+    const p = await portfolio(c.env)
+    const positionRecord = (p.positions || []).reduce<Record<string, number>>((acc, pos: PositionRow) => {
+      const key = sym(pos.symbol)
+      const qty = n(pos.quantity)
+      if (key && qty > 0) acc[key] = (acc[key] || 0) + qty
+      return acc
+    }, {})
+    return c.json({ asset: 'USDT', free: value, total: value, balance_usdt: value, balances: { USDT: value, ...positionRecord }, positions: positionRecord, mode: PAPER, ts: ts() })
+  })
   app.get('/positions', async (c) => c.json({ positions: (await portfolio(c.env)).positions, mode: PAPER, ts: ts() }))
   app.get('/orders', async (c) => c.json({ orders: await getOrders(c.env), mode: PAPER, ts: ts() }))
   app.get('/api/v1/portfolio', async (c) => c.json(await portfolio(c.env)))
@@ -221,6 +269,7 @@ export function registerCompatibilityRoutes(app: App) {
   app.get('/api/v1/portfolio/equity-history', async (c) => { const start = n(c.env.PAPER_STARTING_BALANCE_USDT, 10000); return c.json({ equity_history: (await dailyPnl(c.env)).map((row) => ({ date: row.date, equity_usdt: start + n(row.cumulative_pnl), pnl: row.pnl })), mode: PAPER, ts: ts() }) })
   app.get('/api/v1/orders', async (c) => c.json({ orders: await getOrders(c.env), mode: PAPER, ts: ts() }))
   app.post('/api/v1/orders', async (c) => { const result = await placePaperOrder(c.env, await body(c)); return c.json(result.body, result.status) })
+  app.post('/intent/paper', async (c) => { const result = await placePaperOrder(c.env, await body(c)); return c.json(result.body, result.status) })
 
   app.get('/api/v1/console/status', async (c) => c.json({ status: 'online', runtime: 'cloudflare-worker', portfolio: await portfolio(c.env), guardian: await guardian(c.env), mode: PAPER, ts: ts() }))
   app.post('/api/v1/console/trade', async (c) => { const result = await placePaperOrder(c.env, await body(c)); return c.json(result.body, result.status) })
@@ -239,7 +288,7 @@ export function registerCompatibilityRoutes(app: App) {
   app.post('/backtest', async (c) => c.json(await backtest(c.env, await body(c))))
 
   app.get('/api/v1/monitor/status', (c) => c.json({ status: 'healthy', provider: 'cloudflare-worker', mode: PAPER, ts: ts() }))
-  app.get('/exchange/status', (c) => c.json({ status: 'paper_only', public_market_data: 'coinbase', live_execution: false, mode: PAPER, ts: ts() }))
+  app.get('/exchange/status', (c) => c.json({ status: 'paper_only', trading_mode: PAPER, execution_mode: PAPER, paper_use_live_market_data: true, exchange: 'coinbase_public', market_data_mode: 'live_public_paper', connected: true, connection_state: 'connected', fallback_active: false, last_update_ts: ts(), last_error: null, stale: false, symbols: SYMBOLS, source: 'coinbase', public_market_data: 'coinbase', live_execution: false, mode: PAPER, ts: ts() }))
   app.get('/exchange/supported', (c) => c.json({ exchanges: ['coinbase_public'], disabled_live_exchanges: ['binance', 'bitget', 'btcc'], mode: PAPER, ts: ts() }))
   app.get('/reconciliation/status', async (c) => c.json({ status: 'balanced', portfolio: await portfolio(c.env), mode: PAPER, ts: ts() }))
   app.get('/mainnet-gate/status', (c) => c.json({ status: 'closed', allow_mainnet: false, live_trading_enabled: false, withdrawals_enabled: false, mode: PAPER, ts: ts() }))

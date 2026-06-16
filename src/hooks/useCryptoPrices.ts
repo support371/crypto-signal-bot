@@ -24,6 +24,7 @@ const DEFAULT_COINS: CoinConfig[] = [
 ];
 
 const COIN_LOOKUP = new Map(DEFAULT_COINS.map((coin) => [coin.id, coin]));
+const COIN_BY_SYMBOL = new Map(DEFAULT_COINS.map((coin) => [coin.symbol, coin]));
 
 const COINGECKO_API = 'https://api.coingecko.com/api/v3/simple/price';
 
@@ -36,34 +37,53 @@ interface CoinGeckoResponse {
   };
 }
 
-interface BackendPriceResponse {
-  symbol: string;
+interface BatchPriceItem {
+  id?: string;
+  symbol?: string;
+  name?: string;
   price: number;
   change24h?: number;
   volume24h?: number;
   marketCap?: number;
+  lastUpdated?: string;
+  stale?: boolean;
+  ts?: number;
   timestamp?: number;
-  source?: string;
-  market_data_mode?: string;
-}
-
-interface BatchPriceItem {
-  id: string;
-  symbol: string;
-  name: string;
-  price: number;
-  change24h: number;
-  volume24h: number;
-  marketCap: number;
-  lastUpdated: string;
-  stale: boolean;
 }
 
 interface BatchPricesResponse {
-  prices: BatchPriceItem[];
-  source: string;
-  as_of: number;
-  cached: boolean;
+  prices?: BatchPriceItem[];
+  source?: string;
+  as_of?: number;
+  cached?: boolean;
+}
+
+function normalizeSymbol(symbol: unknown): string {
+  return String(symbol ?? '')
+    .toUpperCase()
+    .replace(/[-/](USDT|USD)$/i, '')
+    .replace(/(USDT|USD)$/i, '')
+    .trim();
+}
+
+function numberOr(value: unknown, fallback = 0): number {
+  const parsed = typeof value === 'number' ? value : Number.parseFloat(String(value ?? ''));
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function resolveCoin(item: BatchPriceItem): CoinConfig | null {
+  const symbol = normalizeSymbol(item.symbol);
+  if (symbol && COIN_BY_SYMBOL.has(symbol)) return COIN_BY_SYMBOL.get(symbol) ?? null;
+  if (item.id && COIN_LOOKUP.has(item.id)) return COIN_LOOKUP.get(item.id) ?? null;
+  return null;
+}
+
+function isoFromItem(item: BatchPriceItem): string {
+  const rawTs = item.timestamp ?? item.ts;
+  if (typeof rawTs === 'number' && Number.isFinite(rawTs)) {
+    return new Date(rawTs > 10_000_000_000 ? rawTs : rawTs * 1000).toISOString();
+  }
+  return item.lastUpdated ?? new Date().toISOString();
 }
 
 async function fetchFromCoinGecko(coins: CoinConfig[]): Promise<CryptoPrice[]> {
@@ -90,38 +110,42 @@ async function fetchFromCoinGecko(coins: CoinConfig[]): Promise<CryptoPrice[]> {
 
 async function fetchFromBackend(
   coins: CoinConfig[],
-  sessionBaselineRef: MutableRefObject<Map<string, number>>
+  sessionBaselineRef: MutableRefObject<Map<string, number>>,
 ): Promise<CryptoPrice[]> {
   if (coins.length === 0) return [];
 
-  // Optimization: Use batch endpoint instead of N individual calls
   const symbols = coins.map((c) => c.backendSymbol).join(',');
   const response = await fetchBackendJson<BatchPricesResponse>(
-    `/prices/batch?symbols=${encodeURIComponent(symbols)}`
+    `/prices/batch?symbols=${encodeURIComponent(symbols)}`,
   );
 
-  return response.prices.map((item) => {
-    // Maintain session baseline for change calculation if backend 24h change is missing or zero
-    if (!sessionBaselineRef.current.has(item.id)) {
-      sessionBaselineRef.current.set(item.id, item.price);
-    }
-    const baseline = sessionBaselineRef.current.get(item.id) || item.price;
-    const sessionChangePct = baseline === 0 ? 0 : ((item.price - baseline) / baseline) * 100;
+  const items = Array.isArray(response.prices) ? response.prices : [];
+  if (items.length === 0) throw new Error('Backend returned no prices');
 
-    const change24h =
-      typeof item.change24h === 'number' && Number.isFinite(item.change24h)
-        ? item.change24h
-        : sessionChangePct;
+  return coins.map((coin) => {
+    const item = items.find((candidate) => {
+      const resolved = resolveCoin(candidate);
+      return resolved?.id === coin.id;
+    });
+    const price = numberOr(item?.price);
+    if (!sessionBaselineRef.current.has(coin.id)) {
+      sessionBaselineRef.current.set(coin.id, price);
+    }
+    const baseline = sessionBaselineRef.current.get(coin.id) || price;
+    const sessionChangePct = baseline === 0 ? 0 : ((price - baseline) / baseline) * 100;
+    const change24h = typeof item?.change24h === 'number' && Number.isFinite(item.change24h)
+      ? item.change24h
+      : sessionChangePct;
 
     return {
-      id: item.id,
-      symbol: item.symbol,
-      name: item.name,
-      price: item.price,
+      id: item?.id ?? coin.id,
+      symbol: normalizeSymbol(item?.symbol) || coin.symbol,
+      name: item?.name ?? coin.name,
+      price,
       change24h: Number(change24h.toFixed(2)),
-      volume24h: item.volume24h,
-      marketCap: item.marketCap,
-      lastUpdated: item.lastUpdated,
+      volume24h: numberOr(item?.volume24h),
+      marketCap: numberOr(item?.marketCap),
+      lastUpdated: item ? isoFromItem(item) : new Date().toISOString(),
     } satisfies CryptoPrice;
   });
 }
@@ -160,13 +184,11 @@ export function useCryptoPrices(symbols?: string[], preferBackend = false) {
           setSource('coingecko');
         }
       } else {
-        // Try CoinGecko first for live data
         try {
           const live = await fetchFromCoinGecko(requestedCoins);
           setPrices(live);
           setSource('coingecko');
         } catch {
-          // Fall back to backend synthetic prices
           const synthetic = await fetchFromBackend(requestedCoins, sessionBaselineRef);
           setPrices(synthetic);
           setSource('backend');
