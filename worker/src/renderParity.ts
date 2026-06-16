@@ -306,7 +306,6 @@ async function backtest(env: Env, input: Record<string, unknown>) {
     max_drawdown_pct: 3.5,
     starting_balance_usdt: n(env.PAPER_STARTING_BALANCE_USDT, 10000),
     ending_balance_usdt: n(env.PAPER_STARTING_BALANCE_USDT, 10000) + pnl,
-    live_trading_enabled: false,
     ...safe(env),
     ts: ts(),
   }
