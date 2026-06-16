@@ -33,10 +33,6 @@ import { SurgePanel } from '@/components/dashboard/SurgePanel';
 import { useSurgeScanner } from '@/hooks/useSurgeScanner';
 import { useAuth } from '@/context/AuthContext';
 
-/**
- * DemoModeBanner displays a warning when running in demo mode.
- * Live trading is disabled in demo mode.
- */
 function DemoModeBanner() {
   return (
     <div className="bg-amber-500/90 text-black py-2 px-4 text-center font-mono text-sm">
@@ -45,10 +41,6 @@ function DemoModeBanner() {
   );
 }
 
-/**
- * DiagnosticsWarning displays a warning when optional endpoints fail
- * but the backend health check is still successful.
- */
 function DiagnosticsWarning({
   endpointErrors,
   backendUrl,
@@ -136,16 +128,9 @@ const Index = () => {
   });
   const selectedBackendSymbol = selectedCoin ? `${selectedCoin.symbol.toUpperCase()}USDT` : null;
 
-  // Auto-trade: fire an intent whenever signal flips and autoTradeEnabled is on.
-  // Use a ref to avoid re-firing on every render for the same signal direction.
   const lastAutoTradeSig = useRef<string | null>(null);
 
   useEffect(() => {
-    // Never allow live trading in demo mode
-    if (isDemoMode && systemMode === 'live') {
-      return;
-    }
-
     if (
       !settings.autoTradeEnabled ||
       !signal ||
@@ -154,6 +139,11 @@ const Index = () => {
       !selectedCoin ||
       health?.kill_switch_active
     ) {
+      return;
+    }
+
+    if (systemMode === 'live') {
+      toast.warning('Auto-trade skipped: live execution is disabled. Paper mode remains enforced.', { duration: 5000 });
       return;
     }
 
@@ -166,19 +156,19 @@ const Index = () => {
       ? Number(((risk.positionSize * 1000) / selectedCoin.price).toFixed(6))
       : 0.001;
 
-    const intentPath = systemMode === 'live' ? '/intent/live' : '/intent/paper';
-    fetchBackendJson(intentPath, {
+    fetchBackendJson('/intent/paper', {
       method: 'POST',
       body: JSON.stringify({
         symbol: `${selectedCoin.symbol.toUpperCase()}USDT`,
         side,
         order_type: 'MARKET',
         quantity: Math.max(qty, 0.0001),
+        price: selectedCoin.price,
       }),
     })
       .then(() => {
         toast.info(
-          `Auto-trade: ${systemMode} ${side} ${selectedCoin.symbol} (confidence ${signal.confidence}%)`,
+          `Auto-trade: paper ${side} ${selectedCoin.symbol} (confidence ${signal.confidence}%)`,
           { duration: 5000 }
         );
         refetchPortfolio();
@@ -187,11 +177,10 @@ const Index = () => {
         refetchStatus();
       })
       .catch(() => {
-        // Silently swallow — kill switch or risk rejection; next poll will re-evaluate.
+        // Silently swallow — guardian, balance, or risk rejection; next poll will re-evaluate.
       });
   }, [
     health?.kill_switch_active,
-    isDemoMode,
     refetchAudit,
     refetchMetrics,
     refetchPortfolio,
@@ -255,7 +244,9 @@ const Index = () => {
         refetchEarnings();
         refetchAudit();
         refetchMetrics();
-        if (!selectedBackendSymbol || msg.symbol === selectedBackendSymbol) {
+        const normalizedMsgSymbol = msg.symbol.toUpperCase().replace(/(USDT|USD)$/i, '');
+        const normalizedSelectedSymbol = selectedBackendSymbol?.replace(/(USDT|USD)$/i, '');
+        if (!normalizedSelectedSymbol || normalizedMsgSymbol === normalizedSelectedSymbol) {
           refreshLatestSignal();
         }
       }
@@ -279,9 +270,8 @@ const Index = () => {
   }, [refetchEarnings, refetchAudit, refetchMetrics]);
 
   const handleTickerUpdate = useCallback(
-    (msg: WsTickerMessage) => {
-      // Ticker updates drive the marquee values via WS — no action needed here
-      // as prices are fetched via REST. Could be used for real-time price overlay.
+    (_msg: WsTickerMessage) => {
+      // Ticker updates are currently consumed through REST refreshes.
     },
     []
   );
@@ -298,12 +288,10 @@ const Index = () => {
 
   const handleSettingsChange = (newSettings: UserSettings) => {
     setSettings(newSettings);
-    // Reset auto-trade guard so the new signal direction fires immediately.
     lastAutoTradeSig.current = null;
     toast.success('Settings updated successfully');
   };
 
-  // Backend readiness gate — show connecting screen before dashboard init
   const showReadinessGate = backendLoading && !isConnected && !health;
 
   const footerLabel = !isConnected
@@ -476,7 +464,7 @@ const Index = () => {
       <footer className="border-t border-border bg-muted/20 py-4 mt-8">
         <div className="container mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-2 text-xs text-muted-foreground font-mono">
           <span>
-            CRYPTO SIGNAL BOT v2.3
+            CRYPTO SIGNAL BOT v2.4
             {priceSource && (
               <span className="ml-2 opacity-60">
                 // PRICES: {priceSource === 'coingecko'
@@ -487,7 +475,7 @@ const Index = () => {
               </span>
             )}
             {settings.autoTradeEnabled && (
-              <span className="ml-2 text-accent opacity-80">// AUTO-TRADE ON</span>
+              <span className="ml-2 text-accent opacity-80">// AUTO-TRADE PAPER ON</span>
             )}
           </span>
           <span className="flex items-center gap-3">
