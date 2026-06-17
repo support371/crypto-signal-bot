@@ -1,0 +1,90 @@
+name: self-hosted-validate
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: self-hosted-validate-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TRADING_MODE: paper
+  EXCHANGE_MODE: paper
+  ALLOW_MAINNET: "false"
+  WORKER_SMOKE_BASE_URL: https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
+
+jobs:
+  validate:
+    name: Self-hosted paper-safe validation
+    runs-on: [self-hosted, cryptoops, linux]
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Confirm pape-safety environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$TRADING_MODE" = "paper"
+          test "$EXCHANGE_MODE" = "paper"
+          test "$ALLOW_MAINNET" = "false"
+          echo "Paper-safety environment confirmed."
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build frontend
+        env:
+          VITE_BACKEND_URL: /api
+          VITE_API_BASE_URL: /api
+        run: npm run build
+
+      - name: Install Worker dependencies
+        working-directory: worker
+        run: npm ci
+
+      - name: Build Worker
+        working-directory: worker
+        run: npm run build
+
+      - name: Verify Worker paper safety
+        working-directory: worker
+        run: npm run verify:paper-safety
+
+      - name: Read-only Worker safety smoke checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS "$WORKER_SMOKE_BASE_URL/healthz" | tee /tmp/worker-healthz.json
+          curl -fsS "$WORKER_SMOKE_BASE_URL/runtime/status" | tee /tmp/worker-runtime.json
+          curl -fsS "$WORKER_SMOKE_BASE_URL/guardian/status" | tee /tmp/worker-guardian.json
+          grep -q '"trading_mode":"paper"' /tmp/worker-runtime.json
+          grep -q '"exchange_mode":"paper"' /tmp/worker-runtime.json
+          grep -q '"allow_mainnet":false' /tmp/worker-runtime.json
+          grep -q '"live_trading_enabled":false' /tmp/worker-guardian.json
+          grep -q '"withdrawals_enabled":false' /tmp/worker-guardian.json
+      - name: Verify live and withdraw routes remain blocked
+        shell: bash
+        run: |
+          set -euo pipefail
+          live_status="$(curl -sS -o /tmp/live-block.json -w "%{http_code}" -X POST "$WORKER_SMOKE_BASE_URL/intent/live")"
+          withdraw_status="$(curl -sS -o /tmp/withdraw-block.json -w "%{http_code}" -X POST "$WORKER_SMOKE_BASE_URL/withdraw")"
+          test "$live_status" = "403"
+          test "$withdraw_status" = "403"
+          echo "Live and withdraw blocks verified."
