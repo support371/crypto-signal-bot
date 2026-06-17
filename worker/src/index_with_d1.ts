@@ -5,6 +5,21 @@ type D1ReadonlyRequest = {
   params?: unknown[]
 }
 
+function isSelectOnly(sql: string): boolean {
+  const stripped = sql
+    .replace(/--[^\n]*/g, ' ')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .trim();
+  const firstToken = stripped.split(/\s+/)[0].toUpperCase();
+  if (firstToken === 'SELECT') return true;
+  if (firstToken === 'WITH') {
+    const upper = stripped.toUpperCase();
+    const hasDml = /\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|REPLACE)\b/.test(upper);
+    return !hasDml;
+  }
+  return false;
+}
+
 async function handleReadonlyD1Query(request: Request, env: Env): Promise<Response> {
   let body: D1ReadonlyRequest
   try {
@@ -18,7 +33,7 @@ async function handleReadonlyD1Query(request: Request, env: Env): Promise<Respon
     return Response.json({ error: 'sql is required' }, { status: 400 })
   }
 
-  if (!sql.toUpperCase().startsWith('SELECT')) {
+  if (!isSelectOnly(sql)) {
     return Response.json(
       { error: 'Only SELECT queries are permitted on this endpoint' },
       { status: 400 },
