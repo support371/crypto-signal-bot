@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { streamClient, StreamEvent, StreamState } from '@/lib/streamClient';
 
 /** Returns live connection state for the /stream WebSocket. */
@@ -20,16 +20,19 @@ export function useStream(): StreamState {
   return state;
 }
 
-/** Subscribe to typed stream events. Handler must be stable (useCallback). */
+/** Subscribe to typed stream events without freezing the latest handler closure. */
 export function useStreamEvents(handler: (event: StreamEvent) => void): void {
-  const stableHandler = useCallback(handler, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const handlerRef = useRef(handler);
+  useEffect(() => {
+    handlerRef.current = handler;
+  });
 
   useEffect(() => {
     streamClient.acquire();
-    const unsub = streamClient.onEvent(stableHandler);
+    const unsub = streamClient.onEvent((event) => handlerRef.current(event));
     return () => {
       unsub();
       streamClient.release();
     };
-  }, [stableHandler]);
+  }, []);
 }
