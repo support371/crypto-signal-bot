@@ -241,6 +241,68 @@ paths:
                 type: object
                 additionalProperties: true
 
+  /repos/support371/crypto-signal-bot/git/refs:
+    post:
+      operationId: createBranch
+      summary: Create a new branch from a given SHA or existing ref
+      description: >
+        Use this to create feature branches before writing files.
+        Always branch from main. Never create branches named main or master.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - ref
+                - sha
+              properties:
+                ref:
+                  type: string
+                  description: Full ref name, e.g. refs/heads/feat/my-branch
+                sha:
+                  type: string
+                  description: The SHA to branch from (use latest main commit SHA)
+      responses:
+        "201":
+          description: Branch created
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /repos/support371/crypto-signal-bot/actions/workflows/{workflow_id}/dispatches:
+    post:
+      operationId: triggerWorkflowDispatch
+      summary: Trigger a GitHub Actions workflow run on a specific branch
+      parameters:
+        - name: workflow_id
+          in: path
+          required: true
+          schema:
+            type: string
+            description: Workflow file name, e.g. ci.yml
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - ref
+              properties:
+                ref:
+                  type: string
+                  description: Branch name to run the workflow on
+                inputs:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "204":
+          description: Workflow dispatch accepted
+
   /repos/support371/crypto-signal-bot/commits:
     get:
       operationId: listCommits

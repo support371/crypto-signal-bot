@@ -27,3 +27,7 @@ bucket_name = "crypto-signal-bot-storage"
 
 [triggers]
 crons = ["*/20 * * * *", "*/5 * * * *", "0 * * * *", "0 0 * * *"]
+
+[[kv_namespaces]]
+binding = "AGENT_MEMORY"
+id = "PLACEHOLDER_REPLACE_WITH_REAL_KV_ID"
