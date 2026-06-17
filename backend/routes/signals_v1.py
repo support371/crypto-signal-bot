@@ -132,11 +132,13 @@ async def evaluate_symbol_now(req: EvaluateRequest) -> SignalOut:
     strategy = _normalize_strategy(req.strategy)
     try:
         rec = await evaluate_signal(symbol, strategy=strategy)
-    except TypeError:
+    except TypeError as exc:
+        if "strategy" not in str(exc):
+            raise HTTPException(status_code=500, detail=str(exc))
         rec = await evaluate_signal(symbol)
         rec.metadata = dict(rec.metadata or {})
         rec.metadata["requested_strategy"] = strategy
-        rec.metadata["strategy_parameter_supported"] = True
+        rec.metadata["strategy_parameter_supported"] = False
         rec.metadata["strategy_engine_note"] = "core engine used existing combined evaluator"
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
