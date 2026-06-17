@@ -1,34 +1,129 @@
 openapi: 3.1.0
 info:
-  title: Render Action
+  title: Render Deploy Action
   version: 1.0.0
+  description: >
+    Render API access for triggering and monitoring backend service deployments.
+    Only trigger deploys for the paper-mode backend service.
+    Never modify environment variables that could enable live trading.
 servers:
   - url: https://api.render.com/v1
+    description: Render API
 components:
   securitySchemes:
     RenderBearer:
       type: http
       scheme: bearer
+  schemas:
+    DeployResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+        finishedAt:
+          type: string
+      additionalProperties: true
 security:
   - RenderBearer: []
 paths:
   /services:
     get:
       operationId: listRenderServices
-      summary: List Render services
+      summary: List Render services to find the backend service ID
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
       responses:
         "200":
-          description: OK
+          description: Services list
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
   /services/{serviceId}/deploys:
     get:
       operationId: listRenderDeploys
-      summary: List recent service deploys
+      summary: List recent deploys for a service
       parameters:
         - name: serviceId
           in: path
           required: true
           schema:
             type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10
       responses:
         "200":
-          description: OK
+          description: Deploy list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+    post:
+      operationId: triggerRenderDeploy
+      summary: Trigger a new deploy for a Render service
+      description: >
+        Use after merging a PR to main to redeploy the FastAPI backend.
+        Always verify the service is the paper-mode backend before triggering.
+      parameters:
+        - name: serviceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                clearCache:
+                  type: string
+                  enum: [clear, do_not_clear]
+                  default: do_not_clear
+      responses:
+        "201":
+          description: Deploy triggered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeployResponse"
+  /services/{serviceId}/deploys/{deployId}:
+    get:
+      operationId: getRenderDeployStatus
+      summary: Get status of a specific deploy
+      parameters:
+        - name: serviceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: deployId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deploy status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeployResponse"
