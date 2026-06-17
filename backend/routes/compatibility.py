@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter
 
@@ -84,7 +84,57 @@ def _install_hosted_health_routes() -> None:
         logger.warning("Unable to install hosted health overrides: %s", exc)
 
 
+def _install_stream_latest_route() -> None:
+    """Install a polling fallback for the canonical WebSocket stream.
+
+    GPT Actions and some frontend clients cannot hold a WebSocket connection.
+    This wraps the shared broadcast function so the most recent broadcast payload
+    is available through GET /stream/latest without changing execution mode.
+    """
+    try:
+        from backend import app as backend_app_module
+
+        app = backend_app_module.app
+        ctx = backend_app_module.context
+
+        if not hasattr(ctx, "_latest_stream_event"):
+            setattr(ctx, "_latest_stream_event", {})
+
+        if not getattr(ctx, "_latest_stream_broadcast_wrapped", False):
+            original_broadcast = ctx.broadcast
+
+            async def broadcast_with_latest(event: Any):
+                try:
+                    if isinstance(event, dict):
+                        latest = getattr(ctx, "_latest_stream_event")
+                        latest.clear()
+                        latest.update(event)
+                        latest.setdefault("ts", time.time())
+                except Exception as exc:  # pragma: no cover - defensive cache only
+                    logger.warning("Unable to cache latest stream event: %s", exc)
+                return await original_broadcast(event)
+
+            ctx.broadcast = broadcast_with_latest
+            setattr(ctx, "_latest_stream_broadcast_wrapped", True)
+
+        async def stream_latest() -> dict:
+            latest = getattr(ctx, "_latest_stream_event", {})
+            if not latest:
+                return {
+                    "type": "none",
+                    "message": "No events broadcast yet.",
+                    "ts": time.time(),
+                }
+            return dict(latest)
+
+        _remove_existing_routes(app, "/stream/latest", {"GET"})
+        app.add_api_route("/stream/latest", stream_latest, methods=["GET"], tags=["stream"])
+    except Exception as exc:  # pragma: no cover - startup safety guard
+        logger.warning("Unable to install stream latest route: %s", exc)
+
+
 _install_hosted_health_routes()
+_install_stream_latest_route()
 
 
 @compatibility_router.get("/account/summary")

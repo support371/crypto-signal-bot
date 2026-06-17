@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: crypto-signal-bot Cloudflare Action
-  version: 1.0.1
-  description: Cloudflare operational access for the paper-only crypto-signal-bot Worker, D1, and R2 resources. Do not store, print, or use live exchange order-execution keys.
+  version: 1.1.0
+  description: Cloudflare operational access for the paper-only crypto-signal-bot Worker, D1, and R2 resources. Use the Worker readonly D1 endpoint for SQL reads. Do not store, print, or use live exchange order-execution keys.
 servers:
   - url: https://api.cloudflare.com/client/v4
 components:
@@ -18,7 +18,7 @@ components:
       properties:
         sql:
           type: string
-          description: SQL statement for D1. Prefer read-only SELECT queries unless an approved paper-mode maintenance task requires otherwise.
+          description: SQL statement. Use SELECT only for readonly queries.
         params:
           type: array
           items:
@@ -69,11 +69,43 @@ components:
 security:
   - CloudflareBearer: []
 paths:
+  /d1/query/readonly:
+    post:
+      operationId: queryD1Readonly
+      summary: Run a server-enforced readonly D1 SELECT query through the Worker
+      description: This operation targets the deployed Worker, not the Cloudflare D1 API directly. The Worker rejects any SQL that does not start with SELECT.
+      servers:
+        - url: https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/D1QueryRequest"
+      responses:
+        "200":
+          description: Readonly D1 query result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "400":
+          description: Rejected non-SELECT query or malformed request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                additionalProperties: true
   /accounts/{account_id}/d1/database/{database_id}/query:
     post:
       operationId: queryD1
       summary: Query Cloudflare D1 database
-      description: Use for paper-mode operational verification and diagnostics. Avoid destructive SQL unless explicitly approved and backed up.
+      description: Legacy direct Cloudflare API query. Prefer queryD1Readonly for GPT access. Only use SELECT statements. INSERT, UPDATE, DELETE, DROP, CREATE, and ALTER are prohibited and may cause irreversible data loss.
       parameters:
         - name: account_id
           in: path
@@ -136,7 +168,7 @@ paths:
     get:
       operationId: getWorkerLogs
       summary: Get Worker logs when available
-      description: Cloudflare log availability depends on account plan and logging configuration.
+      description: Cloudflare log availability depends on account plan and logging configuration. Do not expose secrets from logs.
       parameters:
         - name: account_id
           in: path

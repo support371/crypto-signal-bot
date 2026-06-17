@@ -1,158 +1,17 @@
 openapi: 3.1.0
 info:
-  title: crypto-signal-bot GitHub Action
-  version: 1.0.1
-  description: GitHub access for support371/crypto-signal-bot. Before write or deploy operations, verify Worker health and paper-safety endpoints. Never commit secrets, live exchange keys, wallet private keys, or tokens.
+  title: CryptoOps Agent GitHub API
+  description: GitHub API access for support371/crypto-signal-bot. Use placeholders only. Never write real secrets.
+  version: 1.0.0
 servers:
   - url: https://api.github.com
-components:
-  securitySchemes:
-    GitHubBearer:
-      type: http
-      scheme: bearer
-  schemas:
-    GitHubFileContent:
-      type: object
-      properties:
-        name:
-          type: string
-        path:
-          type: string
-        sha:
-          type: string
-        size:
-          type: integer
-        encoding:
-          type: string
-        content:
-          type: string
-        download_url:
-          type: string
-      additionalProperties: true
-    WriteFileRequest:
-      type: object
-      required:
-        - message
-        - content
-      properties:
-        message:
-          type: string
-          description: Commit message. Use fix(scope): description format when possible.
-        content:
-          type: string
-          description: Base64 encoded file content.
-        sha:
-          type: string
-          description: Existing file SHA when updating a file.
-        branch:
-          type: string
-          description: Target branch. Prefer a feature branch for broad changes.
-      additionalProperties: false
-    GitHubWriteResponse:
-      type: object
-      properties:
-        content:
-          type: object
-          additionalProperties: true
-        commit:
-          type: object
-          properties:
-            sha:
-              type: string
-            html_url:
-              type: string
-          additionalProperties: true
-      additionalProperties: true
-    WorkflowRunsResponse:
-      type: object
-      properties:
-        total_count:
-          type: integer
-        workflow_runs:
-          type: array
-          items:
-            type: object
-            properties:
-              id:
-                type: integer
-              name:
-                type: string
-              status:
-                type: string
-              conclusion:
-                type: string
-              html_url:
-                type: string
-            additionalProperties: true
-      additionalProperties: true
-    CommitListResponse:
-      type: array
-      items:
-        type: object
-        properties:
-          sha:
-            type: string
-          html_url:
-            type: string
-          commit:
-            type: object
-            additionalProperties: true
-        additionalProperties: true
-    IssueListResponse:
-      type: array
-      items:
-        type: object
-        properties:
-          number:
-            type: integer
-          title:
-            type: string
-          state:
-            type: string
-          html_url:
-            type: string
-        additionalProperties: true
-    CreateIssueRequest:
-      type: object
-      required:
-        - title
-      properties:
-        title:
-          type: string
-        body:
-          type: string
-        labels:
-          type: array
-          items:
-            type: string
-      additionalProperties: false
-    PullRequestListResponse:
-      type: array
-      items:
-        type: object
-        properties:
-          number:
-            type: integer
-          title:
-            type: string
-          state:
-            type: string
-          html_url:
-            type: string
-          head:
-            type: object
-            additionalProperties: true
-          base:
-            type: object
-            additionalProperties: true
-        additionalProperties: true
 security:
-  - GitHubBearer: []
+  - githubBearerAuth: []
 paths:
   /repos/support371/crypto-signal-bot/contents/{path}:
     get:
       operationId: getFileContents
-      summary: Get a file from support371/crypto-signal-bot
+      summary: Get repository file contents
       parameters:
         - name: path
           in: path
@@ -164,17 +23,22 @@ paths:
           required: false
           schema:
             type: string
+            default: main
       responses:
         "200":
-          description: File contents
+          description: File or directory contents
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/GitHubFileContent"
+                type: object
+                additionalProperties: true
+        "404":
+          description: File not found
+
     put:
       operationId: writeFile
-      summary: Create or update a file
-      description: Never commit secrets, live exchange keys, wallet private keys, seed phrases, or tokens. Prefer branch plus PR for broad changes.
+      summary: Create or update a repository file
+      description: Content must be base64 encoded. sha is required when updating an existing file. Branch is required; never write directly to main.
       parameters:
         - name: path
           in: path
@@ -186,99 +50,112 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/WriteFileRequest"
+              type: object
+              required:
+                - message
+                - content
+                - branch
+              properties:
+                message:
+                  type: string
+                content:
+                  type: string
+                  description: Base64 encoded file content.
+                sha:
+                  type: string
+                  description: Required when updating an existing file.
+                branch:
+                  type: string
+                  description: Target branch. REQUIRED — never write directly to main. Use a feature branch name such as feat/your-change.
       responses:
         "200":
-          description: Updated
+          description: File updated
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/GitHubWriteResponse"
+                type: object
+                additionalProperties: true
         "201":
-          description: Created
+          description: File created
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/GitHubWriteResponse"
-  /repos/support371/crypto-signal-bot/actions/runs:
-    get:
-      operationId: listWorkflowRuns
-      summary: List GitHub Actions workflow runs
-      parameters:
-        - name: per_page
-          in: query
-          required: false
-          schema:
-            type: integer
-            default: 30
-        - name: branch
-          in: query
-          required: false
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Workflow runs
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/WorkflowRunsResponse"
-  /repos/support371/crypto-signal-bot/commits:
-    get:
-      operationId: listCommits
-      summary: List commits
-      parameters:
-        - name: sha
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: per_page
-          in: query
-          required: false
-          schema:
-            type: integer
-            default: 30
-      responses:
-        "200":
-          description: Commits
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CommitListResponse"
+                type: object
+                additionalProperties: true
+        "409":
+          description: Conflict, usually missing or stale sha
+
   /repos/support371/crypto-signal-bot/issues:
     get:
       operationId: listIssues
-      summary: List issues
+      summary: List repository issues
       parameters:
         - name: state
           in: query
           required: false
           schema:
             type: string
-            enum: [open, closed, all]
+            enum:
+              - open
+              - closed
+              - all
+            default: open
+        - name: labels
+          in: query
+          required: false
+          schema:
+            type: string
         - name: per_page
           in: query
           required: false
           schema:
             type: integer
+            minimum: 1
+            maximum: 100
             default: 30
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
       responses:
         "200":
           description: Issues
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/IssueListResponse"
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+
     post:
       operationId: createIssue
-      summary: Create an issue
+      summary: Create repository issue
+      description: Do not include real secrets, tokens, or live exchange API keys in issue text.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateIssueRequest"
+              type: object
+              required:
+                - title
+              properties:
+                title:
+                  type: string
+                body:
+                  type: string
+                labels:
+                  type: array
+                  items:
+                    type: string
+                assignees:
+                  type: array
+                  items:
+                    type: string
       responses:
         "201":
           description: Issue created
@@ -286,14 +163,8 @@ paths:
             application/json:
               schema:
                 type: object
-                properties:
-                  number:
-                    type: integer
-                  title:
-                    type: string
-                  html_url:
-                    type: string
                 additionalProperties: true
+
   /repos/support371/crypto-signal-bot/pulls:
     get:
       operationId: listPullRequests
@@ -304,12 +175,28 @@ paths:
           required: false
           schema:
             type: string
-            enum: [open, closed, all]
+            enum:
+              - open
+              - closed
+              - all
+            default: open
+        - name: base
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: head
+          in: query
+          required: false
+          schema:
+            type: string
         - name: per_page
           in: query
           required: false
           schema:
             type: integer
+            minimum: 1
+            maximum: 100
             default: 30
       responses:
         "200":
@@ -317,4 +204,81 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PullRequestListResponse"
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+
+  /repos/support371/crypto-signal-bot/actions/runs:
+    get:
+      operationId: listWorkflowRuns
+      summary: List workflow runs
+      parameters:
+        - name: branch
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: per_page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 30
+      responses:
+        "200":
+          description: Workflow runs
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /repos/support371/crypto-signal-bot/commits:
+    get:
+      operationId: listCommits
+      summary: List commits
+      parameters:
+        - name: sha
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: path
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: per_page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 30
+      responses:
+        "200":
+          description: Commits
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+
+components:
+  securitySchemes:
+    githubBearerAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: Use the value Bearer <GITHUB_TOKEN>.

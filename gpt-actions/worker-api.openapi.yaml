@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: crypto-signal-bot Worker API Action
-  version: 2.1.0
-  description: Paper-only Worker API. Live trading and withdrawals must remain blocked with HTTP 403. Coinbase is public read-only market data only.
+  version: 2.2.0
+  description: Paper-only Worker/API action schema. Live trading and withdrawals must remain blocked with HTTP 403. Coinbase is public read-only market data only.
 servers:
   - url: https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
     description: Current Cloudflare Worker backend
@@ -10,13 +10,6 @@ components:
   schemas:
     GenericObject:
       type: object
-      properties:
-        status:
-          type: string
-        mode:
-          type: string
-        ts:
-          type: number
       additionalProperties: true
     ErrorObject:
       type: object
@@ -39,203 +32,67 @@ components:
           type: string
         allow_mainnet:
           type: boolean
-        market_data_source:
-          type: string
-        starting_balance:
-          type: number
-        guardian_max_drawdown:
-          type: number
-        network:
-          type: string
-        runtime:
-          type: string
-        region:
-          type: string
-      additionalProperties: true
-    GuardianStatus:
-      type: object
-      properties:
-        triggered:
-          type: boolean
-        reason:
-          type: string
-        error_count:
-          type: number
-        drawdown_pct:
-          type: number
-        max_drawdown_pct:
-          type: number
-        mode:
-          type: string
-        allow_mainnet:
-          type: boolean
         live_trading_enabled:
           type: boolean
         withdrawals_enabled:
           type: boolean
-      additionalProperties: true
-    PortfolioSummary:
-      type: object
-      properties:
-        balance_usdt:
-          type: number
-        cash_usdt:
-          type: number
-        equity_usdt:
-          type: number
-        realized_pnl:
-          type: number
-        unrealized_pnl:
-          type: number
-        total_pnl:
-          type: number
-        open_positions:
-          type: array
-          items:
-            type: object
-            additionalProperties: true
-        positions:
-          type: array
-          items:
-            type: object
-            additionalProperties: true
-        position_count:
-          type: integer
-        mode:
+        network:
           type: string
       additionalProperties: true
-    MarketPrice:
-      type: object
-      properties:
-        symbol:
-          type: string
-        price:
-          type: number
-        source:
-          type: string
-        stale:
-          type: boolean
-        ts:
-          type: number
-      additionalProperties: true
-    PaperIntentRequest:
+    GuardianResetRequest:
       type: object
       required:
-        - symbol
-        - side
+        - reason
       properties:
-        symbol:
+        reason:
           type: string
-        side:
-          type: string
-          enum:
-            - buy
-            - sell
-        quantity:
-          type: number
-          exclusiveMinimum: 0
-        qty:
-          type: number
-          exclusiveMinimum: 0
-        notional_usdt:
-          type: number
-          exclusiveMinimum: 0
-        amount:
-          type: number
-          exclusiveMinimum: 0
-        price:
-          type: number
-          exclusiveMinimum: 0
+          minLength: 1
       additionalProperties: false
     SignalGenerateRequest:
       type: object
       properties:
         symbol:
           type: string
-      additionalProperties: false
-    SignalResponse:
-      type: object
-      properties:
-        symbol:
-          type: string
-        timeframe:
-          type: string
-        side:
-          type: string
-        action:
-          type: string
-        confidence:
-          type: number
-        entry_price:
-          type: number
-        stop_loss:
-          type: number
-        take_profit:
-          type: number
         strategy:
           type: string
-        indicators:
-          type: object
-          additionalProperties: true
-        mode:
-          type: string
-      additionalProperties: true
-    BacktestRequest:
+          description: Optional signal strategy. Supported values include ema_crossover, rsi_mean_revert, macd_momentum, and combined.
+      additionalProperties: false
+    PortfolioResetRequest:
       type: object
       required:
-        - symbol
+        - confirm
       properties:
-        symbol:
+        confirm:
+          type: boolean
+          description: Must be true to confirm the reset.
+        reason:
           type: string
-        timeframe:
-          type: string
-        lookback:
-          type: integer
-          minimum: 1
-        strategy:
-          type: string
-      additionalProperties: true
-    BacktestResponse:
+        starting_cash:
+          type: number
+          default: 10000
+      additionalProperties: false
+    D1ReadonlyRequest:
       type: object
+      required:
+        - sql
       properties:
-        status:
+        sql:
           type: string
-        symbol:
-          type: string
-        strategy:
-          type: string
-        trades:
-          type: integer
-        trade_log:
+          description: Must be a SELECT query. Non-SELECT SQL is rejected server-side by the Worker.
+        params:
           type: array
           items:
-            type: object
-            additionalProperties: true
-        win_rate:
-          type: number
-        pnl_usdt:
-          type: number
-        no_trade_reason:
-          type: string
-        mode:
-          type: string
-      additionalProperties: true
+            oneOf:
+              - type: string
+              - type: number
+              - type: boolean
+              - type: 'null'
+      additionalProperties: false
 paths:
   /healthz:
     get:
       operationId: getHealthz
       summary: Check Worker liveness
-      responses:
-        "200":
-          description: Health check
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericObject"
-  /health:
-    get:
-      operationId: getHealth
-      summary: Check Worker health
       responses:
         "200":
           description: Health check
@@ -264,107 +121,28 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/GuardianStatus"
-  /portfolio/summary:
-    get:
-      operationId: getPortfolioSummary
-      summary: Get paper portfolio summary
+                $ref: "#/components/schemas/GenericObject"
+  /guardian/reset:
+    post:
+      operationId: postGuardianReset
+      summary: Reset paper guardian kill switch with a required reason
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuardianResetRequest"
       responses:
         "200":
-          description: Portfolio summary
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PortfolioSummary"
-  /portfolio/trades:
-    get:
-      operationId: getPortfolioTrades
-      summary: Get paper portfolio trades
-      responses:
-        "200":
-          description: Portfolio trades
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                  additionalProperties: true
-  /market/price/{symbol}:
-    get:
-      operationId: getMarketPrice
-      summary: Get public Coinbase market price for a symbol
-      parameters:
-        - name: symbol
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Market price
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MarketPrice"
-  /market/feed/status:
-    get:
-      operationId: getMarketFeedStatus
-      summary: Get public market feed status
-      responses:
-        "200":
-          description: Market feed status
+          description: Guardian reset
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/GenericObject"
-  /signals:
-    get:
-      operationId: getSignals
-      summary: Get latest signal
-      parameters:
-        - name: symbol
-          in: query
-          required: false
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Signals
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SignalResponse"
-  /signals/history:
-    get:
-      operationId: getSignalsHistory
-      summary: Get signal history
-      parameters:
-        - name: symbol
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: limit
-          in: query
-          required: false
-          schema:
-            type: integer
-            default: 20
-      responses:
-        "200":
-          description: Signal history
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                  additionalProperties: true
   /signals/generate:
     post:
       operationId: postSignalsGenerate
-      summary: Generate and store a paper-mode signal using EMA(9), EMA(21), and RSI(14)
+      summary: Generate and store a paper-mode signal with an optional strategy parameter
       requestBody:
         required: false
         content:
@@ -377,142 +155,70 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SignalResponse"
-  /dashboard:
-    get:
-      operationId: getDashboard
-      summary: Get stable dashboard/report aggregation from live Worker API data
-      responses:
-        "200":
-          description: Dashboard aggregation
-          content:
-            application/json:
-              schema:
                 $ref: "#/components/schemas/GenericObject"
-  /surge/status:
-    get:
-      operationId: getSurgeStatus
-      summary: Get surge scanner status
-      responses:
-        "200":
-          description: Surge status
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericObject"
-  /exchange/circuit-breakers:
-    get:
-      operationId: getExchangeCircuitBreakers
-      summary: Get exchange circuit breaker status
-      responses:
-        "200":
-          description: Exchange circuit breakers
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericObject"
-  /audit:
-    get:
-      operationId: getAudit
-      summary: Get audit trail
-      responses:
-        "200":
-          description: Audit trail
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                  additionalProperties: true
-  /intent/paper:
+  /api/v1/portfolio/reset:
     post:
-      operationId: postPaperIntent
-      summary: Submit a paper-only simulated trade intent
+      operationId: postPortfolioReset
+      summary: Reset paper portfolio through the backend service-layer v1 route
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/PaperIntentRequest"
+              $ref: "#/components/schemas/PortfolioResetRequest"
       responses:
         "200":
-          description: Paper intent accepted
+          description: Portfolio reset
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/GenericObject"
         "400":
-          description: Invalid paper intent
+          description: Reset confirmation missing
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorObject"
         "403":
-          description: Guardian blocked paper intent
+          description: Reset blocked outside paper mode
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorObject"
-  /backtest:
+  /stream/latest:
     get:
-      operationId: getBacktestStatus
-      summary: Get backtest engine status
+      operationId: getStreamLatest
+      summary: Get the latest streaming event snapshot as a polling fallback to WebSocket /stream
       responses:
         "200":
-          description: Backtest status
+          description: Latest stream event or safe no-event default
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/GenericObject"
+  /d1/query/readonly:
     post:
-      operationId: postBacktest
-      summary: Run paper-mode backtest
+      operationId: queryD1Readonly
+      summary: Run a server-enforced readonly D1 SELECT query
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/BacktestRequest"
+              $ref: "#/components/schemas/D1ReadonlyRequest"
       responses:
         "200":
-          description: Backtest result
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BacktestResponse"
-  /guardian/kill:
-    post:
-      operationId: postGuardianKill
-      summary: Activate paper guardian kill switch
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                reason:
-                  type: string
-              additionalProperties: false
-      responses:
-        "200":
-          description: Guardian kill switch activated
+          description: Readonly D1 query result
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/GenericObject"
-  /guardian/reset:
-    post:
-      operationId: postGuardianReset
-      summary: Reset paper guardian kill switch
-      responses:
-        "200":
-          description: Guardian reset
+        "400":
+          description: Rejected non-SELECT SQL or invalid request
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/GenericObject"
+                $ref: "#/components/schemas/ErrorObject"
   /intent/live:
     post:
       operationId: verifyLiveTradingBlocked

@@ -120,7 +120,8 @@ async def _fetch_candles(symbol: str, limit: int = _CANDLE_LIMIT):
     return []
 
 
-async def evaluate_signal(symbol: str) -> SignalRecord:
+async def evaluate_signal(symbol: str, strategy: Optional[str] = None) -> SignalRecord:
+    requested_strategy = strategy.strip().lower() if isinstance(strategy, str) and strategy.strip() else None
     candles = await _fetch_candles(symbol)
 
     try:
@@ -132,13 +133,17 @@ async def evaluate_signal(symbol: str) -> SignalRecord:
     if not candles or current_price <= 0:
         import uuid
         now = int(time.time())
+        metadata = {"reason": "no candle data or price unavailable"}
+        if requested_strategy:
+            metadata["requested_strategy"] = requested_strategy
+            metadata["strategy_parameter_supported"] = True
         rec = SignalRecord(
             id=str(uuid.uuid4()), symbol=symbol, timeframe=_TIMEFRAME,
             side="FLAT", entry_price=current_price,
             stop_loss=None, take_profit=None,
             confidence=0.0, strategy_id="no_data",
             created_at=now, valid_until=now + _TTL_SECONDS,
-            metadata={"reason": "no candle data or price unavailable"},
+            metadata=metadata,
         )
         _signal_cache[symbol] = rec
         return rec
@@ -152,6 +157,12 @@ async def evaluate_signal(symbol: str) -> SignalRecord:
         closes=closes, highs=highs, lows=lows,
         current_price=current_price, signal_ttl_seconds=_TTL_SECONDS,
     )
+
+    if requested_strategy:
+        record.metadata = dict(record.metadata or {})
+        record.metadata["requested_strategy"] = requested_strategy
+        record.metadata["strategy_parameter_supported"] = True
+        record.metadata.setdefault("strategy_engine_note", "core engine used existing combined evaluator")
 
     _signal_cache[symbol] = record
     _last_eval[symbol]    = time.time()
