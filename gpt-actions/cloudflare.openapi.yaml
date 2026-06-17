@@ -18,7 +18,7 @@ components:
       properties:
         sql:
           type: string
-          description: SQL statement for D1. Prefer read-only SELECT queries unless an approved paper-mode maintenance task requires otherwise.
+          description: "SQL statement. Must be a read-only SELECT query. Destructive statements (INSERT, UPDATE, DELETE, DROP, CREATE, ALTER) are prohibited unless you have explicit written approval and a verified backup."
         params:
           type: array
           items:
@@ -73,7 +73,7 @@ paths:
     post:
       operationId: queryD1
       summary: Query Cloudflare D1 database
-      description: Use for paper-mode operational verification and diagnostics. Avoid destructive SQL unless explicitly approved and backed up.
+      description: "WARNING: Only use SELECT statements. INSERT, UPDATE, DELETE, DROP, CREATE, and ALTER are prohibited and may cause irreversible data loss. Always back up before any write operation."
       parameters:
         - name: account_id
           in: path
@@ -136,7 +136,7 @@ paths:
     get:
       operationId: getWorkerLogs
       summary: Get Worker logs when available
-      description: Cloudflare log availability depends on account plan and logging configuration.
+      description: Cloudflare log availability depends on account plan and logging configuration. Do not expose secrets from logs.
       parameters:
         - name: account_id
           in: path
