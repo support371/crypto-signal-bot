@@ -14,7 +14,7 @@ GUARDIAN_MAX_DRAWDOWN_PCT = "15"
 GUARDIAN_MAX_API_ERRORS = "10"
 GUARDIAN_MAX_FAILED_ORDERS = "5"
 RATE_LIMIT_RPM = "120"
-CORS_ALLOWED_ORIGINS = "https://crypto-signal-bot-indol.vercel.app"
+CORS_ALLOW_ALEOW_ORIGINS = "https://crypto-signal-bot-indol.vercel.app"
 
 [[d1_databases]]
 binding = "DB"
@@ -30,4 +30,4 @@ crons = ["*/20 * * * *", "*/5 * * * *", "0 * * * *", "0 0 * * *"]
 
 [[kv_namespaces]]
 binding = "AGENT_MEMORY"
-id = "PLACEHOLDER_REPLACE_WITH_REAL_KV_ID"
+id = "8f0321c43b844ec08c514f1d0483983c"
