@@ -1,6 +1,6 @@
 name: "CodeQL Advanced"
 # Pull request validation is owned by CircleCI for this repository.
-# CodeQL remains active for main-branch verification, manual runs, and weekly scanning.
+# CodeQL now runs on the self-hosted CryptoOps runner lane.
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ on:
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
-    runs-on: ${{ (matrix.language == 'swift' && 'macos-latest') || 'ubuntu-latest' }}
+    runs-on: [self-hosted, cryptoops, linux]
     permissions:
       security-events: write
       packages: read
