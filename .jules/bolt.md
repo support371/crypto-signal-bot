@@ -33,3 +33,7 @@
 ## 2026-07-01 - [RSI Correctness on Flat Series]
 **Learning:** A common edge case in RSI implementations is a flat price series (zero gains and zero losses). If not handled explicitly, dividing by a zero average loss can lead to incorrect results (like 100.0) or errors. Technicially, if both gain and loss are zero, RSI should be 50.0.
 **Action:** Always handle the `avg_loss == 0` case in RSI by checking if `avg_gain` is also zero; return 50.0 if both are zero, and 100.0 only if `avg_gain > 0`.
+
+## 2026-07-08 - [CPython Loop & Arithmetic Micro-optimizations]
+**Learning:** In CPython, the overhead of generator expressions (e.g., `sum(x**2 for x in window)`) and the general-purpose power operator (`**`) is significant in tight loops. Explicit `for` loops and simple multiplication (`x * x`) are much faster. Additionally, using the algebraically simplified EMA update rule `val += k * (input - val)` instead of the traditional weighted average reduces the number of operations per iteration.
+**Action:** Favor explicit loops and basic arithmetic over functional constructs or complex operators in performance-critical indicator loops. Always use the simplified EMA formula for incremental updates.
