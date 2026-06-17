@@ -241,4 +241,78 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorObject"
+  /agent/memory/{key}:
+    get:
+      operationId: getAgentMemory
+      summary: Read a value from persistent agent memory (Cloudflare KV)
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Memory value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericObject"
+    post:
+      operationId: setAgentMemory
+      summary: Write a value to persistent agent memory (30-day TTL)
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - value
+              properties:
+                value:
+                  description: Any JSON-serializable value to store
+      responses:
+        "200":
+          description: Value stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericObject"
+    delete:
+      operationId: deleteAgentMemory
+      summary: Delete a key from persistent agent memory
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Key deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericObject"
+  /agent/context:
+    get:
+      operationId: getAgentContext
+      summary: >
+        Get a full system snapshot in one call — runtime mode, guardian status,
+        latest signal, portfolio summary, and memory availability.
+        Call this at the start of every session to orient yourself.
+      responses:
+        "200":
+          description: Agent context snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericObject"
 security: []
