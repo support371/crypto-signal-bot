@@ -18,6 +18,13 @@ const PublicHome = lazy(() => import("./pages/PublicHome"));
 const IntegrationsStatus = lazy(() => import("./pages/IntegrationsStatus"));
 const Waitlist = lazy(() => import("./pages/Waitlist"));
 const Backtest = lazy(() => import("./pages/Backtest"));
+const Positions = lazy(() => import("./pages/Positions"));
+const Portfolio = lazy(() => import("./pages/Portfolio"));
+const Guardian = lazy(() => import("./pages/Guardian"));
+const Audit = lazy(() => import("./pages/Audit"));
+const Health = lazy(() => import("./pages/Health"));
+const Settings = lazy(() => import("./pages/Settings"));
+const ResetPassword = lazy(() => import("./pages/ResetPassword"));
 
 const queryClient = new QueryClient();
 
@@ -41,20 +48,25 @@ const App = () => (
             <AuthBanner />
             <Suspense fallback={<RouteLoadingShell />}>
               <Routes>
-                <Route path="/auth" element={<Auth />} />
+                {/* Public routes */}
+                <Route path="/" element={<PublicHome />} />
                 <Route path="/public" element={<PublicHome />} />
+                <Route path="/auth" element={<Auth />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
                 <Route path="/integrations" element={<IntegrationsStatus />} />
                 <Route path="/waitlist" element={<Waitlist />} />
-                <Route
-                  path="/"
-                  element={
-                    <ProtectedRoute>
-                      <Index />
-                    </ProtectedRoute>
-                  }
-                />
+
+                {/* Protected routes */}
+                <Route path="/dashboard" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+                <Route path="/positions" element={<ProtectedRoute><Positions /></ProtectedRoute>} />
+                <Route path="/portfolio" element={<ProtectedRoute><Portfolio /></ProtectedRoute>} />
+                <Route path="/guardian" element={<ProtectedRoute><Guardian /></ProtectedRoute>} />
+                <Route path="/audit" element={<ProtectedRoute><Audit /></ProtectedRoute>} />
+                <Route path="/health" element={<ProtectedRoute><Health /></ProtectedRoute>} />
+                <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+                <Route path="/backtest" element={<ProtectedRoute><Backtest /></ProtectedRoute>} />
+
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-                <Route path="/backtest" element={<Backtest />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </Suspense>
