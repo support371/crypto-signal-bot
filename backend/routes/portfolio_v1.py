@@ -275,6 +275,7 @@ async def equity_history(
 class PortfolioResetRequest(BaseModel):
     confirm: bool
     reason: Optional[str] = None
+    starting_cash: float = 10000.0
 
 
 class PortfolioResetOut(BaseModel):
@@ -289,15 +290,24 @@ class PortfolioResetOut(BaseModel):
     response_model=PortfolioResetOut,
     summary="Reset paper portfolio to starting NAV (paper mode only)",
 )
-async def reset_portfolio(body: PortfolioResetRequest) -> PortfolioResetOut:
+async def reset_portfolio_route(body: PortfolioResetRequest) -> PortfolioResetOut:
     """
-    Resets the paper portfolio back to the configured starting balance (default
-    $10,000 USDT). Only works in paper mode. Requires confirm=true in the body.
-    The reset is logged to the audit trail.
+    Resets the paper portfolio through the shared service layer. This mirrors
+    /paper/reset so positions, orders, trades, guardian counters, kill switch
+    state, and signal-executor de-dupe state are all reset consistently.
     """
+    from decimal import Decimal
+
+    from backend.config.runtime import get_runtime_config
     from backend.logic import context
     from backend.logic.audit_store import append_risk_event
-    from backend.config.runtime import get_runtime_config
+    from backend.services.guardian_bot.service import (
+        deactivate_kill_switch,
+        get_guardian_status,
+        reset_counters,
+    )
+    from backend.services.portfolio.service import reset_portfolio as reset_portfolio_service
+    from backend.services.signal_executor.service import _last_acted
 
     cfg = get_runtime_config()
     if cfg.trading_mode != "paper":
@@ -311,18 +321,20 @@ async def reset_portfolio(body: PortfolioResetRequest) -> PortfolioResetOut:
             detail="confirm must be true to reset the portfolio.",
         )
 
-    portfolio = context.get_portfolio()
-    starting_balance = cfg.paper.starting_balance_usdt
+    starting_balance = float(body.starting_cash)
+    reason = body.reason or "Manual portfolio reset via API"
 
-    # Wipe all balances and restore starting USDT
-    portfolio.balances.clear()
-    portfolio.balances["USDT"] = starting_balance
+    reset_portfolio_service(starting_cash=Decimal(str(starting_balance)))
 
-    # Reset guardian NAV anchor
     context.guardian_starting_nav = starting_balance
     context.guardian_drawdown_pct = 0.0
+    reset_counters()
+    status = await get_guardian_status()
+    if status.kill_switch_active:
+        await deactivate_kill_switch(reason=reason)
 
-    reason = body.reason or "Manual portfolio reset via API"
+    _last_acted.clear()
+
     append_risk_event({
         "event": "portfolio_reset",
         "reason": reason,
