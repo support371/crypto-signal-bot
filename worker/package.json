@@ -1,6 +1,6 @@
 {
   "name": "crypto-signal-bot-worker",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "scripts": {
     "dev": "wrangler dev --config ../wrangler.toml",
@@ -11,6 +11,8 @@
     "migrate": "wrangler d1 execute crypto-signal-bot-db --config ../wrangler.toml --file=migrations/001_init.sql",
     "migrate:local": "wrangler d1 execute crypto-signal-bot-db --config ../wrangler.toml --local --file=migrations/001_init.sql",
     "migrate:remote": "wrangler d1 execute crypto-signal-bot-db --config ../wrangler.toml --remote --file=migrations/001_init.sql",
+    "migrate:002": "wrangler d1 execute crypto-signal-bot-db --config ../wrangler.toml --remote --file=migrations/002_hardened.sql",
+    "migrate:002:local": "wrangler d1 execute crypto-signal-bot-db --config ../wrangler.toml --local --file=migrations/002_hardened.sql",
     "verify:paper-safety": "node scripts/verify-paper-safety.mjs",
     "smoke": "node scripts/smoke-check.mjs"
   },
