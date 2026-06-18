@@ -1,18 +1,19 @@
 name: CI
 # Pull request validation is owned by CircleCI for this repository.
-# GitHub Actions validation now uses the self-hosted CryptoOps runner lane.
+# GitHub Actions validation uses GitHub-hosted runners on feature branches so checks do not queue forever
+# when the self-hosted CryptoOps runner lane is unavailable.
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
-  pull_request:
+  pul_request:
     branches: [main]
 
 jobs:
   backend:
     name: Backend tests
-    runs-on: [self-hosted, cryptoops, linux]
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
@@ -52,7 +53,7 @@ jobs:
 
   frontend:
     name: Frontend build
-    runs-on: [self-hosted, cryptoops, linux]
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
