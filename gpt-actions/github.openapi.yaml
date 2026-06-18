@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: CryptoOps Agent GitHub API
   description: GitHub API access for support371/crypto-signal-bot. Use placeholders only. Never write real secrets.
-  version: 1.1.0
+  version: 1.1.1
 servers:
   - url: https://api.github.com
 security:
@@ -30,10 +30,13 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: "#/components/schemas/FileContentResponse"
         "404":
           description: File not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitHubErrorResponse"
     put:
       operationId: writeFile
       summary: Create or update a repository file
@@ -49,41 +52,26 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required:
-                - message
-                - content
-                - branch
-              properties:
-                message:
-                  type: string
-                content:
-                  type: string
-                  description: Base64 encoded file content.
-                sha:
-                  type: string
-                  description: Required when updating an existing file.
-                branch:
-                  type: string
-                  description: Target branch. REQUIRED — never write directly to main. Use a feature branch name such as feat/your-change.
+              $ref: "#/components/schemas/WriteFileRequest"
       responses:
         "200":
           description: File updated
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: "#/components/schemas/FileWriteResponse"
         "201":
           description: File created
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: "#/components/schemas/FileWriteResponse"
         "409":
           description: Conflict, usually missing or stale sha
-
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitHubErrorResponse"
   /repos/support371/crypto-signal-bot/issues:
     get:
       operationId: listIssues
@@ -124,8 +112,7 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
-                  additionalProperties: true
+                  $ref: "#/components/schemas/IssueResponse"
     post:
       operationId: createIssue
       summary: Create repository issue
@@ -135,31 +122,14 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required:
-                - title
-              properties:
-                title:
-                  type: string
-                body:
-                  type: string
-                labels:
-                  type: array
-                  items:
-                    type: string
-                assignees:
-                  type: array
-                  items:
-                    type: string
+              $ref: "#/components/schemas/CreateIssueRequest"
       responses:
         "201":
           description: Issue created
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
-
+                $ref: "#/components/schemas/IssueResponse"
   /repos/support371/crypto-signal-bot/pulls:
     get:
       operationId: listPullRequests
@@ -198,8 +168,7 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
-                  additionalProperties: true
+                  $ref: "#/components/schemas/PullRequestResponse"
     post:
       operationId: createPullRequest
       summary: Open a pull request
@@ -209,34 +178,14 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required:
-                - title
-                - head
-                - base
-              properties:
-                title:
-                  type: string
-                head:
-                  type: string
-                  description: The branch to merge from, e.g. feat/my-change
-                base:
-                  type: string
-                  description: The branch to merge into. Use main.
-                body:
-                  type: string
-                draft:
-                  type: boolean
-                  default: false
+              $ref: "#/components/schemas/CreatePullRequestRequest"
       responses:
         "201":
           description: Pull request created
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
-
+                $ref: "#/components/schemas/PullRequestResponse"
   /repos/support371/crypto-signal-bot/actions/runs:
     get:
       operationId: listWorkflowRuns
@@ -266,41 +215,25 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
-
+                $ref: "#/components/schemas/WorkflowRunsResponse"
   /repos/support371/crypto-signal-bot/git/refs:
     post:
       operationId: createBranch
       summary: Create a new branch from a given SHA or existing ref
-      description: >
-        Use this to create feature branches before writing files.
-        Always branch from main. Never create branches named main or master.
+      description: Use this to create feature branches before writing files. Always branch from main. Never create branches named main or master.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required:
-                - ref
-                - sha
-              properties:
-                ref:
-                  type: string
-                  description: Full ref name, e.g. refs/heads/feat/my-branch
-                sha:
-                  type: string
-                  description: The SHA to branch from (use latest main commit SHA)
+              $ref: "#/components/schemas/CreateBranchRequest"
       responses:
         "201":
           description: Branch created
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
-
+                $ref: "#/components/schemas/GitRefResponse"
   /repos/support371/crypto-signal-bot/actions/workflows/{workflow_id}/dispatches:
     post:
       operationId: triggerWorkflowDispatch
@@ -317,20 +250,10 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required:
-                - ref
-              properties:
-                ref:
-                  type: string
-                  description: Branch name to run the workflow on
-                inputs:
-                  type: object
-                  additionalProperties: true
+              $ref: "#/components/schemas/WorkflowDispatchRequest"
       responses:
         "204":
           description: Workflow dispatch accepted
-
   /repos/support371/crypto-signal-bot/commits:
     get:
       operationId: listCommits
@@ -362,13 +285,283 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
-                  additionalProperties: true
-
+                  $ref: "#/components/schemas/CommitResponse"
 components:
   securitySchemes:
     githubBearerAuth:
-      type: apiKey
-      in: header
-      name: Authorization
-      description: Use the value Bearer <GITHUB_TOKEN>.
+      type: http
+      scheme: bearer
+      description: Use a GitHub token with only the minimum permissions needed.
+  schemas:
+    GitHubErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        documentation_url:
+          type: string
+        status:
+          type: string
+      additionalProperties: true
+    FileContentResponse:
+      type: object
+      properties:
+        type:
+          type: string
+        encoding:
+          type: string
+        size:
+          type: integer
+        name:
+          type: string
+        path:
+          type: string
+        content:
+          type: string
+        sha:
+          type: string
+        url:
+          type: string
+        html_url:
+          type: string
+        download_url:
+          type: string
+      additionalProperties: true
+    WriteFileRequest:
+      type: object
+      required:
+        - message
+        - content
+        - branch
+      properties:
+        message:
+          type: string
+        content:
+          type: string
+          description: Base64 encoded file content.
+        sha:
+          type: string
+          description: Required when updating an existing file.
+        branch:
+          type: string
+          description: Target branch. Required. Never use main.
+      additionalProperties: false
+    FileWriteResponse:
+      type: object
+      properties:
+        content:
+          $ref: "#/components/schemas/FileContentResponse"
+        commit:
+          $ref: "#/components/schemas/CommitResponse"
+      additionalProperties: true
+    CreateIssueRequest:
+      type: object
+      required:
+        - title
+      properties:
+        title:
+          type: string
+        body:
+          type: string
+        labels:
+          type: array
+          items:
+            type: string
+        assignees:
+          type: array
+          items:
+            type: string
+      additionalProperties: false
+    IssueResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        number:
+          type: integer
+        title:
+          type: string
+        body:
+          type: string
+        state:
+          type: string
+        html_url:
+          type: string
+        labels:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              color:
+                type: string
+            additionalProperties: true
+      additionalProperties: true
+    CreatePullRequestRequest:
+      type: object
+      required:
+        - title
+        - head
+        - base
+      properties:
+        title:
+          type: string
+        head:
+          type: string
+          description: The branch to merge from.
+        base:
+          type: string
+          description: The branch to merge into. Use main.
+        body:
+          type: string
+        draft:
+          type: boolean
+          default: false
+      additionalProperties: false
+    PullRequestResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        number:
+          type: integer
+        title:
+          type: string
+        body:
+          type: string
+        state:
+          type: string
+        merged:
+          type: boolean
+        draft:
+          type: boolean
+        html_url:
+          type: string
+        head:
+          type: object
+          properties:
+            ref:
+              type: string
+            sha:
+              type: string
+          additionalProperties: true
+        base:
+          type: object
+          properties:
+            ref:
+              type: string
+            sha:
+              type: string
+          additionalProperties: true
+      additionalProperties: true
+    WorkflowRunsResponse:
+      type: object
+      properties:
+        total_count:
+          type: integer
+        workflow_runs:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowRunResponse"
+      additionalProperties: true
+    WorkflowRunResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        head_branch:
+          type: string
+        head_sha:
+          type: string
+        status:
+          type: string
+        conclusion:
+          type: string
+        html_url:
+          type: string
+        event:
+          type: string
+      additionalProperties: true
+    CreateBranchRequest:
+      type: object
+      required:
+        - ref
+        - sha
+      properties:
+        ref:
+          type: string
+          description: Full ref name, e.g. refs/heads/feat/my-branch.
+        sha:
+          type: string
+          description: Commit SHA to branch from.
+      additionalProperties: false
+    GitRefResponse:
+      type: object
+      properties:
+        ref:
+          type: string
+        node_id:
+          type: string
+        url:
+          type: string
+        object:
+          type: object
+          properties:
+            type:
+              type: string
+            sha:
+              type: string
+            url:
+              type: string
+          additionalProperties: true
+      additionalProperties: true
+    WorkflowDispatchRequest:
+      type: object
+      required:
+        - ref
+      properties:
+        ref:
+          type: string
+          description: Branch name to run the workflow on.
+        inputs:
+          type: object
+          properties:
+            deploy_worker:
+              type: string
+            update_vercel:
+              type: string
+            reason:
+              type: string
+          additionalProperties: true
+      additionalProperties: false
+    CommitResponse:
+      type: object
+      properties:
+        sha:
+          type: string
+        node_id:
+          type: string
+        html_url:
+          type: string
+        url:
+          type: string
+        commit:
+          type: object
+          properties:
+            message:
+              type: string
+            author:
+              type: object
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                date:
+                  type: string
+              additionalProperties: true
+          additionalProperties: true
+      additionalProperties: true
