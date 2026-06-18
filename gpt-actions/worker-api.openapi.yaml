@@ -2,7 +2,12 @@ openapi: 3.1.0
 info:
   title: crypto-signal-bot Worker API Action
   version: 2.2.0
-  description: Paper-only Worker/API action schema. Live trading and withdrawals must remain blocked with HTTP 403. Coinbase is public read-only market data only.
+  description: >
+    Worker/API action schema for the crypto-signal-bot system.
+    The system operates in paper mode by default and graduates to live mode
+    only after verified performance criteria are met and the owner approves.
+    Live trading and withdrawals remain blocked at the infrastructure level
+    until live mode is explicitly enabled. Coinbase is public read-only market data only.
 servers:
   - url: https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
     description: Current Cloudflare Worker backend
@@ -103,7 +108,7 @@ paths:
   /runtime/status:
     get:
       operationId: getRuntimeStatus
-      summary: Verify paper runtime status
+      summary: Verify runtime status and current trading mode
       responses:
         "200":
           description: Runtime status
@@ -125,7 +130,7 @@ paths:
   /guardian/reset:
     post:
       operationId: postGuardianReset
-      summary: Reset paper guardian kill switch with a required reason
+      summary: Reset guardian kill switch with a required reason
       requestBody:
         required: true
         content:
@@ -142,7 +147,7 @@ paths:
   /signals/generate:
     post:
       operationId: postSignalsGenerate
-      summary: Generate and store a paper-mode signal with an optional strategy parameter
+      summary: Generate and store a signal with an optional strategy parameter
       requestBody:
         required: false
         content:
@@ -222,7 +227,7 @@ paths:
   /intent/live:
     post:
       operationId: verifyLiveTradingBlocked
-      summary: Verify live trading is blocked
+      summary: Verify live trading is blocked in paper mode
       responses:
         "403":
           description: Live trading blocked
@@ -241,4 +246,78 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorObject"
+  /agent/memory/{key}:
+    get:
+      operationId: getAgentMemory
+      summary: Read a value from persistent agent memory (Cloudflare KV)
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Memory value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericObject"
+    post:
+      operationId: setAgentMemory
+      summary: Write a value to persistent agent memory (30-day TTL)
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - value
+              properties:
+                value:
+                  description: Any JSON-serializable value to store
+      responses:
+        "200":
+          description: Value stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericObject"
+    delete:
+      operationId: deleteAgentMemory
+      summary: Delete a key from persistent agent memory
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Key deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericObject"
+  /agent/context:
+    get:
+      operationId: getAgentContext
+      summary: >
+        Get a full system snapshot in one call — runtime mode, guardian status,
+        latest signal, portfolio summary, and memory availability.
+        Call this at the start of every session to orient yourself.
+      responses:
+        "200":
+          description: Agent context snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericObject"
 security: []
