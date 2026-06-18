@@ -50,22 +50,22 @@ def _rsi_reference(values: List[float], period: int = 14) -> List[Optional[float
     """Reference RSI implementation (before optimization)."""
     if len(values) < period + 1:
         return [None] * len(values)
-    
+
     result: List[Optional[float]] = [None] * len(values)
     changes = [values[i] - values[i - 1] for i in range(1, len(values))]
     gains = [max(c, 0.0) for c in changes]
     losses = [abs(min(c, 0.0)) for c in changes]
-    
+
     avg_gain = sum(gains[:period]) / period
     avg_loss = sum(losses[:period]) / period
     seed_idx = period
-    
+
     if avg_loss == 0:
         result[seed_idx] = 100.0
     else:
         rs = avg_gain / avg_loss
         result[seed_idx] = 100.0 - (100.0 / (1 + rs))
-    
+
     for i in range(period + 1, len(values)):
         ci = i - 1
         avg_gain = (avg_gain * (period - 1) + gains[ci]) / period
@@ -75,7 +75,7 @@ def _rsi_reference(values: List[float], period: int = 14) -> List[Optional[float
         else:
             rs = avg_gain / avg_loss
             result[i] = 100.0 - (100.0 / (1 + rs))
-    
+
     return result
 
 
@@ -86,28 +86,28 @@ def _atr_reference(highs: List[float], lows: List[float], closes: List[float], p
         raise ValueError("highs, lows, closes must be same length")
     if n < 2:
         return [None] * n
-    
+
     tr_list = []
     for i in range(1, n):
         hl = highs[i] - lows[i]
         hpc = abs(highs[i] - closes[i - 1])
         lpc = abs(lows[i] - closes[i - 1])
         tr_list.append(max(hl, hpc, lpc))
-    
+
     result: List[Optional[float]] = [None] * n
     if len(tr_list) < period:
         return result
-    
+
     seed = sum(tr_list[:period]) / period
     result[period] = seed
     prev = seed
-    
+
     for i in range(period + 1, n):
         ti = i - 1
         val = (prev * (period - 1) + tr_list[ti]) / period
         result[i] = val
         prev = val
-    
+
     return result
 
 
@@ -123,7 +123,7 @@ class TestRSIOptimization:
         prices = _prices(100, step=1.5)
         expected = _rsi_reference(prices, 14)
         actual = rsi(prices, 14)
-        
+
         for i, (exp, act) in enumerate(zip(expected, actual)):
             if exp is None:
                 assert act is None, f"Index {i}: expected None, got {act}"
@@ -135,7 +135,7 @@ class TestRSIOptimization:
         prices = _prices(100, step=-0.8)
         expected = _rsi_reference(prices, 14)
         actual = rsi(prices, 14)
-        
+
         for i, (exp, act) in enumerate(zip(expected, actual)):
             if exp is None:
                 assert act is None
@@ -148,7 +148,7 @@ class TestRSIOptimization:
         prices = [100.0 + random.uniform(-5, 5) for _ in range(200)]
         expected = _rsi_reference(prices, 14)
         actual = rsi(prices, 14)
-        
+
         for i, (exp, act) in enumerate(zip(expected, actual)):
             if exp is None:
                 assert act is None
@@ -160,7 +160,7 @@ class TestRSIOptimization:
         random.seed(43)
         prices = [100.0 + random.uniform(-20, 20) for _ in range(500)]
         result = rsi(prices, 14)
-        
+
         for val in result:
             if val is not None:
                 assert 0 <= val <= 100, f"RSI out of bounds: {val}"
@@ -191,11 +191,11 @@ class TestRSIOptimization:
         """last_rsi() should return the same value as the last non-None in rsi()."""
         random.seed(44)
         prices = [100.0 + random.uniform(-10, 10) for _ in range(150)]
-        
+
         series = rsi(prices, 14)
         last_from_series = next((v for v in reversed(series) if v is not None), None)
         last_from_fn = last_rsi(prices, 14)
-        
+
         if last_from_series is not None:
             assert abs(last_from_series - last_from_fn) < 1e-9
 
@@ -215,7 +215,7 @@ class TestRSIOptimization:
         for period in [7, 14, 21]:
             expected = _rsi_reference(prices, period)
             actual = rsi(prices, period)
-            
+
             for i, (exp, act) in enumerate(zip(expected, actual)):
                 if exp is None:
                     assert act is None
@@ -236,7 +236,7 @@ class TestATROptimization:
         closes, highs, lows = _ohlc(100, volatility=3.0)
         expected = _atr_reference(highs, lows, closes, 14)
         actual = atr(highs, lows, closes, 14)
-        
+
         for i, (exp, act) in enumerate(zip(expected, actual)):
             if exp is None:
                 assert act is None
@@ -249,7 +249,7 @@ class TestATROptimization:
         closes, highs, lows = _ohlc(150, volatility=10.0)
         expected = _atr_reference(highs, lows, closes, 14)
         actual = atr(highs, lows, closes, 14)
-        
+
         for i, (exp, act) in enumerate(zip(expected, actual)):
             if exp is None:
                 assert act is None
@@ -262,7 +262,7 @@ class TestATROptimization:
         closes, highs, lows = _ohlc(150, volatility=0.5)
         expected = _atr_reference(highs, lows, closes, 14)
         actual = atr(highs, lows, closes, 14)
-        
+
         for i, (exp, act) in enumerate(zip(expected, actual)):
             if exp is None:
                 assert act is None
@@ -274,7 +274,7 @@ class TestATROptimization:
         random.seed(53)
         closes, highs, lows = _ohlc(200, volatility=5.0)
         result = atr(highs, lows, closes, 14)
-        
+
         for val in result:
             if val is not None:
                 assert val >= 0, f"ATR should not be negative: {val}"
@@ -282,26 +282,26 @@ class TestATROptimization:
     def test_atr_increases_with_higher_volatility(self):
         """ATR should be higher on more volatile data."""
         random.seed(54)
-        
+
         # Low volatility
         closes_low, highs_low, lows_low = _ohlc(200, volatility=1.0)
         atr_low = last_atr(highs_low, lows_low, closes_low, 14)
-        
+
         # High volatility
         closes_high, highs_high, lows_high = _ohlc(200, volatility=10.0)
         atr_high = last_atr(highs_high, lows_high, closes_high, 14)
-        
+
         assert atr_high > atr_low, f"High vol ATR ({atr_high}) should exceed low vol ATR ({atr_low})"
 
     def test_last_atr_matches_series_last_value(self):
         """last_atr() should return the same value as the last non-None in atr()."""
         random.seed(55)
         closes, highs, lows = _ohlc(150, volatility=3.0)
-        
+
         series = atr(highs, lows, closes, 14)
         last_from_series = next((v for v in reversed(series) if v is not None), None)
         last_from_fn = last_atr(highs, lows, closes, 14)
-        
+
         if last_from_series is not None:
             assert abs(last_from_series - last_from_fn) < 1e-9
 
@@ -321,11 +321,11 @@ class TestATROptimization:
         """ATR with custom period should match reference."""
         random.seed(56)
         closes, highs, lows = _ohlc(200, volatility=3.0)
-        
+
         for period in [7, 14, 21]:
             expected = _atr_reference(highs, lows, closes, period)
             actual = atr(highs, lows, closes, period)
-            
+
             for i, (exp, act) in enumerate(zip(expected, actual)):
                 if exp is None:
                     assert act is None
@@ -337,7 +337,7 @@ class TestATROptimization:
         closes = _prices(50)
         highs = _prices(51)
         lows = _prices(50)
-        
+
         with pytest.raises(ValueError):
             atr(highs, lows, closes, 14)
 
@@ -347,10 +347,10 @@ class TestATROptimization:
         closes = [100.0, 105.0, 104.0, 106.0, 103.0] * 20
         highs = [c + 5.0 for c in closes]
         lows = [c - 2.0 for c in closes]
-        
+
         expected = _atr_reference(highs, lows, closes, 14)
         actual = atr(highs, lows, closes, 14)
-        
+
         for i, (exp, act) in enumerate(zip(expected, actual)):
             if exp is None:
                 assert act is None
@@ -371,15 +371,15 @@ class TestOptimizationIntegration:
         closes = [100.0 + random.uniform(-5, 5) for _ in range(300)]
         highs = [c + abs(random.uniform(0, 3)) for c in closes]
         lows = [c - abs(random.uniform(0, 3)) for c in closes]
-        
+
         # Should not raise
         rsi_vals = rsi(closes, 14)
         atr_vals = atr(highs, lows, closes, 14)
-        
+
         # Both should have some non-None values
         rsi_nonnone = [v for v in rsi_vals if v is not None]
         atr_nonnone = [v for v in atr_vals if v is not None]
-        
+
         assert len(rsi_nonnone) > 0
         assert len(atr_nonnone) > 0
 
@@ -389,11 +389,11 @@ class TestOptimizationIntegration:
         closes = _prices(100000, step=0.001)
         highs = [c + 0.5 for c in closes]
         lows = [c - 0.5 for c in closes]
-        
+
         # Should complete without timeout
         rsi_result = last_rsi(closes, 14)
         atr_result = last_atr(highs, lows, closes, 14)
-        
+
         assert rsi_result is not None
         assert atr_result is not None
         assert 0 <= rsi_result <= 100

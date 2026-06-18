@@ -55,7 +55,8 @@ async def _send(text: str) -> bool:
     if not _ENABLED:
         return False
     try:
-        import urllib.request, json
+        import urllib.request
+        import json
         payload = json.dumps({
             "chat_id": _CHANNEL_ID,
             "text": text,
