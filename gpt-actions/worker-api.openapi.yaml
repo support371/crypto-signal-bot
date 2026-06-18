@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: crypto-signal-bot Worker API Action
   version: 2.2.0
-  description: Paper-only Worker/API action schema. Live trading and withdrawals must remain blocked with HTTP 403. Coinbase is public read-only market data only.
+  description: Worker/API action schema. System operates in paper mode by default and graduates to live mode only after verified performance criteria are met and the owner explicitly approves. Coinbase is public read-only market data only.
 servers:
   - url: https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
     description: Current Cloudflare Worker backend
