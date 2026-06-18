@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: crypto-signal-bot Cloudflare Action
   version: 1.1.0
-  description: Cloudflare operational access for the paper-only crypto-signal-bot Worker, D1, and R2 resources. Use the Worker readonly D1 endpoint for SQL reads. Do not store, print, or use live exchange order-execution keys.
+  description: Cloudflare operational access for the crypto-signal-bot Worker, D1, R2, and KV resources. The system operates in paper mode by default and graduates to live mode only after verified performance criteria are met and the owner approves. Use queryD1Readonly in the Worker API action for SQL reads. Do not store, print, or use live exchange order-execution keys.
 servers:
   - url: https://api.cloudflare.com/client/v4
 components:
@@ -69,38 +69,6 @@ components:
 security:
   - CloudflareBearer: []
 paths:
-  /d1/query/readonly:
-    post:
-      operationId: queryD1Readonly
-      summary: Run a server-enforced readonly D1 SELECT query through the Worker
-      description: This operation targets the deployed Worker, not the Cloudflare D1 API directly. The Worker rejects any SQL that does not start with SELECT.
-      servers:
-        - url: https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/D1QueryRequest"
-      responses:
-        "200":
-          description: Readonly D1 query result
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        "400":
-          description: Rejected non-SELECT query or malformed request
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                additionalProperties: true
   /accounts/{account_id}/d1/database/{database_id}/query:
     post:
       operationId: queryD1
@@ -164,26 +132,3 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CloudflareListEnvelope"
-  /accounts/{account_id}/workers/scripts/{script_name}/logs:
-    get:
-      operationId: getWorkerLogs
-      summary: Get Worker logs when available
-      description: Cloudflare log availability depends on account plan and logging configuration. Do not expose secrets from logs.
-      parameters:
-        - name: account_id
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: script_name
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Worker logs
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CloudflareEnvelope"
