@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: CryptoOps Agent GitHub API
   description: GitHub API access for support371/crypto-signal-bot. Use placeholders only. Never write real secrets.
-  version: 1.0.0
+  version: 1.1.0
 servers:
   - url: https://api.github.com
 security:
@@ -34,7 +34,6 @@ paths:
                 additionalProperties: true
         "404":
           description: File not found
-
     put:
       operationId: writeFile
       summary: Create or update a repository file
@@ -95,10 +94,7 @@ paths:
           required: false
           schema:
             type: string
-            enum:
-              - open
-              - closed
-              - all
+            enum: [open, closed, all]
             default: open
         - name: labels
           in: query
@@ -130,7 +126,6 @@ paths:
                 items:
                   type: object
                   additionalProperties: true
-
     post:
       operationId: createIssue
       summary: Create repository issue
@@ -175,10 +170,7 @@ paths:
           required: false
           schema:
             type: string
-            enum:
-              - open
-              - closed
-              - all
+            enum: [open, closed, all]
             default: open
         - name: base
           in: query
@@ -208,6 +200,42 @@ paths:
                 items:
                   type: object
                   additionalProperties: true
+    post:
+      operationId: createPullRequest
+      summary: Open a pull request
+      description: Always target main as the base. Never merge directly — open a PR for review.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - head
+                - base
+              properties:
+                title:
+                  type: string
+                head:
+                  type: string
+                  description: The branch to merge from, e.g. feat/my-change
+                base:
+                  type: string
+                  description: The branch to merge into. Use main.
+                body:
+                  type: string
+                draft:
+                  type: boolean
+                  default: false
+      responses:
+        "201":
+          description: Pull request created
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
 
   /repos/support371/crypto-signal-bot/actions/runs:
     get:
@@ -240,6 +268,68 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+
+  /repos/support371/crypto-signal-bot/git/refs:
+    post:
+      operationId: createBranch
+      summary: Create a new branch from a given SHA or existing ref
+      description: >
+        Use this to create feature branches before writing files.
+        Always branch from main. Never create branches named main or master.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - ref
+                - sha
+              properties:
+                ref:
+                  type: string
+                  description: Full ref name, e.g. refs/heads/feat/my-branch
+                sha:
+                  type: string
+                  description: The SHA to branch from (use latest main commit SHA)
+      responses:
+        "201":
+          description: Branch created
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /repos/support371/crypto-signal-bot/actions/workflows/{workflow_id}/dispatches:
+    post:
+      operationId: triggerWorkflowDispatch
+      summary: Trigger a GitHub Actions workflow run on a specific branch
+      parameters:
+        - name: workflow_id
+          in: path
+          required: true
+          schema:
+            type: string
+            description: Workflow file name, e.g. ci.yml
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - ref
+              properties:
+                ref:
+                  type: string
+                  description: Branch name to run the workflow on
+                inputs:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "204":
+          description: Workflow dispatch accepted
 
   /repos/support371/crypto-signal-bot/commits:
     get:
