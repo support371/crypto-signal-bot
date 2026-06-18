@@ -82,7 +82,7 @@ async function handleAgentContext(request: Request, env: AgentEnv): Promise<Resp
   const [runtime, guardian, signal, portfolio, feed] = await Promise.allSettled([
     fetch(`${base}/runtime/status`).then(r => r.json()),
     fetch(`${base}/guardian/status`).then(r => r.json()),
-    fetch(`${base}/signals`).then(r => r.json()),
+    fetch(`${base}/signal/latest`).then(r => r.json()),
     fetch(`${base}/portfolio/summary`).then(r => r.json()),
     fetch(`${base}/market/feed/status`).then(r => r.json()),
   ])
