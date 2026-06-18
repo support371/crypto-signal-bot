@@ -30,4 +30,4 @@ crons = ["*/20 * * * *", "*/5 * * * *", "0 * * * *", "0 0 * * *"]
 
 [[kv_namespaces]]
 binding = "AGENT_MEMORY"
-id = "PLACEHOLDER_REPLACE_WITH_REAL_KV_ID"
+id = "8f0321c43b844ec08c514f1d04839a3c"
