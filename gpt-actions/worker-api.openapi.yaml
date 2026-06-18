@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: crypto-signal-bot Worker API Action
-  version: 2.2.0
+  version: 2.2.1
   description: >
     Worker/API action schema for the crypto-signal-bot system.
     The system operates in paper mode by default and graduates to live mode
@@ -15,6 +15,24 @@ components:
   schemas:
     GenericObject:
       type: object
+      properties:
+        status:
+          type: string
+        ok:
+          type: boolean
+        message:
+          type: string
+        error:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+        value:
+          description: Generic JSON response value.
+        ts:
+          oneOf:
+            - type: string
+            - type: number
       additionalProperties: true
     ErrorObject:
       type: object
