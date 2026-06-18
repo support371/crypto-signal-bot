@@ -1,8 +1,13 @@
 openapi: 3.1.0
 info:
   title: crypto-signal-bot Cloudflare Action
-  version: 1.1.0
-  description: Cloudflare operational access for the paper-only crypto-signal-bot Worker, D1, and R2 resources. Use the Worker readonly D1 endpoint for SQL reads. Do not store, print, or use live exchange order-execution keys.
+  version: 1.2.0
+  description: >
+    Cloudflare operational access for the crypto-signal-bot Worker, D1, and R2 resources.
+    The system operates in paper mode by default and graduates to live mode only after
+    verified performance criteria are met and the owner approves.
+    Use queryD1Readonly (in the Worker API action) for SQL reads.
+    Do not store, print, or use live exchange order-execution keys.
 servers:
   - url: https://api.cloudflare.com/client/v4
 components:
@@ -11,23 +16,6 @@ components:
       type: http
       scheme: bearer
   schemas:
-    D1QueryRequest:
-      type: object
-      required:
-        - sql
-      properties:
-        sql:
-          type: string
-          description: SQL statement. Use SELECT only for readonly queries.
-        params:
-          type: array
-          items:
-            oneOf:
-              - type: string
-              - type: number
-              - type: boolean
-              - type: 'null'
-      additionalProperties: false
     CloudflareEnvelope:
       type: object
       properties:
@@ -69,71 +57,13 @@ components:
 security:
   - CloudflareBearer: []
 paths:
-  /d1/query/readonly:
-    post:
-      operationId: queryD1Readonly
-      summary: Run a server-enforced readonly D1 SELECT query through the Worker
-      description: This operation targets the deployed Worker, not the Cloudflare D1 API directly. The Worker rejects any SQL that does not start with SELECT.
-      servers:
-        - url: https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/D1QueryRequest"
-      responses:
-        "200":
-          description: Readonly D1 query result
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        "400":
-          description: Rejected non-SELECT query or malformed request
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                additionalProperties: true
-  /accounts/{account_id}/d1/database/{database_id}/query:
-    post:
-      operationId: queryD1
-      summary: Query Cloudflare D1 database
-      description: Legacy direct Cloudflare API query. Prefer queryD1Readonly for GPT access. Only use SELECT statements. INSERT, UPDATE, DELETE, DROP, CREATE, and ALTER are prohibited and may cause irreversible data loss.
-      parameters:
-        - name: account_id
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: database_id
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/D1QueryRequest"
-      responses:
-        "200":
-          description: D1 query result
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CloudflareEnvelope"
   /accounts/{account_id}/d1/database:
     get:
       operationId: listD1Databases
       summary: List D1 databases
+      description: >
+        Known database: crypto-signal-bot-db (ID: d647c639-845a-414e-9bb4-513e42ef4451).
+        Use queryD1Readonly in the Worker API action for actual SQL queries.
       parameters:
         - name: account_id
           in: path
@@ -164,26 +94,3 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CloudflareListEnvelope"
-  /accounts/{account_id}/workers/scripts/{script_name}/logs:
-    get:
-      operationId: getWorkerLogs
-      summary: Get Worker logs when available
-      description: Cloudflare log availability depends on account plan and logging configuration. Do not expose secrets from logs.
-      parameters:
-        - name: account_id
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: script_name
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Worker logs
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CloudflareEnvelope"
