@@ -209,6 +209,45 @@ paths:
                   type: object
                   additionalProperties: true
 
+    post:
+      operationId: createPullRequest
+      summary: Open a pull request
+      description: >
+        Always target main as the base. Never merge directly to main without
+        a PR. Never include secrets in the PR title or body.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - head
+                - base
+              properties:
+                title:
+                  type: string
+                head:
+                  type: string
+                  description: The branch name to merge from
+                base:
+                  type: string
+                  description: The branch to merge into. Use main.
+                body:
+                  type: string
+                draft:
+                  type: boolean
+                  default: false
+      responses:
+        "201":
+          description: Pull request created
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
   /repos/support371/crypto-signal-bot/actions/runs:
     get:
       operationId: listWorkflowRuns
