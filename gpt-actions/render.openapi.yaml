@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Render Deploy Action
-  version: 1.0.0
+  version: 1.0.1
   description: >
     Render API access for triggering and monitoring backend service deployments.
     Always call listRenderServices first to confirm the service ID before triggering a deploy.
@@ -9,24 +9,6 @@ info:
 servers:
   - url: https://api.render.com/v1
     description: Render API
-components:
-  securitySchemes:
-    RenderBearer:
-      type: http
-      scheme: bearer
-  schemas:
-    DeployResponse:
-      type: object
-      properties:
-        id:
-          type: string
-        status:
-          type: string
-        createdAt:
-          type: string
-        finishedAt:
-          type: string
-      additionalProperties: true
 security:
   - RenderBearer: []
 paths:
@@ -40,6 +22,8 @@ paths:
           required: false
           schema:
             type: integer
+            minimum: 1
+            maximum: 100
             default: 20
       responses:
         "200":
@@ -47,8 +31,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: "#/components/schemas/ServicesListResponse"
   /services/{serviceId}/deploys:
     get:
       operationId: listRenderDeploys
@@ -64,6 +47,8 @@ paths:
           required: false
           schema:
             type: integer
+            minimum: 1
+            maximum: 100
             default: 10
       responses:
         "200":
@@ -71,10 +56,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  type: object
-                  additionalProperties: true
+                $ref: "#/components/schemas/DeploysListResponse"
     post:
       operationId: triggerRenderDeploy
       summary: Trigger a new deploy for a Render service
@@ -92,12 +74,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                clearCache:
-                  type: string
-                  enum: [clear, do_not_clear]
-                  default: do_not_clear
+              $ref: "#/components/schemas/TriggerRenderDeployRequest"
       responses:
         "201":
           description: Deploy triggered
@@ -127,3 +104,104 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DeployResponse"
+components:
+  securitySchemes:
+    RenderBearer:
+      type: http
+      scheme: bearer
+      description: Use your Render API key. The Authorization header will be sent as Bearer <RENDER_API_KEY>.
+  schemas:
+    ServicesListResponse:
+      type: object
+      properties:
+        services:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServiceResponse"
+        cursor:
+          type: string
+        hasMore:
+          type: boolean
+      additionalProperties: true
+    ServiceResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        serviceDetails:
+          type: object
+          properties:
+            url:
+              type: string
+            buildCommand:
+              type: string
+            startCommand:
+              type: string
+            env:
+              type: string
+          additionalProperties: true
+        branch:
+          type: string
+        repo:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      additionalProperties: true
+    DeploysListResponse:
+      type: object
+      properties:
+        deploys:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeployResponse"
+        cursor:
+          type: string
+        hasMore:
+          type: boolean
+      additionalProperties: true
+    TriggerRenderDeployRequest:
+      type: object
+      properties:
+        clearCache:
+          type: string
+          enum:
+            - clear
+            - do_not_clear
+          default: do_not_clear
+      additionalProperties: false
+    DeployResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        commit:
+          type: object
+          properties:
+            id:
+              type: string
+            message:
+              type: string
+            createdAt:
+              type: string
+          additionalProperties: true
+        status:
+          type: string
+        trigger:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        finishedAt:
+          type: string
+        serviceId:
+          type: string
+        service:
+          $ref: "#/components/schemas/ServiceResponse"
+      additionalProperties: true
