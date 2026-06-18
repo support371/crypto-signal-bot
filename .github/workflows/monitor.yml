@@ -13,179 +13,68 @@ jobs:
       contents: read
 
     steps:
-      - name: Ensure monitor labels exist
+      - name: Run paper safety monitor checks
+        id: checks
+        run: |
+          set -euo pipefail
+
+          BASE="https://crypto-signal-bot-api.gr8r9bfzry.workers.dev"
+
+          health_code=$(curl -sS --max-time 10 -o /dev/null -w "%{http_code}" "$BASE/health")
+          runtime_json=$(curl -sS --max-time 10 "$BASE/runtime/status")
+          guardian_json=$(curl -sS --max-time 10 "$BASE/guardian/status")
+          portfolio_json=$(curl -sS --max-time 10 "$BASE/portfolio/summary")
+          feed_json=$(curl -sS --max-time 10 "$BASE/market/feed/status")
+
+          runtime_mode=$(echo "$runtime_json" | python3 -c "import sys,json; print(json.load(sys.stdin).get('mode','unknown'))")
+          guardian_killed=$(echo "$guardian_json" | python3 -c "import sys,json; d=json.load(sys.stdin); print(str(d.get('killed', d.get('kill_switch_active', False))).lower())")
+          drawdown=$(echo "$portfolio_json" | python3 -c "import sys,json; d=json.load(sys.stdin); print(float(d.get('drawdown_pct', d.get('drawdown', d.get('max_drawdown', 0)))))")
+          feed_status=$(echo "$feed_json" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','unknown'))")
+
+          echo "health_code=$health_code" >> "$GITHUB_OUTPUT"
+          echo "runtime_mode=$runtime_mode" >> "$GITHUB_OUTPUT"
+          echo "guardian_killed=$guardian_killed" >> "$GITHUB_OUTPUT"
+          echo "drawdown=$drawdown" >> "$GITHUB_OUTPUT"
+          echo "feed_status=$feed_status" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Automated monitor"
+            echo "- Health HTTP: $health_code"
+            echo "- Runtime mode: $runtime_mode"
+            echo "- Guardian killed: $guardian_killed"
+            echo "- Portfolio drawdown: $drawdown%"
+            echo "- Market feed: $feed_status"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          test "$health_code" = "200"
+          test "$runtime_mode" = "paper"
+          test "$guardian_killed" != "true"
+          python3 -c "import sys; sys.exit(0 if float('$drawdown') <= 10 else 1)"
+          test "$feed_status" = "live" -o "$feed_status" = "live_public"
+
+      - name: Open issue if monitor checks failed
+        if: failure()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          for LABEL in "monitor/health" "monitor/runtime" "monitor/guardian" "monitor/drawdown" "monitor/feed"; do
-            gh label create "$LABEL" \
-              --repo $GITHUB_REPOSITORY \
+          title="Automated monitor failed"
+          existing=$(gh issue list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state open \
+            --label "monitor/health" \
+            --search "[monitor] automated-monitor" \
+            --json number --jq '.[0].number' || true)
+
+          if [ -z "$existing" ]; then
+            gh label create "monitor/health" \
+              --repo "$GITHUB_REPOSITORY" \
               --color "d93f0b" \
               --description "Automated monitor alert" \
               2>/dev/null || true
-          done
 
-      - name: Check Worker health
-        id: health
-        run: |
-          STATUS=$(curl -sf --max-time 10 -o /dev/null -w "%{http_code}" \
-            https://crypto-signal-bot-api.gr8r9bfzry.workers.dev/health)
-          echo "status=$STATUS" >> $GITHUB_OUTPUT
-
-      - name: Open issue if health check failed
-        if: steps.health.outputs.status != '200'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TITLE="Worker health check failed"
-          EXISTING=$(gh issue list \
-            --repo $GITHUB_REPOSITORY \
-            --state open \
-            --label "monitor/health" \
-            --search "[monitor] worker-health" \
-            --json number --jq '.[0].number')
-          if [ -z "$EXISTING" ]; then
             gh issue create \
-              --repo $GITHUB_REPOSITORY \
-              --title "$TITLE" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$title" \
               --label "monitor/health" \
-              --body "Automated monitor: Worker /health returned HTTP ${{ steps.health.outputs.status }} at $(date -u). [monitor] worker-health"
+              --body "Automated monitor failed on $(date -u). Review the workflow summary for health, runtime, guardian, drawdown, and feed status. [monitor] automated-monitor"
           fi
-
-      - name: Check runtime mode
-        id: runtime
-        run: |
-          RESPONSE=$(curl -sf --max-time 10 \
-            https://crypto-signal-bot-api.gr8r9bfzry.workers.dev/runtime/status)
-          MODE=$(echo "$RESPONSE" | \
-            python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('mode','unknown'))" \
-            2>/dev/null || echo "unknown")
-          echo "mode=$MODE" >> $GITHUB_OUTPUT
-
-      - name: Open issue if runtime mode is not paper
-        if: steps.runtime.outputs.mode != 'paper'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TITLE="ALERT: Runtime mode is not paper"
-          EXISTING=$(gh issue list \
-            --repo $GITHUB_REPOSITORY \
-            --state open \
-            --label "monitor/runtime" \
-            --search "[monitor] runtime-mode" \
-            --json number --jq '.[0].number')
-          if [ -z "$EXISTING" ]; then
-            gh issue create \
-              --repo $GITHUB_REPOSITORY \
-              --title "$TITLE" \
-              --label "monitor/runtime" \
-              --body "Automated monitor: runtime/status returned mode=${{ steps.runtime.outputs.mode }} at $(date -u). Expected: paper. [monitor] runtime-mode"
-          fi
-
-      - name: Check guardian status
-        id: guardian
-        run: |
-          RESPONSE=$(curl -sf --max-time 10 \
-            https://crypto-signal-bot-api.gr8r9bfzry.workers.dev/guardian/status)
-          KILLED=$(echo "$RESPONSE" | \
-            python3 -c "import sys,json; d=json.load(sys.stdin); print(str(d.get('killed', d.get('kill_switch_active', False))).lower())" \
-            2>/dev/null || echo "false")
-          echo "killed=$KILLED" >> $GITHUB_OUTPUT
-
-      - name: Open issue if guardian kill switch is active
-        if: steps.guardian.outputs.killed == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TITLE="Guardian kill switch is active"
-          EXISTING=$(gh issue list \
-            --repo $GITHUB_REPOSITORY \
-            --state open \
-            --label "monitor/guardian" \
-            --search "[monitor] guardian-kill" \
-            --json number --jq '.[0].number')
-          if [ -z "$EXISTING" ]; then
-            gh issue create \
-              --repo $GITHUB_REPOSITORY \
-              --title "$TITLE" \
-              --label "monitor/guardian" \
-              --body "Automated monitor: guardian/status reports kill switch is active at $(date -u). Review and reset if safe. [monitor] guardian-kill"
-          fi
-
-      - name: Check portfolio drawdown
-        id: portfolio
-        run: |
-          RESPONSE=$(curl -sf --max-time 10 \
-            https://crypto-signal-bot-api.gr8r9bfzry.workers.dev/portfolio/summary)
-          DRAWDOWN=$(echo "$RESPONSE" | \
-            python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-dd = d.get('drawdown_pct', d.get('drawdown', d.get('max_drawdown', 0)))
-print(float(dd))
-" 2>/dev/null || echo "0")
-          echo "drawdown=$DRAWDOWN" >> $GITHUB_OUTPUT
-
-      - name: Open issue if drawdown exceeds 10 percent
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          DRAWDOWN="${{ steps.portfolio.outputs.drawdown }}"
-          EXCEEDS=$(python3 -c "print('true' if float('$DRAWDOWN') > 10 else 'false')" 2>/dev/null || echo "false")
-          if [ "$EXCEEDS" = "true" ]; then
-            TITLE="Portfolio drawdown warning: ${DRAWDOWN}%"
-            EXISTING=$(gh issue list \
-              --repo $GITHUB_REPOSITORY \
-              --state open \
-              --label "monitor/drawdown" \
-              --search "[monitor] portfolio-drawdown" \
-              --json number --jq '.[0].number')
-            if [ -z "$EXISTING" ]; then
-              gh issue create \
-                --repo $GITHUB_REPOSITORY \
-                --title "$TITLE" \
-                --label "monitor/drawdown" \
-                --body "Automated monitor: portfolio drawdown is ${DRAWDOWN}% at $(date -u). Threshold: 10%. [monitor] portfolio-drawdown"
-            fi
-          fi
-
-      - name: Check market feed status
-        id: feed
-        run: |
-          RESPONSE=$(curl -sf --max-time 10 \
-            https://crypto-signal-bot-api.gr8r9bfzry.workers.dev/market/feed/status)
-          STATUS=$(echo "$RESPONSE" | \
-            python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status','unknown'))" \
-            2>/dev/null || echo "unknown")
-          echo "status=$STATUS" >> $GITHUB_OUTPUT
-
-      - name: Open issue if market feed is down
-        if: >
-          steps.feed.outputs.status != 'live' &&
-          steps.feed.outputs.status != 'live_public'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TITLE="Market feed is down"
-          EXISTING=$(gh issue list \
-            --repo $GITHUB_REPOSITORY \
-            --state open \
-            --label "monitor/feed" \
-            --search "[monitor] market-feed" \
-            --json number --jq '.[0].number')
-          if [ -z "$EXISTING" ]; then
-            gh issue create \
-              --repo $GITHUB_REPOSITORY \
-              --title "$TITLE" \
-              --label "monitor/feed" \
-              --body "Automated monitor: market/feed/status returned status=${{ steps.feed.outputs.status }} at $(date -u). [monitor] market-feed"
-          fi
-
-      - name: Summary
-        run: |
-          echo "Monitor run complete at $(date -u)"
-          echo "Health HTTP: ${{ steps.health.outputs.status }}"
-          echo "Runtime mode: ${{ steps.runtime.outputs.mode }}"
-          echo "Guardian killed: ${{ steps.guardian.outputs.killed }}"
-          echo "Portfolio drawdown: ${{ steps.portfolio.outputs.drawdown }}%"
-          echo "Market feed: ${{ steps.feed.outputs.status }}"
