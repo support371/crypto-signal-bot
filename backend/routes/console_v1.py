@@ -638,7 +638,8 @@ async def console_portfolio_reset(body: PortfolioResetRequest) -> dict:
 @router.get("/version")
 async def get_version():
     """Return deployed git SHA and build timestamp."""
-    import subprocess, os
+    import subprocess
+    import os
     sha = os.environ.get("GIT_SHA", "unknown")
     if sha == "unknown":
         try:

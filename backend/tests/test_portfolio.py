@@ -33,7 +33,6 @@ def _mock_price(value: float):
 
 
 def run(coro):
-    import asyncio
     try:
         loop = asyncio.get_event_loop()
         if loop.is_running():

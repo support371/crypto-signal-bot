@@ -10,6 +10,7 @@ insufficient data rather than raising.
 """
 from __future__ import annotations
 
+import math
 from typing import Any, List, Optional, Tuple
 
 
@@ -75,6 +76,8 @@ def rsi(values: List[float], period: int = 14) -> List[Optional[float]]:
     Relative Strength Index (Wilder smoothing).
     Returns list of same length; leading values are None.
     Optimized to O(n) without intermediate list allocations.
+    Algebraically simplified update rule for Wilder smoothing:
+    val += (input - val) / period
     """
     n = len(values)
     if n < period + 1 or period <= 0:
@@ -83,7 +86,6 @@ def rsi(values: List[float], period: int = 14) -> List[Optional[float]]:
     result: List[Optional[float]] = [None] * n
 
     inv_period = 1.0 / period
-    minus_one = float(period - 1)
 
     avg_gain = 0.0
     avg_loss = 0.0
@@ -102,26 +104,33 @@ def rsi(values: List[float], period: int = 14) -> List[Optional[float]]:
     avg_gain *= inv_period
     avg_loss *= inv_period
 
-    if avg_loss == 0:
-        result[period] = 100.0 if avg_gain > 0 else 50.0
+    # Use combined formula for RSI to reduce divisions: 100 * gain / (gain + loss)
+    total = avg_gain + avg_loss
+    if total == 0:
+        result[period] = 50.0
     else:
-        result[period] = 100.0 - (100.0 / (1.0 + avg_gain / avg_loss))
+        result[period] = 100.0 * avg_gain / total
 
     # Wilder smoothing for the rest
     for i in range(period + 1, n):
         curr = values[i]
         change = curr - prev
 
-        gain = change if change > 0 else 0.0
-        loss = -change if change < 0 else 0.0
-
-        avg_gain = (avg_gain * minus_one + gain) * inv_period
-        avg_loss = (avg_loss * minus_one + loss) * inv_period
-
-        if avg_loss == 0:
-            result[i] = 100.0 if avg_gain > 0 else 50.0
+        if change > 0:
+            avg_gain += (change - avg_gain) * inv_period
+            avg_loss -= avg_loss * inv_period
+        elif change < 0:
+            avg_gain -= avg_gain * inv_period
+            avg_loss += (-change - avg_loss) * inv_period
         else:
-            result[i] = 100.0 - (100.0 / (1.0 + avg_gain / avg_loss))
+            avg_gain -= avg_gain * inv_period
+            avg_loss -= avg_loss * inv_period
+
+        total = avg_gain + avg_loss
+        if total == 0:
+            result[i] = 50.0
+        else:
+            result[i] = 100.0 * avg_gain / total
         prev = curr
 
     return result
@@ -354,6 +363,8 @@ def bollinger_bands(
     """
     Returns (upper, middle, lower) bands. Middle is SMA. Leading values None.
     Optimized to O(n) using rolling sum and rolling sum of squares.
+    Further optimized by unrolling the initialization loop to eliminate
+    conditional branches inside the main loop and using multiplicative inverse.
     """
     n = len(values)
     upper: List[Optional[float]] = [None] * n
@@ -363,32 +374,37 @@ def bollinger_bands(
     if n < period or period <= 0:
         return upper, middle, lower
 
-    # Use rolling sums to achieve O(n) complexity instead of O(n * period)
+    inv_period = 1.0 / period
     current_sum = 0.0
     current_sq_sum = 0.0
 
-    for i in range(n):
+    # 1. Prime the sums for the first window (excluding the last element)
+    for i in range(period - 1):
         val = values[i]
         current_sum += val
         current_sq_sum += val * val
 
-        if i >= period:
-            # Remove the value that just left the window
-            old_val = values[i - period]
-            current_sum -= old_val
-            current_sq_sum -= old_val * old_val
+    # 2. Main loop: process elements from 'period - 1' to 'n - 1'
+    for i in range(period - 1, n):
+        val = values[i]
+        current_sum += val
+        current_sq_sum += val * val
 
-        if i >= period - 1:
-            # Calculate SMA and Variance
-            # Variance = E[X^2] - (E[X])^2
-            sma = current_sum / period
-            variance = (current_sq_sum / period) - (sma * sma)
-            # Safeguard against tiny negative numbers due to floating point precision
-            std = max(variance, 0.0) ** 0.5
+        # Calculate SMA and Variance: Variance = E[X^2] - (E[X])^2
+        sma = current_sum * inv_period
+        variance = (current_sq_sum * inv_period) - (sma * sma)
+        # Safeguard against tiny negative numbers due to floating point precision
+        std = math.sqrt(max(variance, 0.0))
 
-            middle[i] = sma
-            upper[i] = sma + num_std * std
-            lower[i] = sma - num_std * std
+        middle[i] = sma
+        offset = num_std * std
+        upper[i] = sma + offset
+        lower[i] = sma - offset
+
+        # Remove the value that will leave the window in the next iteration
+        old_val = values[i - period + 1]
+        current_sum -= old_val
+        current_sq_sum -= old_val * old_val
 
     return upper, middle, lower
 
@@ -420,7 +436,7 @@ def last_bollinger(
         sq_diff_sum += diff * diff
 
     variance = sq_diff_sum * inv_period
-    std = max(variance, 0.0) ** 0.5
+    std = math.sqrt(max(variance, 0.0))
 
     return sma + num_std * std, sma, sma - num_std * std
 
@@ -439,6 +455,8 @@ def atr(
     Average True Range (Wilder smoothing).
     Returns list same length as inputs.
     Optimized to O(n) without intermediate list allocations.
+    Algebraically simplified update rule for Wilder smoothing:
+    val += (tr - val) / period
     """
     n = len(closes)
     if len(highs) != n or len(lows) != n:
@@ -448,7 +466,6 @@ def atr(
 
     result: List[Optional[float]] = [None] * n
     inv_period = 1.0 / period
-    minus_one = float(period - 1)
 
     # Seed with simple average of first `period` TRs
     tr_sum = 0.0
@@ -479,7 +496,9 @@ def atr(
         if lpc > tr:
             tr = lpc
 
-        val = (val * minus_one + tr) * inv_period
+        # val = (val * (period - 1) + tr) / period
+        # Simplified: val += (tr - val) / period
+        val += (tr - val) * inv_period
         result[i] = val
 
     return result

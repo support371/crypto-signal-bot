@@ -136,7 +136,7 @@ async def _stream_loop() -> None:
                         "stale": False,
                         "source": "unavailable",
                         "mode": "unavailable",
-                        "error": f"exchange_unreachable",
+                        "error": "exchange_unreachable",
                         "ts": cycle_start,
                     }))
             # Successful snapshots are published inside get_price() directly

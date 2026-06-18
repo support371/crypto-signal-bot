@@ -212,7 +212,7 @@ async def compute_unrealized_positions() -> list[UnrealizedPosition]:
     Compute unrealized P&L for all open positions using live prices.
     Returns empty list if market data is unavailable (not fabricated values).
     """
-    from backend.services.market_data.service import get_price, MarketDataUnavailable
+    from backend.services.market_data.service import MarketDataUnavailable
     positions: list[UnrealizedPosition] = []
     now = int(time.time())
 

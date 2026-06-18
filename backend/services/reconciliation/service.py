@@ -74,7 +74,6 @@ async def run_reconciliation() -> ReconciliationResult:
         get_pnl_summary,
         get_all_lots,
     )
-    from backend.config.loader import get_exchange_config
 
     now = int(time.time())
     cfg = get_exchange_config()

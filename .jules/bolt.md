@@ -37,3 +37,11 @@
 ## 2026-07-08 - [CPython Loop & Arithmetic Micro-optimizations]
 **Learning:** In CPython, the overhead of generator expressions (e.g., `sum(x**2 for x in window)`) and the general-purpose power operator (`**`) is significant in tight loops. Explicit `for` loops and simple multiplication (`x * x`) are much faster. Additionally, using the algebraically simplified EMA update rule `val += k * (input - val)` instead of the traditional weighted average reduces the number of operations per iteration.
 **Action:** Favor explicit loops and basic arithmetic over functional constructs or complex operators in performance-critical indicator loops. Always use the simplified EMA formula for incremental updates.
+
+## 2026-07-15 - [Indicator Loop Branch Elimination]
+**Learning:** Checking for window readiness (e.g., `if i >= period`) inside a rolling window loop adds a redundant conditional branch to every iteration. For large datasets, this overhead accumulates.
+**Action:** Unroll the "priming" phase of rolling window indicators into a separate loop. This allows the main loop to run branch-free, focusing exclusively on the core computation and window shifting.
+
+## 2026-07-15 - [Efficient RSI Series Calculation]
+**Learning:** The traditional RSI formula $100 - (100 / (1 + RS))$ involves multiple divisions and nested calculations. It can be simplified to $100 \cdot avg\_gain / (avg\_gain + avg\_loss)$, which is mathematically equivalent and significantly faster.
+**Action:** Use the ratio-based RSI formula to reduce floating-point divisions and simplify the update logic inside hot loops.
