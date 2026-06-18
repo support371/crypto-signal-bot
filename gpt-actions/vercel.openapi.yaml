@@ -1,75 +1,155 @@
 openapi: 3.1.0
 info:
-  title: crypto-signal-bot Vercel Action
+  title: CryptoOps Agent Vercel API
+  description: Vercel API access for crypto-signal-bot deployment operations. Use placeholders only. Do not enable live trading.
   version: 1.0.1
-  description: Vercel operational access for crypto-signal-bot frontend deployment. Verify Worker paper safety before triggering production deployment.
 servers:
   - url: https://api.vercel.com
+security:
+  - vercelBearerAuth: []
+paths:
+  /v6/deployments:
+    get:
+      operationId: listDeployments
+      summary: List Vercel deployments
+      parameters:
+        - name: teamId
+          in: query
+          required: false
+          schema:
+            type: string
+            default: team_7lMXW95WSLeyK4yAObe8FptW
+        - name: projectId
+          in: query
+          required: false
+          schema:
+            type: string
+            default: prj_sdk3k44uV3pCj5p5njSzHzm1vOJX
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - BUILDING
+              - ERROR
+              - INITIALIZING
+              - QUEUED
+              - READY
+              - CANCELED
+      responses:
+        "200":
+          description: Deployments
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentsListResponse"
+  /v13/deployments:
+    post:
+      operationId: triggerDeployment
+      summary: Trigger a Vercel deployment
+      description: Trigger production or preview deployment. Do not include real secrets or live exchange API keys.
+      parameters:
+        - name: teamId
+          in: query
+          required: false
+          schema:
+            type: string
+            default: team_7lMXW95WSLeyK4yAObe8FptW
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TriggerDeploymentRequest"
+      responses:
+        "200":
+          description: Deployment created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentResponse"
+        "201":
+          description: Deployment created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentResponse"
+  /v9/projects/{projectId}/env:
+    get:
+      operationId: getEnvVars
+      summary: Get Vercel project environment variables
+      description: Do not reveal secret values. Safety variables must remain paper-only.
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            default: prj_sdk3k44uV3pCj5p5njSzHzm1vOJX
+        - name: teamId
+          in: query
+          required: false
+          schema:
+            type: string
+            default: team_7lMXW95WSLeyK4yAObe8FptW
+        - name: gitBranch
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: target
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - production
+              - preview
+              - development
+      responses:
+        "200":
+          description: Environment variables
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvVarsResponse"
 components:
   securitySchemes:
-    VercelBearer:
+    vercelBearerAuth:
       type: http
       scheme: bearer
+      description: Use your Vercel API token. The Authorization header will be sent as Bearer <VERCEL_TOKEN>.
   schemas:
-    DeploymentListResponse:
+    DeploymentsListResponse:
       type: object
       properties:
         deployments:
           type: array
           items:
-            type: object
-            properties:
-              uid:
-                type: string
-              name:
-                type: string
-              url:
-                type: string
-              state:
-                type: string
-              target:
-                type: string
-              createdAt:
-                type: integer
-            additionalProperties: true
+            $ref: "#/components/schemas/DeploymentSummary"
         pagination:
           type: object
-          additionalProperties: true
-      additionalProperties: true
-    TriggerDeploymentRequest:
-      type: object
-      required:
-        - name
-      properties:
-        name:
-          type: string
-        project:
-          type: string
-        target:
-          type: string
-          enum:
-            - production
-            - preview
-        gitSource:
-          type: object
           properties:
-            type:
-              type: string
-              enum:
-                - github
-            repo:
-              type: string
-            org:
-              type: string
-            ref:
-              type: string
+            count:
+              type: integer
+            next:
+              type: integer
+            prev:
+              type: integer
           additionalProperties: true
       additionalProperties: true
-    DeploymentResponse:
+    DeploymentSummary:
       type: object
       properties:
-        id:
-          type: string
         uid:
           type: string
         name:
@@ -80,6 +160,107 @@ components:
           type: string
         target:
           type: string
+        created:
+          type: number
+        creator:
+          type: object
+          properties:
+            uid:
+              type: string
+            username:
+              type: string
+            email:
+              type: string
+          additionalProperties: true
+      additionalProperties: true
+    TriggerDeploymentRequest:
+      type: object
+      required:
+        - name
+        - target
+      properties:
+        name:
+          type: string
+          default: crypto-signal-bot
+        project:
+          type: string
+          default: prj_sdk3k44uV3pCj5p5njSzHzm1vOJX
+        target:
+          type: string
+          enum:
+            - production
+            - preview
+          default: production
+        gitSource:
+          type: object
+          properties:
+            type:
+              type: string
+              enum:
+                - github
+            repoId:
+              type: string
+              description: GitHub repository identifier or numeric repository ID, depending on Vercel configuration.
+            ref:
+              type: string
+              default: main
+            sha:
+              type: string
+          additionalProperties: true
+        meta:
+          type: object
+          properties:
+            source:
+              type: string
+              default: cryptoops-agent
+            githubCommitRef:
+              type: string
+            githubCommitSha:
+              type: string
+            reason:
+              type: string
+          additionalProperties:
+            type: string
+        env:
+          type: object
+          description: Safety variables must remain paper-only.
+          properties:
+            TRADING_MODE:
+              type: string
+              enum:
+                - paper
+            EXCHANGE_MODE:
+              type: string
+              enum:
+                - paper
+            ALLOW_MAINNET:
+              type: string
+              enum:
+                - "false"
+          additionalProperties:
+            type: string
+      additionalProperties: false
+    DeploymentResponse:
+      type: object
+      properties:
+        uid:
+          type: string
+        id:
+          type: string
+        name:
+          type: string
+        url:
+          type: string
+        state:
+          type: string
+        target:
+          type: string
+        created:
+          type: number
+        readyState:
+          type: string
+        inspectorUrl:
+          type: string
       additionalProperties: true
     EnvVarsResponse:
       type: object
@@ -87,78 +268,35 @@ components:
         envs:
           type: array
           items:
-            type: object
-            properties:
-              id:
-                type: string
-              key:
-                type: string
-              target:
-                type: array
-                items:
-                  type: string
-              type:
-                type: string
-            additionalProperties: true
+            $ref: "#/components/schemas/EnvVarSummary"
+        pagination:
+          type: object
+          properties:
+            count:
+              type: integer
+            next:
+              type: integer
+            prev:
+              type: integer
+          additionalProperties: true
       additionalProperties: true
-security:
-  - VercelBearer: []
-paths:
-  /v6/deployments:
-    get:
-      operationId: listDeployments
-      summary: List Vercel deployments
-      parameters:
-        - name: projectId
-          in: query
-          required: false
-          schema:
+    EnvVarSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        key:
+          type: string
+        type:
+          type: string
+        target:
+          type: array
+          items:
             type: string
-        - name: limit
-          in: query
-          required: false
-          schema:
-            type: integer
-            default: 20
-      responses:
-        "200":
-          description: Deployments
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DeploymentListResponse"
-  /v13/deployments:
-    post:
-      operationId: triggerDeployment
-      summary: Trigger a Vercel deployment
-      description: Run Worker safety checks before triggering deployment. Production deployment should only point to the paper-only Worker backend.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/TriggerDeploymentRequest"
-      responses:
-        "200":
-          description: Deployment triggered
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DeploymentResponse"
-  /v10/projects/{projectIdOrName}/env:
-    get:
-      operationId: getEnvVars
-      summary: Get Vercel environment variable metadata
-      parameters:
-        - name: projectIdOrName
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Environment variables metadata
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EnvVarsResponse"
+        gitBranch:
+          type: string
+        createdAt:
+          type: number
+        updatedAt:
+          type: number
+      additionalProperties: true
