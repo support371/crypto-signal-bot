@@ -111,20 +111,19 @@ def rsi(values: List[float], period: int = 14) -> List[Optional[float]]:
     else:
         result[period] = 100.0 * avg_gain / total
 
+    minus_one_over_period = (period - 1) * inv_period
     # Wilder smoothing for the rest
     for i in range(period + 1, n):
         curr = values[i]
         change = curr - prev
 
+        avg_gain *= minus_one_over_period
+        avg_loss *= minus_one_over_period
+
         if change > 0:
-            avg_gain += (change - avg_gain) * inv_period
-            avg_loss -= avg_loss * inv_period
+            avg_gain += change * inv_period
         elif change < 0:
-            avg_gain -= avg_gain * inv_period
-            avg_loss += (-change - avg_loss) * inv_period
-        else:
-            avg_gain -= avg_gain * inv_period
-            avg_loss -= avg_loss * inv_period
+            avg_loss -= change * inv_period
 
         total = avg_gain + avg_loss
         if total == 0:
@@ -178,10 +177,11 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
             avg_loss -= change * inv_period
         prev = curr
 
-    if avg_loss == 0:
-        return 100.0 if avg_gain > 0 else 50.0
-
-    return 100.0 - (100.0 / (1 + avg_gain / avg_loss))
+    # Use combined formula for RSI to reduce divisions: 100 * gain / (gain + loss)
+    total = avg_gain + avg_loss
+    if total == 0:
+        return 50.0
+    return 100.0 * avg_gain / total
 
 
 # ---------------------------------------------------------------------------
@@ -394,7 +394,8 @@ def bollinger_bands(
         sma = current_sum * inv_period
         variance = (current_sq_sum * inv_period) - (sma * sma)
         # Safeguard against tiny negative numbers due to floating point precision
-        std = math.sqrt(max(variance, 0.0))
+        # Inlining max logic for performance: v if v > 0 else 0.0
+        std = math.sqrt(variance if variance > 0 else 0.0)
 
         middle[i] = sma
         offset = num_std * std
@@ -436,9 +437,11 @@ def last_bollinger(
         sq_diff_sum += diff * diff
 
     variance = sq_diff_sum * inv_period
-    std = math.sqrt(max(variance, 0.0))
+    # Inlining max logic for performance: v if v > 0 else 0.0
+    std = math.sqrt(variance if variance > 0 else 0.0)
+    offset = num_std * std
 
-    return sma + num_std * std, sma, sma - num_std * std
+    return sma + offset, sma, sma - offset
 
 
 # ---------------------------------------------------------------------------

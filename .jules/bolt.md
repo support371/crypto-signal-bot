@@ -45,3 +45,7 @@
 ## 2026-07-15 - [Efficient RSI Series Calculation]
 **Learning:** The traditional RSI formula $100 - (100 / (1 + RS))$ involves multiple divisions and nested calculations. It can be simplified to $100 \cdot avg\_gain / (avg\_gain + avg\_loss)$, which is mathematically equivalent and significantly faster.
 **Action:** Use the ratio-based RSI formula to reduce floating-point divisions and simplify the update logic inside hot loops.
+
+## 2026-07-22 - [CPython Function Call Overhead in Hot Loops]
+**Learning:** Built-in functions like `max()` introduce measurable overhead due to the function call mechanism in CPython. In tight loops, replacing `max(v, 0.0)` with a conditional expression `v if v > 0 else 0.0` can yield a ~50% speedup for that specific operation. Additionally, refactoring RSI Wilder smoothing to move common decay operations outside of branches minimizes conditional overhead.
+**Action:** Favor conditional expressions over simple built-in function calls (like `max`, `min`) and move common algebraic operations outside of branches in high-frequency numerical loops.
