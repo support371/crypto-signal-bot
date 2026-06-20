@@ -105,8 +105,6 @@ def get_market_data_adapter(cfg: "ExchangeConfig") -> BaseExchangeAdapter:
     """
     import os
 
-    paper = cfg.mode == "paper"
-
     # Always use CoinGecko for public market data (both paper and live modes)
     # CoinGecko is globally accessible, no auth required, and provides reliable OHLCV
     # The execution adapter (Bitget CCXTSpotAdapter) is used separately for order placement only

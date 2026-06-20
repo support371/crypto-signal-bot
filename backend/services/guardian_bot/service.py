@@ -390,7 +390,6 @@ async def _check_exchange_health() -> dict:
 
 
 async def get_guardian_status() -> GuardianStatus:
-    cfg = get_risk_config()
     rt = get_runtime_thresholds()
     thresholds = GuardianThresholds(
         max_drawdown_pct=rt["max_drawdown_pct"],
@@ -439,7 +438,6 @@ async def _guardian_loop() -> None:
     log.info("[guardian] Loop started.")
     while _loop_running:
         try:
-            cfg = get_risk_config()
             rt = get_runtime_thresholds()
             thresholds = GuardianThresholds(
                 max_drawdown_pct=rt["max_drawdown_pct"],

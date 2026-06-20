@@ -146,7 +146,6 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
         return None
 
     inv_period = 1.0 / period
-    minus_one_over_period = (period - 1) * inv_period
 
     # Initial averages
     avg_gain = 0.0
@@ -165,6 +164,7 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
     avg_gain *= inv_period
     avg_loss *= inv_period
 
+    minus_one_over_period = (period - 1) * inv_period
     # Wilder smoothing for the rest
     for i in range(period + 1, n):
         curr = values[i]

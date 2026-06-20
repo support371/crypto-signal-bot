@@ -495,7 +495,7 @@ async def get_price(symbol: str) -> PriceSnapshot:
             age = now - cached_at
             if age <= PRICE_STALE_THRESHOLD_SECONDS * 5:
                 # Return stale snapshot — clearly marked, not fabricated
-                stale_snapshot = PriceSnapshot(
+                stale_snapshot = PriceSnapshot(  # noqa: F841
                     symbol=symbol,
                     price=ticker.price,
                     bid=ticker.bid,
@@ -583,7 +583,6 @@ async def get_exchange_status() -> ExchangeStatus:
     market_data_mode is either "live", "paper_live", or "unavailable".
     "SYNTHETIC" is explicitly not a valid value from this function.
     """
-    cfg = get_exchange_config()
     adapters = await _get_adapters()
     primary = adapters[0]
 
