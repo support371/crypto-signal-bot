@@ -61,8 +61,9 @@ def last_ema(values: List[float], period: int) -> Optional[float]:
 
     # Progressively calculate EMA for the rest
     # Using simplified update rule: val += k * (input - val)
-    for i in range(period, len(values)):
-        val += k * (values[i] - val)
+    # Optimized: using slice-based iterator to avoid indexing overhead
+    for v in values[period:]:
+        val += k * (v - val)
 
     return val
 
@@ -165,8 +166,8 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
     avg_loss *= inv_period
 
     # Wilder smoothing for the rest
-    for i in range(period + 1, n):
-        curr = values[i]
+    # Optimized: using slice-based iterator to avoid indexing overhead
+    for curr in values[period+1:]:
         change = curr - prev
         avg_gain *= minus_one_over_period
         avg_loss *= minus_one_over_period
@@ -314,14 +315,13 @@ def last_macd(
     # 2. Seed Signal EMA
     # We need 'signal_period' MACD values to calculate the first signal SMA.
     macd_history = [macd_val]
-    curr = p_max
-    while len(macd_history) < signal_period:
-        v = values[curr]
+    # Optimized: using slice-based iterator to seed the signal EMA
+    seed_end = p_max + signal_period - 1
+    for v in values[p_max:seed_end]:
         ema_f += k_fast * (v - ema_f)
         ema_s += k_slow * (v - ema_s)
         macd_val = ema_f - ema_s
         macd_history.append(macd_val)
-        curr += 1
 
     # First signal EMA value is the SMA of the first 'signal_period' MACD values.
     # This corresponds to original index (p_max - 1) + (signal_period - 1).
@@ -329,12 +329,12 @@ def last_macd(
 
     results = []
     # If the current index is within the 'count' range, capture the result.
-    if curr >= n - count + 1:
+    if seed_end - 1 >= n - count:
         results.append((macd_history[-1], sig_ema, macd_history[-1] - sig_ema))
 
     # 3. Process remaining bars iteratively
-    for i in range(curr, n):
-        v = values[i]
+    # Optimized: using enumerate and slice to track index for 'count' check
+    for i, v in enumerate(values[seed_end:], start=seed_end):
         ema_f += k_fast * (v - ema_f)
         ema_s += k_slow * (v - ema_s)
         macd_val = ema_f - ema_s
@@ -395,7 +395,8 @@ def bollinger_bands(
         sma = current_sum * inv_period
         variance = (current_sq_sum * inv_period) - (sma * sma)
         # Safeguard against tiny negative numbers due to floating point precision
-        std = math.sqrt(max(variance, 0.0))
+        # Optimized: using conditional expression instead of max() call
+        std = math.sqrt(variance if variance > 0.0 else 0.0)
 
         middle[i] = sma
         offset = num_std * std
@@ -437,7 +438,8 @@ def last_bollinger(
         sq_diff_sum += diff * diff
 
     variance = sq_diff_sum * inv_period
-    std = math.sqrt(max(variance, 0.0))
+    # Optimized: using conditional expression instead of max() call
+    std = math.sqrt(variance if variance > 0.0 else 0.0)
 
     return sma + num_std * std, sma, sma - num_std * std
 
@@ -545,11 +547,8 @@ def last_atr(
     val = tr_sum * inv_period
 
     # Wilder smoothing for the rest
-    for i in range(period + 1, n):
-        h = highs[i]
-        low_val = lows[i]
-        pc = closes[i - 1]
-
+    # Optimized: using zip and slicing to avoid triple indexing in the loop
+    for h, low_val, pc in zip(highs[period+1:], lows[period+1:], closes[period:]):
         hl = h - low_val
         hpc = abs(h - pc)
         lpc = abs(low_val - pc)

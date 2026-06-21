@@ -45,3 +45,11 @@
 ## 2026-07-15 - [Efficient RSI Series Calculation]
 **Learning:** The traditional RSI formula $100 - (100 / (1 + RS))$ involves multiple divisions and nested calculations. It can be simplified to $100 \cdot avg\_gain / (avg\_gain + avg\_loss)$, which is mathematically equivalent and significantly faster.
 **Action:** Use the ratio-based RSI formula to reduce floating-point divisions and simplify the update logic inside hot loops.
+
+## 2026-06-21 - [CPython Indexing vs. Iterators]
+**Learning:** In CPython, manual index-based iteration (e.g., `values[i]`) inside tight loops is significantly slower than iterator-based patterns like slicing (`values[start:]`) or `zip()`. Iterators leverage C-level implementation and avoid repeated Python-level dictionary/list lookups for indexes.
+**Action:** Always favor slice-based iterators and `zip()` over `range(len(x))` loops in performance-critical numerical code.
+
+## 2026-06-21 - [Function Call Overhead in Loops]
+**Learning:** General-purpose math functions like `max(v, 0.0)` or `min()` introduce measurable function call overhead when executed millions of times in technical indicator loops. A simple Python conditional expression (`v if v > 0.0 else 0.0`) is processed faster by the bytecode interpreter.
+**Action:** Replace simple `max`/`min` calls with inline conditional expressions in hot execution paths to reduce stack frame overhead.
