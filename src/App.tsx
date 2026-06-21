@@ -1,81 +1,69 @@
-import { lazy, Suspense } from "react";
-import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { AuthProvider } from "@/context/AuthProvider";
-import { AuthBannerProvider } from "@/contexts/AuthBannerContext";
-import { AuthBanner } from "@/components/AuthBanner";
-import { ProtectedRoute } from "@/components/ProtectedRoute";
-import { Loader2 } from "lucide-react";
-import { Analytics } from "@vercel/analytics/react";
+import { Suspense, lazy } from 'react';
+import { Routes, Route } from 'react-router-dom';
+import { QueryClientProvider } from './providers/QueryClientProvider';
+import { AuthProvider } from './providers/AuthProvider';
+import { UserProvider } from './providers/UserProvider';
+import { WebSocketProvider } from './providers/WebSocketProvider';
+import Layout from './components/Layout';
+import LoadingScreen from './components/LoadingScreen';
+import ErrorBoundary from './components/ErrorBoundary';
+import SetupRequiredScreen from './components/SetupRequiredScreen';
+import Toast from './components/Toast';
 
-const Index = lazy(() => import("./pages/Index"));
-const Auth = lazy(() => import("./pages/Auth"));
-const NotFound = lazy(() => import("./pages/NotFound"));
-const PublicHome = lazy(() => import("./pages/PublicHome"));
-const IntegrationsStatus = lazy(() => import("./pages/IntegrationsStatus"));
-const Waitlist = lazy(() => import("./pages/Waitlist"));
-const Backtest = lazy(() => import("./pages/Backtest"));
-const Positions = lazy(() => import("./pages/Positions"));
-const Portfolio = lazy(() => import("./pages/Portfolio"));
-const Guardian = lazy(() => import("./pages/Guardian"));
-const Audit = lazy(() => import("./pages/Audit"));
-const Health = lazy(() => import("./pages/Health"));
-const Settings = lazy(() => import("./pages/Settings"));
-const ResetPassword = lazy(() => import("./pages/ResetPassword"));
+// Lazy load all pages for better performance
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Signals = lazy(() => import('./pages/Signals'));
+const Portfolio = lazy(() => import('./pages/Portfolio'));
+const Trading = lazy(() => import('./pages/Trading'));
+const Settings = lazy(() => import('./pages/Settings'));
+const History = lazy(() => import('./pages/History'));
+const Analytics = lazy(() => import('./pages/Analytics'));
+const Backtesting = lazy(() => import('./pages/Backtesting'));
+const Alerts = lazy(() => import('./pages/Alerts'));
+const Notifications = lazy(() => import('./pages/Notifications'));
+const ExchangeConnections = lazy(() => import('./pages/ExchangeConnections'));
+const PaperTrading = lazy(() => import('./pages/PaperTrading'));
+const Admin = lazy(() => import('./pages/Admin'));
+const SignIn = lazy(() => import('./pages/SignIn'));
+const SignUp = lazy(() => import('./pages/SignUp'));
 
-const queryClient = new QueryClient();
-
-const RouteLoadingShell = () => (
-  <div className="min-h-screen bg-background scanlines flex items-center justify-center">
-    <div className="flex items-center gap-3 font-mono text-sm text-muted-foreground">
-      <Loader2 className="h-5 w-5 animate-spin text-accent" />
-      <span>Loading control center...</span>
-    </div>
-  </div>
-);
-
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
+function App() {
+  return (
+    <ErrorBoundary>
+      <QueryClientProvider>
         <AuthProvider>
-          <AuthBannerProvider>
-            <AuthBanner />
-            <Suspense fallback={<RouteLoadingShell />}>
-              <Routes>
-                {/* Public routes */}
-                <Route path="/" element={<PublicHome />} />
-                <Route path="/public" element={<PublicHome />} />
-                <Route path="/auth" element={<Auth />} />
-                <Route path="/reset-password" element={<ResetPassword />} />
-                <Route path="/integrations" element={<IntegrationsStatus />} />
-                <Route path="/waitlist" element={<Waitlist />} />
-
-                {/* Protected routes */}
-                <Route path="/dashboard" element={<ProtectedRoute><Index /></ProtectedRoute>} />
-                <Route path="/positions" element={<ProtectedRoute><Positions /></ProtectedRoute>} />
-                <Route path="/portfolio" element={<ProtectedRoute><Portfolio /></ProtectedRoute>} />
-                <Route path="/guardian" element={<ProtectedRoute><Guardian /></ProtectedRoute>} />
-                <Route path="/audit" element={<ProtectedRoute><Audit /></ProtectedRoute>} />
-                <Route path="/health" element={<ProtectedRoute><Health /></ProtectedRoute>} />
-                <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-                <Route path="/backtest" element={<ProtectedRoute><Backtest /></ProtectedRoute>} />
-
-                {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </Suspense>
-          </AuthBannerProvider>
+          <UserProvider>
+            <WebSocketProvider>
+              <Toast />
+              <Suspense fallback={<LoadingScreen />}>
+                <Routes>
+                  <Route path="/signin" element={<SignIn />} />
+                  <Route path="/signup" element={<SignUp />} />
+                  <Route path="/" element={<Layout />}>
+                    <Route index element={<Dashboard />} />
+                    <Route path="signals" element={<Signals />} />
+                    <Route path="portfolio" element={<Portfolio />} />
+                    <Route path="trading" element={<Trading />} />
+                    <Route path="settings" element={<Settings />} />
+                    <Route path="history" element={<History />} />
+                    <Route path="analytics" element={<Analytics />} />
+                    <Route path="backtesting" element={<Backtesting />} />
+                    <Route path="alerts" element={<Alerts />} />
+                    <Route path="notifications" element={<Notifications />} />
+                    <Route path="exchanges" element={<ExchangeConnections />} />
+                    <Route path="paper-trading" element={<PaperTrading />} />
+                    <Route path="admin" element={<Admin />} />
+                  </Route>
+                  <Route path="/setup" element={<SetupRequiredScreen />} />
+                  <Route path="*" element={<Dashboard />} />
+                </Routes>
+              </Suspense>
+            </WebSocketProvider>
+          </UserProvider>
         </AuthProvider>
-      </BrowserRouter>
-      <Analytics />
-    </TooltipProvider>
-  </QueryClientProvider>
-);
+      </QueryClientProvider>
+    </ErrorBoundary>
+  );
+}
 
 export default App;
