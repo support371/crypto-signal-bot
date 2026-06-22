@@ -1,6 +1,8 @@
 # Backend Codex Build Instruction
 
-Copy this instruction into Codex while the repository is open on the `feat/safe-fast-path-standard` branch or a new branch created from it.
+> **Stage notice:** This file is the original SAFE_FAST_PATH Phase 1–2 specification. Most of this scope now exists in draft PR #125 on `feat/safe-fast-path-feed-integrity`. Do not run this instruction unchanged at the current stage. Use `docs/SAFE_FAST_PATH/BACKEND_CODEX_CURRENT_STAGE.md` to stabilize and verify PR #125 first.
+
+Copy this instruction into Codex only when starting Phases 1–2 from `feat/safe-fast-path-standard` or a new branch created from it.
 
 ---
 
