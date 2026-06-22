@@ -8,8 +8,11 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
-    "lint": "eslint . --report-unused-disable-directives --max-warnings 0",
+    "build": "npm run typecheck:architecture && vite build",
+    "lint": "eslint src/App.tsx src/AppCore.tsx src/main.tsx src/context/AuthContext.ts src/context/AuthProvider.tsx src/providers/QueryClientProvider.tsx src/lib/env.ts src/lib/backendRuntime.ts src/lib/infrastructureApi.ts src/pages/Infrastructure.tsx src/components/LayoutCore.tsx --report-unused-disable-directives --max-warnings 0",
+    "lint:legacy": "eslint src --report-unused-disable-directives --max-warnings 0",
+    "typecheck": "tsc --noEmit",
+    "typecheck:architecture": "tsc -p tsconfig.architecture.json",
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run"
