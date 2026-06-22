@@ -3,7 +3,8 @@
   "compilerOptions": {
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "noEmit": true
+    "noEmit": true,
+    "types": ["vite/client"]
   },
   "include": [
     "src/lib/env.ts",
