@@ -1,0 +1,39 @@
+name: Generate Frontend Lock Artifact
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - tmp-safe-fast-path-lock-generation
+    paths:
+      - package.json
+      - .github/workflows/generate-frontend-lock.yml
+
+permissions:
+  contents: read
+
+jobs:
+  generate-lock:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+
+      - name: Generate lockfile from package.json
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Verify deterministic install
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Upload package-lock artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-package-lock
+          path: package-lock.json
+          if-no-files-found: error
+          retention-days: 1
