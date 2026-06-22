@@ -45,3 +45,7 @@
 ## 2026-07-15 - [Efficient RSI Series Calculation]
 **Learning:** The traditional RSI formula $100 - (100 / (1 + RS))$ involves multiple divisions and nested calculations. It can be simplified to $100 \cdot avg\_gain / (avg\_gain + avg\_loss)$, which is mathematically equivalent and significantly faster.
 **Action:** Use the ratio-based RSI formula to reduce floating-point divisions and simplify the update logic inside hot loops.
+
+## 2026-07-22 - [List Slicing vs. itertools.islice in Hot Loops]
+**Learning:** In CPython, list slicing (e.g., `values[start:end]`) creates a new list object and copies the references, which is an $O(k)$ operation in both time and memory (where $k$ is the slice length). In performance-critical hot loops or when processing very large datasets, this overhead becomes measurable. `itertools.islice` provides a memory-efficient iterator-based alternative that avoids sublist allocation and copying.
+**Action:** Favor `itertools.islice` over list slicing when iterating over sub-segments of large lists in performance-critical paths. Combine with `zip` for efficient multi-stream iteration (e.g., pairing current and trailing window values).
