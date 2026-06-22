@@ -11,7 +11,15 @@ This folder is the authoritative location for the repository's low-latency archi
 1. `TARGET_ARCHITECTURE.md` — system shape and invariants.
 2. `API_CONTRACT.md` — frontend/backend contracts.
 3. `IMPLEMENTATION_PLAN.md` — phased work, tests, gates, and rollback.
-4. `BACKEND_CODEX_INSTRUCTIONS.md` — build instruction for Codex.
+4. `BACKEND_CODEX_CURRENT_STAGE.md` — current copy-ready Codex instruction for stabilizing PR #125.
+5. `BACKEND_CODEX_INSTRUCTIONS.md` — original Phase 1–2 specification and historical implementation reference.
+
+## Current implementation position
+
+- PR #122 establishes the architecture standard and frontend infrastructure view.
+- PR #125 implements the Phase 1–2 feed-integrity shadow path and `/v2` read contracts.
+- PR #125 must become fully green before Phase 3 begins.
+- Phase 3 must use a separate branch and pull request; it must not be added to PR #125.
 
 ## Target flow
 
