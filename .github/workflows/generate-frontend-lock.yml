@@ -2,9 +2,9 @@ name: Generate Frontend Lock Artifact
 
 on:
   workflow_dispatch:
-  push:
+  pull_request:
     branches:
-      - tmp-safe-fast-path-lock-generation
+      - feat/safe-fast-path-standard
     paths:
       - package.json
       - .github/workflows/generate-frontend-lock.yml
