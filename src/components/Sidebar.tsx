@@ -24,7 +24,8 @@ const navItems = [
   { label: 'Alerts', path: '/alerts', icon: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9' },
   { label: 'Notifications', path: '/notifications', icon: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9' },
   { label: 'Exchange Connections', path: '/exchanges', icon: 'M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z' },
-  { label: 'Paper Trading', path: '/paper-trading', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' }
+  { label: 'Paper Trading', path: '/paper-trading', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
+  { label: 'System Architecture', path: '/system-architecture', icon: 'M4 7h16M4 12h16M4 17h16M7 4v16M17 4v16' }
 ];
 
 export default function Sidebar({ isOpen, onClose }: SidebarProps) {
@@ -89,7 +90,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
           <div className="p-4 border-t border-secondary-200">
             <div className="text-xs text-secondary-500">
               <div>Paper Trading Mode</div>
-              <div>All data is mock</div>
+              <div>Target architecture available</div>
             </div>
           </div>
         </div>
