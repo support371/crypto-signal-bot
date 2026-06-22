@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noEmit": true
+  },
+  "include": [
+    "src/lib/env.ts",
+    "src/lib/backendRuntime.ts",
+    "src/lib/infrastructureApi.ts",
+    "src/types/**/*.d.ts"
+  ],
+  "references": []
+}
