@@ -23,6 +23,7 @@ const Alerts = lazy(() => import('./pages/Alerts'));
 const Notifications = lazy(() => import('./pages/Notifications'));
 const ExchangeConnections = lazy(() => import('./pages/ExchangeConnections'));
 const PaperTrading = lazy(() => import('./pages/PaperTrading'));
+const SystemArchitecture = lazy(() => import('./pages/SystemArchitecture'));
 const Admin = lazy(() => import('./pages/Admin'));
 const SignIn = lazy(() => import('./pages/SignIn'));
 const SignUp = lazy(() => import('./pages/SignUp'));
@@ -52,6 +53,7 @@ function App() {
                     <Route path="notifications" element={<Notifications />} />
                     <Route path="exchanges" element={<ExchangeConnections />} />
                     <Route path="paper-trading" element={<PaperTrading />} />
+                    <Route path="system-architecture" element={<SystemArchitecture />} />
                     <Route path="admin" element={<Admin />} />
                   </Route>
                   <Route path="/setup" element={<SetupRequiredScreen />} />
