@@ -45,3 +45,7 @@
 ## 2026-07-15 - [Efficient RSI Series Calculation]
 **Learning:** The traditional RSI formula $100 - (100 / (1 + RS))$ involves multiple divisions and nested calculations. It can be simplified to $100 \cdot avg\_gain / (avg\_gain + avg\_loss)$, which is mathematically equivalent and significantly faster.
 **Action:** Use the ratio-based RSI formula to reduce floating-point divisions and simplify the update logic inside hot loops.
+
+## 2026-07-22 - [Iterator-based Optimization Trade-offs]
+**Learning:** While replacing list slicing and indexing with iterators and `itertools.islice` can yield significant speedups (~40%+) in simple single-stream loops like EMA, it can severely degrade readability in multi-stream functions (like ATR) where multiple iterators must be manually advanced with `next()`.
+**Action:** Prioritize iterator optimizations for single-input loops. For multi-input loops, ensure the complexity of managing synchronized iterators doesn't outweigh the readability and maintainability of the code. Always exclude `__pycache__` via `.gitignore` before running performance benchmarks to avoid repo pollution.

@@ -30,6 +30,10 @@ npm-debug.log*
 # Cache
 .cache/
 .vitest/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
 
 # Supabase
 supabase/
