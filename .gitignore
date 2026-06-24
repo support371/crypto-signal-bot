@@ -33,3 +33,9 @@ npm-debug.log*
 
 # Supabase
 supabase/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/

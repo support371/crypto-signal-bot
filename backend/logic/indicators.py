@@ -10,6 +10,7 @@ insufficient data rather than raising.
 """
 from __future__ import annotations
 
+import itertools
 import math
 from typing import Any, List, Optional, Tuple
 
@@ -51,18 +52,20 @@ def last_ema(values: List[float], period: int) -> Optional[float]:
     """
     Return the most recent EMA value, or None if insufficient data.
     Optimized to O(n) time and O(1) space by avoiding full list allocation.
+    Further optimized using iterators to reduce indexing overhead.
     """
     if len(values) < period or period <= 0:
         return None
 
     k = 2.0 / (period + 1)
+    it = iter(values)
     # Seed with SMA of first 'period' values
-    val = sum(values[:period]) / period
+    val = sum(itertools.islice(it, period)) / period
 
     # Progressively calculate EMA for the rest
     # Using simplified update rule: val += k * (input - val)
-    for i in range(period, len(values)):
-        val += k * (values[i] - val)
+    for x in it:
+        val += k * (x - val)
 
     return val
 
@@ -138,7 +141,7 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
     """
     Return the most recent RSI value.
     Optimized to O(n) time and O(1) space by avoiding list allocations for changes, gains, and losses.
-    Further optimized by reducing arithmetic operations and list indexing.
+    Further optimized using iterators to reduce indexing overhead and arithmetic operations.
     """
     n = len(values)
     if n < period + 1 or period <= 0:
@@ -151,9 +154,10 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
     avg_gain = 0.0
     avg_loss = 0.0
 
-    prev = values[0]
-    for i in range(1, period + 1):
-        curr = values[i]
+    it = iter(values)
+    prev = next(it)
+    for _ in range(period):
+        curr = next(it)
         change = curr - prev
         if change > 0:
             avg_gain += change
@@ -165,8 +169,7 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
     avg_loss *= inv_period
 
     # Wilder smoothing for the rest
-    for i in range(period + 1, n):
-        curr = values[i]
+    for curr in it:
         change = curr - prev
         avg_gain *= minus_one_over_period
         avg_loss *= minus_one_over_period
@@ -282,8 +285,6 @@ def last_macd(
     """
     Return (macd_line, signal_line, histogram) for the most recent 'count' bars.
     Optimized to O(n) time and O(count) space by avoiding full series allocation.
-    If count=1 (default), returns a single tuple (ml, sl, hist) for backward compatibility.
-    If count > 1, returns a list of tuples, newest last.
     """
     n = len(values)
     p_max = max(fast, slow)
@@ -298,43 +299,54 @@ def last_macd(
     k_slow = 2.0 / (slow + 1)
     k_sig = 2.0 / (signal_period + 1)
 
+    it = iter(values)
     # 1. Seed fast and slow EMAs
-    # Seed short period EMA first, then progress it to p_max-1
-    ema_f = sum(values[:fast]) / fast
-    for i in range(fast, p_max):
-        ema_f += k_fast * (values[i] - ema_f)
+    # Fast EMA seed
+    ema_f = sum(itertools.islice(it, fast)) / fast
+    # Slow EMA seed. Note: we need to handle the overlap carefully.
+    # Since we can't rewind an iterator easily, we'll use list slicing for the seeds
+    # but still use iterators for the main loop.
+    # Actually, the previous implementation also used sum(values[:fast]) and sum(values[:slow]).
+    # Let's stick to list slicing for the INITIAL seed only if needed, then move to iter.
 
-    ema_s = sum(values[:slow]) / slow
-    for i in range(slow, p_max):
-        ema_s += k_slow * (values[i] - ema_s)
+    it = iter(values)
+    ema_f = sum(itertools.islice(it, fast)) / fast
+    for v in itertools.islice(it, p_max - fast):
+        ema_f += k_fast * (v - ema_f)
+
+    it = iter(values)
+    ema_s = sum(itertools.islice(it, slow)) / slow
+    for v in itertools.islice(it, p_max - slow):
+        ema_s += k_slow * (v - ema_s)
+
+    # Re-synchronize iterator for the main loop starting at p_max
+    it = iter(values)
+    for _ in range(p_max): next(it)
 
     # Both EMAs are now at index p_max - 1. Calculate first MACD value.
     macd_val = ema_f - ema_s
 
     # 2. Seed Signal EMA
-    # We need 'signal_period' MACD values to calculate the first signal SMA.
     macd_history = [macd_val]
-    curr = p_max
+    processed_count = p_max
     while len(macd_history) < signal_period:
-        v = values[curr]
+        v = next(it)
         ema_f += k_fast * (v - ema_f)
         ema_s += k_slow * (v - ema_s)
         macd_val = ema_f - ema_s
         macd_history.append(macd_val)
-        curr += 1
+        processed_count += 1
 
     # First signal EMA value is the SMA of the first 'signal_period' MACD values.
-    # This corresponds to original index (p_max - 1) + (signal_period - 1).
     sig_ema = sum(macd_history) / signal_period
 
     results = []
     # If the current index is within the 'count' range, capture the result.
-    if curr >= n - count + 1:
+    if processed_count >= n - count + 1:
         results.append((macd_history[-1], sig_ema, macd_history[-1] - sig_ema))
 
     # 3. Process remaining bars iteratively
-    for i in range(curr, n):
-        v = values[i]
+    for i, v in enumerate(it, start=processed_count):
         ema_f += k_fast * (v - ema_f)
         ema_s += k_slow * (v - ema_s)
         macd_val = ema_f - ema_s
@@ -514,7 +526,7 @@ def last_atr(
     """
     Return the most recent ATR value.
     Optimized to O(n) time and O(1) space.
-    Further optimized by removing internal function calls and streamlining Wilder smoothing.
+    Further optimized using iterators to reduce indexing overhead and streamline Wilder smoothing.
     """
     n = len(closes)
     if len(highs) != n or len(lows) != n:
@@ -525,42 +537,44 @@ def last_atr(
     inv_period = 1.0 / period
     tr_sum = 0.0
 
+    h_it = iter(highs)
+    l_it = iter(lows)
+    c_it = iter(closes)
+
+    # Skip first element of highs and lows; closes starts at 0 for pc
+    next(h_it)
+    next(l_it)
+    pc = next(c_it)
+
     # Seed with average of first 'period' TRs
-    for i in range(1, period + 1):
-        h = highs[i]
-        low_val = lows[i]
-        pc = closes[i - 1]
+    for _ in range(period):
+        h = next(h_it)
+        low_val = next(l_it)
 
         hl = h - low_val
         hpc = abs(h - pc)
         lpc = abs(low_val - pc)
 
         tr = hl
-        if hpc > tr:
-            tr = hpc
-        if lpc > tr:
-            tr = lpc
+        if hpc > tr: tr = hpc
+        if lpc > tr: tr = lpc
         tr_sum += tr
+        pc = next(c_it)
 
     val = tr_sum * inv_period
 
     # Wilder smoothing for the rest
-    for i in range(period + 1, n):
-        h = highs[i]
-        low_val = lows[i]
-        pc = closes[i - 1]
-
+    for h, low_val in zip(h_it, l_it):
         hl = h - low_val
         hpc = abs(h - pc)
         lpc = abs(low_val - pc)
 
         tr = hl
-        if hpc > tr:
-            tr = hpc
-        if lpc > tr:
-            tr = lpc
+        if hpc > tr: tr = hpc
+        if lpc > tr: tr = lpc
 
         # Smoothed ATR update rule: ATR_i = ATR_{i-1} + (TR_i - ATR_{i-1}) / period
         val = val + (tr - val) * inv_period
+        pc = next(c_it)
 
     return val
