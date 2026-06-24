@@ -1,6 +1,6 @@
 # Safe Fast Path — Architecture Control Center
 
-**Status:** staged paper-mode migration target  
+**Status:** Phases 1–2 implemented in paper-mode shadow form  
 **Scope:** Cloudflare Worker, Durable Objects, D1 projections, Queues, observability, and React operator UI  
 **Boundary:** simulation mode only; mainnet operations and withdrawals remain disabled
 
@@ -11,7 +11,19 @@ This folder is the authoritative location for the repository's low-latency archi
 1. `TARGET_ARCHITECTURE.md` — system shape and invariants.
 2. `API_CONTRACT.md` — frontend/backend contracts.
 3. `IMPLEMENTATION_PLAN.md` — phased work, tests, gates, and rollback.
-4. `BACKEND_CODEX_INSTRUCTIONS.md` — build instruction for Codex.
+4. `BACKEND_CODEX_INSTRUCTIONS.md` — original Phase 1–2 build specification and implementation reference.
+
+## Current implementation boundary
+
+The Phase 1–2 implementation includes normalized Coinbase and Binance events, sequence and heartbeat integrity state, bounded recovery and metrics state, freshness authorization, deterministic tests, and read-only `/v2` status routes.
+
+The implementation remains a shadow path:
+
+- D1 remains the existing portfolio and ledger authority.
+- No Durable Object or Queue authority has been enabled.
+- No shadow market event can mutate a portfolio.
+- Missing feed or latency data is reported as inactive, `null`, or `not_reported`.
+- Phase 3 must be developed in a separate focused branch after all Phase 1–2 acceptance gates pass.
 
 ## Target flow
 
