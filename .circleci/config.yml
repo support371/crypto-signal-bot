@@ -24,6 +24,32 @@ jobs:
             VITE_API_BASE_URL: /api
           command: npm run build
 
+  worker-fast-path:
+    docker:
+      - image: cimg/node:22.12.0
+    steps:
+      - checkout
+      - run:
+          name: Print Worker runtime versions
+          command: |
+            node -v
+            npm -v
+      - run:
+          name: Install root test dependencies
+          command: npm ci
+      - run:
+          name: Run fast-path and v2 contract tests
+          command: npm run test:worker
+      - run:
+          name: Install Worker dependencies
+          command: npm --prefix worker ci
+      - run:
+          name: Type-check Cloudflare Worker
+          command: npm --prefix worker run build
+      - run:
+          name: Verify paper-safety contract
+          command: npm --prefix worker run verify:paper-safety
+
   backend-test-audit:
     docker:
       - image: cimg/python:3.11
@@ -68,4 +94,5 @@ workflows:
   stabilize-production-runtime:
     jobs:
       - frontend-build
+      - worker-fast-path
       - backend-test-audit
