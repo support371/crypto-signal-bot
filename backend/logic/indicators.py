@@ -285,6 +285,8 @@ def last_macd(
     """
     Return (macd_line, signal_line, histogram) for the most recent 'count' bars.
     Optimized to O(n) time and O(count) space by avoiding full series allocation.
+    If count=1 (default), returns a single tuple (ml, sl, hist) for backward compatibility.
+    If count > 1, returns a list of tuples, newest last.
     """
     n = len(values)
     p_max = max(fast, slow)
@@ -299,54 +301,43 @@ def last_macd(
     k_slow = 2.0 / (slow + 1)
     k_sig = 2.0 / (signal_period + 1)
 
-    it = iter(values)
     # 1. Seed fast and slow EMAs
-    # Fast EMA seed
-    ema_f = sum(itertools.islice(it, fast)) / fast
-    # Slow EMA seed. Note: we need to handle the overlap carefully.
-    # Since we can't rewind an iterator easily, we'll use list slicing for the seeds
-    # but still use iterators for the main loop.
-    # Actually, the previous implementation also used sum(values[:fast]) and sum(values[:slow]).
-    # Let's stick to list slicing for the INITIAL seed only if needed, then move to iter.
+    # Seed short period EMA first, then progress it to p_max-1
+    ema_f = sum(values[:fast]) / fast
+    for i in range(fast, p_max):
+        ema_f += k_fast * (values[i] - ema_f)
 
-    it = iter(values)
-    ema_f = sum(itertools.islice(it, fast)) / fast
-    for v in itertools.islice(it, p_max - fast):
-        ema_f += k_fast * (v - ema_f)
-
-    it = iter(values)
-    ema_s = sum(itertools.islice(it, slow)) / slow
-    for v in itertools.islice(it, p_max - slow):
-        ema_s += k_slow * (v - ema_s)
-
-    # Re-synchronize iterator for the main loop starting at p_max
-    it = iter(values)
-    for _ in range(p_max): next(it)
+    ema_s = sum(values[:slow]) / slow
+    for i in range(slow, p_max):
+        ema_s += k_slow * (values[i] - ema_s)
 
     # Both EMAs are now at index p_max - 1. Calculate first MACD value.
     macd_val = ema_f - ema_s
 
     # 2. Seed Signal EMA
+    # We need 'signal_period' MACD values to calculate the first signal SMA.
     macd_history = [macd_val]
-    processed_count = p_max
+    curr = p_max
     while len(macd_history) < signal_period:
-        v = next(it)
+        v = values[curr]
         ema_f += k_fast * (v - ema_f)
         ema_s += k_slow * (v - ema_s)
         macd_val = ema_f - ema_s
         macd_history.append(macd_val)
-        processed_count += 1
+        curr += 1
 
     # First signal EMA value is the SMA of the first 'signal_period' MACD values.
+    # This corresponds to original index (p_max - 1) + (signal_period - 1).
     sig_ema = sum(macd_history) / signal_period
 
     results = []
     # If the current index is within the 'count' range, capture the result.
-    if processed_count >= n - count + 1:
+    if curr >= n - count + 1:
         results.append((macd_history[-1], sig_ema, macd_history[-1] - sig_ema))
 
     # 3. Process remaining bars iteratively
-    for i, v in enumerate(it, start=processed_count):
+    for i in range(curr, n):
+        v = values[i]
         ema_f += k_fast * (v - ema_f)
         ema_s += k_slow * (v - ema_s)
         macd_val = ema_f - ema_s
