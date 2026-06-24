@@ -16,7 +16,7 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:worker": "vitest run worker/tests"
+    "test:worker": "vitest run -c worker/vitest.config.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
