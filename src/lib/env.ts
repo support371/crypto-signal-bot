@@ -1,80 +1,142 @@
-/**
- * Environment Configuration
- * 
- * This module provides type-safe access to environment variables.
- * All environment variables are validated and have default values.
- */
-
-interface EnvConfig {
-  VITE_API_BASE_URL: string;
-  VITE_WS_BASE_URL: string;
-  VITE_SUPABASE_URL: string;
-  VITE_SUPABASE_ANON_KEY: string;
-  VITE_PAPER_TRADING_MODE: string;
-  VITE_APP_VERSION: string;
-  VITE_APP_NAME: string;
+export interface FrontendEnvValidation {
+  ok: boolean;
+  missingRequired: string[];
+  warnings: string[];
+  backendUrl: string | null;
+  supabaseConfigured: boolean;
+  demoMode: boolean;
 }
 
-interface ValidatedEnv extends EnvConfig {
+export interface ValidatedEnv {
   apiBaseUrl: string;
   wsBaseUrl: string;
   supabaseUrl: string;
   supabaseAnonKey: string;
-  paperTradingMode: boolean;
+  paperTradingMode: true;
+  demoMode: boolean;
   appVersion: string;
   appName: string;
 }
 
-const DEFAULT_ENV: EnvConfig = {
-  VITE_API_BASE_URL: 'http://localhost:8000/api',
-  VITE_WS_BASE_URL: 'ws://localhost:8000',
-  VITE_SUPABASE_URL: '',
-  VITE_SUPABASE_ANON_KEY: '',
-  VITE_PAPER_TRADING_MODE: 'true',
-  VITE_APP_VERSION: '2.0.0',
-  VITE_APP_NAME: 'Crypto Signal Bot V2',
-};
+type RuntimeEnv = Record<string, string | boolean | undefined>;
 
-// Validate and parse environment variables
-function validateEnv(): ValidatedEnv {
-  const env: Partial<EnvConfig> = {
-    ...DEFAULT_ENV,
-    ...import.meta.env,
-  };
+const runtimeEnv = import.meta.env as RuntimeEnv;
+
+function readString(...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = runtimeEnv[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function trimTrailingSlash(value: string): string {
+  return value.replace(/\/+$/, '');
+}
+
+function toWebSocketBase(value: string): string {
+  if (value.startsWith('https://')) return `wss://${value.slice('https://'.length)}`;
+  if (value.startsWith('http://')) return `ws://${value.slice('http://'.length)}`;
+  return value;
+}
+
+export function isDemoModeEnabled(): boolean {
+  return readString('VITE_DEMO_MODE')?.toLowerCase() === 'true';
+}
+
+export function getConfiguredBackendUrl(): string {
+  const configured = readString(
+    'VITE_BACKEND_URL',
+    'VITE_CRYPTOCORE_API_BASE',
+    'VITE_API_BASE_URL',
+  );
+
+  if (configured) return trimTrailingSlash(configured);
+  if (import.meta.env.DEV) return 'http://localhost:8000';
+
+  throw new Error(
+    'Backend URL is not configured. Set VITE_BACKEND_URL to the public paper-mode Worker URL.',
+  );
+}
+
+export function getConfiguredWebSocketUrl(): string {
+  const configured = readString('VITE_WS_URL', 'VITE_WS_BASE_URL');
+  if (configured) return trimTrailingSlash(configured);
+  return toWebSocketBase(getConfiguredBackendUrl());
+}
+
+export function validateFrontendEnv(): FrontendEnvValidation {
+  const missingRequired: string[] = [];
+  const warnings: string[] = [];
+  const demoMode = isDemoModeEnabled();
+  const backendUrl = readString(
+    'VITE_BACKEND_URL',
+    'VITE_CRYPTOCORE_API_BASE',
+    'VITE_API_BASE_URL',
+  );
+  const supabaseUrl = readString('VITE_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL');
+  const supabaseKey = readString(
+    'VITE_SUPABASE_PUBLISHABLE_KEY',
+    'VITE_SUPABASE_ANON_KEY',
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY',
+  );
+
+  if (!backendUrl) missingRequired.push('VITE_BACKEND_URL');
+  if (!demoMode && !supabaseUrl) missingRequired.push('VITE_SUPABASE_URL');
+  if (!demoMode && !supabaseKey) {
+    missingRequired.push('VITE_SUPABASE_PUBLISHABLE_KEY or VITE_SUPABASE_ANON_KEY');
+  }
+
+  if (readString('VITE_API_BASE_URL') && !readString('VITE_BACKEND_URL')) {
+    warnings.push('VITE_API_BASE_URL is a legacy alias; migrate to VITE_BACKEND_URL.');
+  }
+  if (backendUrl && import.meta.env.PROD && !backendUrl.startsWith('https://')) {
+    warnings.push('The production backend URL should use HTTPS.');
+  }
+  if (demoMode) {
+    warnings.push('Demo mode is active. Live trading and withdrawals remain unavailable.');
+  }
 
   return {
-    ...env,
-    apiBaseUrl: env.VITE_API_BASE_URL || DEFAULT_ENV.VITE_API_BASE_URL,
-    wsBaseUrl: env.VITE_WS_BASE_URL || DEFAULT_ENV.VITE_WS_BASE_URL,
-    supabaseUrl: env.VITE_SUPABASE_URL || DEFAULT_ENV.VITE_SUPABASE_URL,
-    supabaseAnonKey: env.VITE_SUPABASE_ANON_KEY || DEFAULT_ENV.VITE_SUPABASE_ANON_KEY,
-    paperTradingMode: (env.VITE_PAPER_TRADING_MODE || DEFAULT_ENV.VITE_PAPER_TRADING_MODE).toLowerCase() === 'true',
-    appVersion: env.VITE_APP_VERSION || DEFAULT_ENV.VITE_APP_VERSION,
-    appName: env.VITE_APP_NAME || DEFAULT_ENV.VITE_APP_NAME,
+    ok: missingRequired.length === 0,
+    missingRequired,
+    warnings,
+    backendUrl: backendUrl ? trimTrailingSlash(backendUrl) : null,
+    supabaseConfigured: Boolean(supabaseUrl && supabaseKey),
+    demoMode,
   };
 }
 
-const validatedEnv: ValidatedEnv = validateEnv();
+const backendUrl = (() => {
+  try {
+    return getConfiguredBackendUrl();
+  } catch {
+    return '';
+  }
+})();
 
-// Export validated environment variables
-export const env = {
-  apiBaseUrl: validatedEnv.apiBaseUrl,
-  wsBaseUrl: validatedEnv.wsBaseUrl,
-  supabaseUrl: validatedEnv.supabaseUrl,
-  supabaseAnonKey: validatedEnv.supabaseAnonKey,
-  paperTradingMode: validatedEnv.paperTradingMode,
-  appVersion: validatedEnv.appVersion,
-  appName: validatedEnv.appName,
+export const env: ValidatedEnv = {
+  apiBaseUrl: backendUrl,
+  wsBaseUrl: backendUrl ? getConfiguredWebSocketUrl() : '',
+  supabaseUrl: readString('VITE_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL') ?? '',
+  supabaseAnonKey:
+    readString(
+      'VITE_SUPABASE_PUBLISHABLE_KEY',
+      'VITE_SUPABASE_ANON_KEY',
+      'NEXT_PUBLIC_SUPABASE_ANON_KEY',
+    ) ?? '',
+  paperTradingMode: true,
+  demoMode: isDemoModeEnabled(),
+  appVersion: readString('VITE_APP_VERSION') ?? '2.0.0',
+  appName: readString('VITE_APP_NAME') ?? 'Crypto Signal Bot',
 };
 
-// Runtime configuration override
-// Note: Paper trading mode cannot be disabled
-export function setEnvOverrides(overrides: Partial<Omit<ValidatedEnv, 'paperTradingMode'>>): void {
-  // Paper trading mode is always enforced
-  Object.assign(validatedEnv, overrides);
+export function setEnvOverrides(
+  overrides: Partial<Omit<ValidatedEnv, 'paperTradingMode'>>,
+): void {
+  Object.assign(env, overrides, { paperTradingMode: true });
 }
 
-// Get raw environment (for debugging)
-export function getRawEnv(): Partial<EnvConfig> {
-  return import.meta.env;
+export function getRawEnv(): RuntimeEnv {
+  return runtimeEnv;
 }
