@@ -45,3 +45,7 @@
 ## 2026-07-15 - [Efficient RSI Series Calculation]
 **Learning:** The traditional RSI formula $100 - (100 / (1 + RS))$ involves multiple divisions and nested calculations. It can be simplified to $100 \cdot avg\_gain / (avg\_gain + avg\_loss)$, which is mathematically equivalent and significantly faster.
 **Action:** Use the ratio-based RSI formula to reduce floating-point divisions and simplify the update logic inside hot loops.
+
+## 2026-10-27 - [Itertools.islice and list.append for Indicator Series]
+**Learning:** In CPython, iterating over a list with `itertools.islice` is significantly faster than index-based loops (`range(n)` + `list[i]`) because it leverages C-level iteration and avoids repeated bound-checking and integer-to-object conversions. Additionally, building the result list using `list.append` in the same loop (starting from a partial list of `None` padding) is faster than pre-allocating the full list and using index-based assignment.
+**Action:** Use `itertools.islice` and `list.append` when implementing or optimizing series-based technical indicators to minimize Python loop overhead.
