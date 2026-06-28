@@ -1,4 +1,4 @@
-"""Crash-safe idempotency service for exchange execution requests."""
+"""Crash-safe idempotency and recovery state for exchange execution requests."""
 
 from __future__ import annotations
 
@@ -17,8 +17,19 @@ from backend.db.models.execution_request import ExecutionRequestRecord
 from backend.db.session import get_session
 
 _KEY_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
-_TERMINAL_STATUSES = {"COMPLETED", "FAILED", "REJECTED"}
-_ACTIVE_STATUSES = {"CLAIMED", "SUBMITTING"}
+_TERMINAL_STATUSES = {
+    "COMPLETED",
+    "COMPLETED_PARTIAL",
+    "CANCELLED",
+    "FAILED",
+    "REJECTED",
+}
+_ACTIVE_STATUSES = {
+    "CLAIMED",
+    "SUBMITTING",
+    "SUBMITTED",
+    "PARTIALLY_FILLED",
+}
 _DEFAULT_STALE_SECONDS = 300
 
 
@@ -63,6 +74,43 @@ def request_fingerprint(payload: Mapping[str, Any], mode: str) -> str:
         default=str,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def ledger_status_for_response(response: Mapping[str, Any]) -> str:
+    """Convert an intent response into a durable execution-ledger state."""
+
+    status = str(response.get("status") or "").strip().upper()
+    return {
+        "FILLED": "COMPLETED",
+        "PARTIALLY_FILLED": "PARTIALLY_FILLED",
+        "SUBMITTED": "SUBMITTED",
+        "PENDING": "SUBMITTED",
+        "RISK_APPROVED": "SUBMITTED",
+        "CANCELLED": "CANCELLED",
+        "CANCELED": "CANCELLED",
+        "RISK_REJECTED": "REJECTED",
+        "REJECTED": "REJECTED",
+        "FAILED": "FAILED",
+        "RECOVERY_REQUIRED": "RECOVERY_REQUIRED",
+    }.get(status, "RECOVERY_REQUIRED")
+
+
+def ledger_status_for_reconciliation(decision: Mapping[str, Any]) -> str:
+    """Convert a reconciliation decision into a durable ledger state."""
+
+    status = str(decision.get("status") or "").strip().upper()
+    terminal = bool(decision.get("terminal"))
+    if status == "FILLED":
+        return "COMPLETED"
+    if status == "PARTIALLY_FILLED":
+        return "COMPLETED_PARTIAL" if terminal else "PARTIALLY_FILLED"
+    if status == "SUBMITTED":
+        return "SUBMITTED"
+    if status in {"CANCELLED", "CANCELED"}:
+        return "CANCELLED"
+    if status in {"FAILED", "REJECTED"}:
+        return "FAILED"
+    return "RECOVERY_REQUIRED"
 
 
 def _decode_response(raw: Optional[str]) -> Optional[dict[str, Any]]:
@@ -215,8 +263,17 @@ async def complete_execution(
     response: Mapping[str, Any],
     exchange_order_id: Optional[str] = None,
 ) -> bool:
+    """Persist the handler result without pretending active orders are terminal."""
+
     key = validate_idempotency_key(idempotency_key)
-    serialized = json.dumps(dict(response), sort_keys=True, default=str)
+    response_payload = dict(response)
+    serialized = json.dumps(response_payload, sort_keys=True, default=str)
+    ledger_status = ledger_status_for_response(response_payload)
+    error_code = (
+        "unsupported_execution_response"
+        if ledger_status == "RECOVERY_REQUIRED"
+        else None
+    )
     async with get_session() as session:
         result = await session.execute(
             update(ExecutionRequestRecord)
@@ -226,11 +283,52 @@ async def complete_execution(
                 ExecutionRequestRecord.status == "SUBMITTING",
             )
             .values(
-                status="COMPLETED",
+                status=ledger_status,
                 intent_id=intent_id,
                 exchange_order_id=exchange_order_id,
                 response_json=serialized,
-                error_code=None,
+                error_code=error_code,
+                updated_at=int(time.time()),
+            )
+        )
+        await session.commit()
+        return bool(result.rowcount)
+
+
+async def apply_reconciliation(
+    *,
+    idempotency_key: str,
+    operation_id: str,
+    decision: Mapping[str, Any],
+) -> bool:
+    """Apply a read-only exchange observation to an active execution record."""
+
+    key = validate_idempotency_key(idempotency_key)
+    decision_payload = dict(decision)
+    ledger_status = ledger_status_for_reconciliation(decision_payload)
+    exchange_order_id_raw = decision_payload.get("exchange_order_id")
+    exchange_order_id = (
+        str(exchange_order_id_raw).strip() if exchange_order_id_raw else None
+    )
+    serialized = json.dumps(decision_payload, sort_keys=True, default=str)
+    reason = str(decision_payload.get("reason") or "").strip() or None
+    async with get_session() as session:
+        result = await session.execute(
+            update(ExecutionRequestRecord)
+            .where(
+                ExecutionRequestRecord.idempotency_key == key,
+                ExecutionRequestRecord.operation_id == operation_id,
+                ExecutionRequestRecord.status.in_(tuple(_ACTIVE_STATUSES)),
+            )
+            .values(
+                status=ledger_status,
+                exchange_order_id=exchange_order_id,
+                response_json=serialized,
+                error_code=(
+                    (reason or "reconciliation_required")[:64]
+                    if ledger_status == "RECOVERY_REQUIRED"
+                    else None
+                ),
                 updated_at=int(time.time()),
             )
         )
@@ -263,7 +361,9 @@ async def mark_recovery_required(
         return bool(result.rowcount)
 
 
-async def get_execution_status(idempotency_key: str) -> Optional[dict[str, Any]]:
+async def get_execution_status(
+    idempotency_key: str,
+) -> Optional[dict[str, Any]]:
     key = validate_idempotency_key(idempotency_key)
     async with get_session() as session:
         result = await session.execute(
