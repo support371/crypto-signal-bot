@@ -1,80 +1,44 @@
 name: CI
-# Pull request validation is owned by CircleCI for this repository.
-# GitHub Actions validation now uses the self-hosted CryptoOps runner lane.
-
 on:
   workflow_dispatch:
   push:
     branches: [main]
   pull_request:
     branches: [main]
-
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   backend:
-    name: Backend tests
-    runs-on: [self-hosted, cryptoops, linux]
-
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Cache pip
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements.txt') }}
-          restore-keys: ${{ runner.os }}-pip-
-
-      - name: Install backend dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r backend/requirements.txt
-
-      - name: Verify backend imports
-        run: python -m py_compile backend/app.py backend/public_app.py
-
-      - name: Lint backend (ruff)
-        run: python -m ruff check backend/ --select E,W,F --ignore E402,F401,E501,E741 --exit-zero
-
-      - name: Run full backend test suite
-        run: python -m pytest backend/tests/ -x -q
-
-      - name: Run repo audit
-        run: python scripts/repo_audit.py
-
-      - name: Run stabilization test contract
-        run: python -m pytest backend/tests/test_event_log_store.py backend/tests/test_audit_store_event_log.py backend/tests/test_event_log_router.py tests/test_provider_registry.py tests/test_integrations_endpoint.py tests/test_waitlist_endpoint.py -q
-
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: python -m pip install --upgrade pip && python -m pip install -r backend/requirements.txt
+      - run: python -m py_compile backend/app.py backend/public_app.py backend/render_entrypoint.py backend/logic/live_execution_guard.py backend/services/execution_idempotency.py backend/db/models/execution_request.py backend/db/migrations/0003_execution_requests.py
+      - run: python -m ruff check backend/ --select E,W,F --ignore E402,F401,E501,E741 --exit-zero
+      - run: python -m pytest backend/tests/ -x -q
+      - run: python scripts/repo_audit.py
+      - run: python -m pytest backend/tests/test_event_log_store.py backend/tests/test_audit_store_event_log.py backend/tests/test_event_log_router.py tests/test_provider_registry.py tests/test_integrations_endpoint.py tests/test_waitlist_endpoint.py -q
   frontend:
-    name: Frontend build
-    runs-on: [self-hosted, cryptoops, linux]
-
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
-
-      - name: Install frontend dependencies
-        run: npm ci
-
-      - name: Build frontend
+          cache: npm
+      - run: npm ci
+      - run: npm run build
         env:
           VITE_BACKEND_URL: /api
           VITE_API_BASE_URL: /api
-        run: npm run build
-
-      - name: Verify dist output
-        run: |
-          test -f dist/index.html
-          test -d dist/assets
-          echo "Frontend build output verified"
+      - run: test -f dist/index.html && test -d dist/assets
