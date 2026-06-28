@@ -30,11 +30,6 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Print Worker runtime versions
-          command: |
-            node -v
-            npm -v
-      - run:
           name: Install root test dependencies
           command: npm ci
       - run:
@@ -56,21 +51,25 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Print backend runtime versions
-          command: |
-            python --version
-            python -m pip --version
-      - run:
           name: Install backend dependencies
           command: |
             python -m pip install --upgrade pip
             python -m pip install -r backend/requirements.txt
       - run:
           name: Verify backend import surface
-          command: python -m py_compile backend/app.py backend/public_app.py
+          command: |
+            python -m py_compile              backend/app.py              backend/public_app.py              backend/render_entrypoint.py              backend/logic/live_execution_guard.py              backend/services/execution_idempotency.py              backend/services/order_reconciliation.py              backend/db/models/execution_request.py              backend/db/migrations/0003_execution_requests.py
       - run:
-          name: Lint backend (ruff)
+          name: Lint backend
           command: python -m ruff check backend/ --select E,W,F --ignore E402,F401,E501,E741 --exit-zero
+      - run:
+          name: Run execution safety tests
+          command: |
+            python -m pytest \
+              backend/tests/test_live_execution_guard.py \
+              backend/tests/test_execution_idempotency.py \
+              backend/tests/test_order_reconciliation.py \
+              -q
       - run:
           name: Run full backend test suite
           command: python -m pytest backend/tests/ -x -q
