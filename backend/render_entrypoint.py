@@ -4,6 +4,10 @@ This module imports the canonical FastAPI app and replaces only public liveness
 routes used by hosted deployment platforms. It also normalizes hosted CORS so
 Vercel and Base44 frontends can coexist without exposing credentials on broad
 origin matches.
+
+The hosted adapter is wrapped with a fail-closed live execution guard. Paper
+mode behavior is unchanged; requested live execution cannot silently fall back
+to a simulated fill.
 """
 
 from __future__ import annotations
@@ -16,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import backend.app as backend_app_module
 from backend.app import app
+from backend.logic.live_execution_guard import GuardedExchangeAdapter
 
 _STARTED_AT = time.time()
 _BASE44_AND_RENDER_ORIGINS = (
@@ -23,7 +28,10 @@ _BASE44_AND_RENDER_ORIGINS = (
     "https://app.base44.com",
     "https://*.onrender.com",
 )
-_CORS_WILDCARD_REGEX = r"^https://[A-Za-z0-9-]+\.base44\.app$|^https://[A-Za-z0-9-]+\.onrender\.com$"
+_CORS_WILDCARD_REGEX = (
+    r"^https://[A-Za-z0-9-]+\.base44\.app$|"
+    r"^https://[A-Za-z0-9-]+\.onrender\.com$"
+)
 
 
 def _remove_route(path: str, methods: Iterable[str]) -> None:
@@ -32,7 +40,10 @@ def _remove_route(path: str, methods: Iterable[str]) -> None:
     retained_routes = []
     for route in app.router.routes:
         route_path = getattr(route, "path", None)
-        route_methods = {method.upper() for method in (getattr(route, "methods", None) or [])}
+        route_methods = {
+            method.upper()
+            for method in (getattr(route, "methods", None) or [])
+        }
         if route_path == path and route_methods.intersection(requested_methods):
             continue
         retained_routes.append(route)
@@ -41,9 +52,13 @@ def _remove_route(path: str, methods: Iterable[str]) -> None:
 
 def _merged_cors_origins() -> list[str]:
     """Return config/env CORS origins plus required hosted frontend origins."""
-    configured = list(getattr(backend_app_module, "ALLOWED_ORIGINS", []) or [])
+    configured = list(
+        getattr(backend_app_module, "ALLOWED_ORIGINS", []) or []
+    )
     if not configured:
-        configured = list(backend_app_module.RUNTIME_CONFIG.server.cors_origins)
+        configured = list(
+            backend_app_module.RUNTIME_CONFIG.server.cors_origins
+        )
 
     merged: list[str] = []
     for origin in [*configured, *_BASE44_AND_RENDER_ORIGINS]:
@@ -54,7 +69,7 @@ def _merged_cors_origins() -> list[str]:
 
 
 def _replace_cors_middleware() -> None:
-    """Replace app-level CORS with config-driven, credential-free hosted CORS."""
+    """Replace app-level CORS with credential-free hosted CORS."""
     cors_origins = _merged_cors_origins()
     exact_origins = [origin for origin in cors_origins if "*" not in origin]
 
@@ -76,6 +91,28 @@ def _replace_cors_middleware() -> None:
     )
 
 
+def _guardian_halted() -> bool:
+    return bool(
+        getattr(backend_app_module, "kill_switch_active", False)
+        or getattr(backend_app_module, "_guardian_triggered", False)
+    )
+
+
+def _wrap_exchange_adapter() -> None:
+    current = backend_app_module.exchange_adapter
+    if isinstance(current, GuardedExchangeAdapter):
+        return
+
+    backend_app_module.exchange_adapter = GuardedExchangeAdapter(
+        current,
+        trading_mode=backend_app_module.TRADING_MODE,
+        network=backend_app_module.NETWORK,
+        guardian_halted=_guardian_halted,
+        backend_api_key_configured=lambda: bool(
+            backend_app_module.BACKEND_API_KEY
+        ),
+    )
+
 
 async def healthz() -> dict:
     """Simple health check alias for frontend/lb probes."""
@@ -95,14 +132,25 @@ async def render_health() -> dict:
 
 
 async def render_ready() -> dict:
-    """Deployment diagnostics that confirm critical env wiring without exposing secrets."""
+    """Confirm critical hosted wiring without exposing secrets."""
     return {
         "status": "ok",
         "service": "crypto-signal-bot-backend",
         "runtime": "render",
         "backend_api_key_configured": bool(os.getenv("BACKEND_API_KEY")),
-        "cors_origins_configured": bool(backend_app_module.ALLOWED_ORIGINS),
+        "cors_origins_configured": bool(
+            backend_app_module.ALLOWED_ORIGINS
+        ),
     }
+
+
+async def live_readiness() -> dict:
+    """Return a sanitized, non-mutating live execution readiness report."""
+    adapter = backend_app_module.exchange_adapter
+    if not isinstance(adapter, GuardedExchangeAdapter):
+        _wrap_exchange_adapter()
+        adapter = backend_app_module.exchange_adapter
+    return adapter.readiness().to_dict()
 
 
 async def render_root() -> dict:
@@ -111,13 +159,22 @@ async def render_root() -> dict:
         "service": "crypto-signal-bot-backend",
         "status": "ok",
         "health": "/health",
+        "live_readiness": "/live/readiness",
         "docs": "/docs",
     }
 
 
+_wrap_exchange_adapter()
 _replace_cors_middleware()
 
-for _path in ("/", "/health", "/healthz", "/api/health", "/ready"):
+for _path in (
+    "/",
+    "/health",
+    "/healthz",
+    "/api/health",
+    "/ready",
+    "/live/readiness",
+):
     _remove_route(_path, {"GET"})
 
 app.add_api_route(
@@ -142,7 +199,6 @@ app.add_api_route(
     tags=["health"],
     summary="Simple status probe",
 )
-
 app.add_api_route(
     "/ready",
     render_ready,
@@ -150,8 +206,15 @@ app.add_api_route(
     tags=["health"],
     summary="Hosted runtime deployment readiness diagnostics",
 )
+app.add_api_route(
+    "/live/readiness",
+    live_readiness,
+    methods=["GET"],
+    tags=["execution"],
+    summary="Sanitized live execution readiness",
+)
 
-# Ensure SPA fallback doesn't intercept health checks
+# Ensure SPA fallback does not intercept operational endpoints.
 _spa_route = None
 _retained = []
 for _r in app.router.routes:
