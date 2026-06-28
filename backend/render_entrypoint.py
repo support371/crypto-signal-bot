@@ -14,13 +14,25 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Iterable
+from typing import Any, Iterable
 
+from fastapi import Depends, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.concurrency import run_in_threadpool
 
 import backend.app as backend_app_module
+import backend.logic.context as runtime_context
 from backend.app import app
 from backend.logic.live_execution_guard import GuardedExchangeAdapter
+from backend.models.execution_intent import IntentRequest, IntentResponse
+from backend.services.execution_idempotency import (
+    InvalidIdempotencyKey,
+    claim_execution,
+    complete_execution,
+    get_execution_status,
+    mark_recovery_required,
+    mark_submitting,
+)
 
 _STARTED_AT = time.time()
 _BASE44_AND_RENDER_ORIGINS = (
@@ -93,8 +105,8 @@ def _replace_cors_middleware() -> None:
 
 def _guardian_halted() -> bool:
     return bool(
-        getattr(backend_app_module, "kill_switch_active", False)
-        or getattr(backend_app_module, "_guardian_triggered", False)
+        getattr(runtime_context, "kill_switch_active", False)
+        or getattr(runtime_context, "guardian_triggered", False)
     )
 
 
@@ -150,7 +162,161 @@ async def live_readiness() -> dict:
     if not isinstance(adapter, GuardedExchangeAdapter):
         _wrap_exchange_adapter()
         adapter = backend_app_module.exchange_adapter
-    return adapter.readiness().to_dict()
+    payload = adapter.readiness().to_dict()
+    payload["idempotency_supported"] = True
+    payload["execution_route"] = "/intent/testnet"
+    return payload
+
+
+def _model_payload(model: Any) -> dict:
+    if hasattr(model, "model_dump"):
+        return model.model_dump(mode="json")
+    return model.dict()
+
+
+async def guarded_testnet_intent(
+    req: IntentRequest,
+    idempotency_key: str = Header(..., alias="Idempotency-Key"),
+    _: None = Depends(backend_app_module.require_auth),
+) -> IntentResponse:
+    """Submit a guarded testnet intent exactly once per idempotency key."""
+    if str(backend_app_module.NETWORK).strip().lower() != "testnet":
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "testnet_execution_requires_testnet_network"},
+        )
+
+    adapter = backend_app_module.exchange_adapter
+    if not isinstance(adapter, GuardedExchangeAdapter):
+        _wrap_exchange_adapter()
+        adapter = backend_app_module.exchange_adapter
+
+    readiness = adapter.readiness()
+    if not readiness.allowed:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "live_execution_not_ready",
+                "reasons": list(readiness.reasons),
+            },
+        )
+
+    payload = _model_payload(req)
+    try:
+        claim = await claim_execution(
+            idempotency_key=idempotency_key,
+            payload=payload,
+            mode="testnet",
+        )
+    except InvalidIdempotencyKey as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if claim.state == "CONFLICT":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "idempotency_key_conflict",
+                "operation_id": claim.operation_id,
+            },
+        )
+    if claim.state == "IN_PROGRESS":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "execution_in_progress",
+                "operation_id": claim.operation_id,
+                "status": claim.status,
+                "age_seconds": claim.age_seconds,
+            },
+        )
+    if claim.state == "RECOVERY_REQUIRED":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "execution_recovery_required",
+                "operation_id": claim.operation_id,
+                "status": claim.status,
+                "age_seconds": claim.age_seconds,
+            },
+        )
+    if claim.state == "REPLAY":
+        if claim.response is None:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "execution_recovery_required",
+                    "operation_id": claim.operation_id,
+                },
+            )
+        return IntentResponse(**claim.response)
+
+    submitted = await mark_submitting(idempotency_key, claim.operation_id)
+    if not submitted:
+        await mark_recovery_required(
+            idempotency_key=idempotency_key,
+            operation_id=claim.operation_id,
+            error_code="claim_transition_failed",
+        )
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "execution_recovery_required",
+                "operation_id": claim.operation_id,
+            },
+        )
+
+    try:
+        response = await run_in_threadpool(
+            backend_app_module._process_intent,
+            req,
+            "live",
+        )
+    except Exception as exc:
+        await mark_recovery_required(
+            idempotency_key=idempotency_key,
+            operation_id=claim.operation_id,
+            error_code="execution_exception",
+        )
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "execution_uncertain",
+                "operation_id": claim.operation_id,
+                "message": str(exc),
+            },
+        ) from exc
+
+    response_payload = _model_payload(response)
+    completed = await complete_execution(
+        idempotency_key=idempotency_key,
+        operation_id=claim.operation_id,
+        intent_id=response.id,
+        response=response_payload,
+    )
+    if not completed:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "execution_persist_failed",
+                "operation_id": claim.operation_id,
+                "intent_id": response.id,
+            },
+        )
+    return response
+
+
+async def execution_status(
+    idempotency_key: str,
+    _: None = Depends(backend_app_module.require_auth),
+) -> dict:
+    """Return sanitized recovery status for an idempotempotent execution request."""
+    try:
+        status = await get_execution_status(idempotency_key)
+    except InvalidIdempotencyKey as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if status is None:
+        raise HTTPException(status_code=404, detail="Execution request not found")
+    return status
 
 
 async def render_root() -> dict:
@@ -160,6 +326,8 @@ async def render_root() -> dict:
         "status": "ok",
         "health": "/health",
         "live_readiness": "/live/readiness",
+        "testnet_execution": "/intent/testnet",
+        "execution_status": "/execution/idempotency/{idempotency_key}",
         "docs": "/docs",
     }
 
@@ -174,8 +342,11 @@ for _path in (
     "/api/health",
     "/ready",
     "/live/readiness",
+    "/execution/idempotency/{idempotency_key}",
 ):
     _remove_route(_path, {"GET"})
+
+_remove_route("/intent/testnet", {"POST"})
 
 app.add_api_route(
     "/",
@@ -212,6 +383,22 @@ app.add_api_route(
     methods=["GET"],
     tags=["execution"],
     summary="Sanitized live execution readiness",
+)
+
+app.add_api_route(
+    "/intent/testnet",
+    guarded_testnet_intent,
+    methods=["POST"],
+    response_model=IntentResponse,
+    tags=["execution"],
+    summary="Guarded idempotent testnet execution",
+)
+app.add_api_route(
+    "/execution/idempotency/{idempotency_key}",
+    execution_status,
+    methods=["GET"],
+    tags=["execution"],
+    summary="Execution idempotency and recovery status",
 )
 
 # Ensure SPA fallback does not intercept operational endpoints.
