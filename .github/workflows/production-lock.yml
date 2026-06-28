@@ -1,105 +1,47 @@
 name: Production Lock
-
 on:
   pull_request:
     branches: [main]
   push:
     branches: [main, agent/production-lock-finalization]
   workflow_dispatch:
-
 permissions:
   contents: read
-
 concurrency:
   group: production-lock-${{ github.ref }}
   cancel-in-progress: true
-
 jobs:
   release-gate:
-    name: Production readiness release gate
-    runs-on: [self-hosted, cryptoops, linux]
-
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
       - name: Block committed runtime secret files
         shell: bash
         run: |
           set -euo pipefail
-          forbidden_files=$(find . \
-            -path ./.git -prune -o \
-            -path ./node_modules -prune -o \
-            -path ./dist -prune -o \
-            \( -name '.env' -o -name '.env.production' -o -name '.env.staging' -o -name '.env.preview' -o -name '*.pem' -o -name '*.key' -o -name '*.p12' -o -name '*.pfx' \) \
-            -type f -print)
-          if [ -n "$forbidden_files" ]; then
-            echo "Forbidden runtime secret material is committed:"
-            echo "$forbidden_files"
-            exit 1
-          fi
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+          forbidden_files=$(find . -path ./.git -prune -o -path ./node_modules -prune -o -path ./dist -prune -o \( -name '.env' -o -name '.env.production' -o -name '.env.staging' -o -name '.env.preview' -o -name '*.pem' -o -name '*.key' -o -name '*.p12' -o -name '*.pfx' \) -type f -print)
+          test -z "$forbidden_files" || { echo "$forbidden_files"; exit 1; }
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-
-      - name: Install frontend dependencies
-        run: npm ci
-
-      - name: Lint frontend
-        run: npm run lint --if-present
-
-      - name: Build frontend with production routing contract
+      - run: npm ci
+      - run: npm run lint --if-present
+      - run: npm run build
         env:
           VITE_BACKEND_URL: /api
           VITE_API_BASE_URL: /api
-        run: npm run build
-
-      - name: Verify frontend artifact
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -f dist/index.html
-          test -d dist/assets
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - run: test -f dist/index.html && test -d dist/assets
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Install backend dependencies
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m pip install --upgrade pip
-          python -m pip install -r backend/requirements.txt
-
-      - name: Verify backend import surface
-        run: python -m py_compile backend/app.py backend/public_app.py
-
-      - name: Lint backend (ruff)
-        run: python -m ruff check backend/ --select E,W,F --ignore E402,F401,E501,E741 --exit-zero
-
-      - name: Run full backend test suite
-        run: python -m pytest backend/tests/ -x -q
-
-      - name: Run structural repository audit
-        run: python scripts/repo_audit.py
-
-      - name: Run production stabilization contract
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m pytest \
-            backend/tests/test_event_log_store.py \
-            backend/tests/test_audit_store_event_log.py \
-            backend/tests/test_event_log_router.py \
-            tests/test_provider_registry.py \
-            tests/test_integrations_endpoint.py \
-            tests/test_waitlist_endpoint.py \
-            -q
-
-      - name: Confirm production lock artifact exists
-        run: test -f docs/PRODUCTION_LOCK.md
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: python -m pip install --upgrade pip && python -m pip install -r backend/requirements.txt
+      - run: python -m py_compile backend/app.py backend/public_app.py backend/render_entrypoint.py backend/logic/live_execution_guard.py backend/services/execution_idempotency.py backend/db/models/execution_request.py backend/db/migrations/0003_execution_requests.py
+      - run: python -m ruff check backend/ --select E,W,F --ignore E402,F401,E501,E741 --exit-zero
+      - run: python -m pytest backend/tests/ -x -q
+      - run: python scripts/repo_audit.py
+      - run: python -m pytest backend/tests/test_event_log_store.py backend/tests/test_audit_store_event_log.py backend/tests/test_event_log_router.py tests/test_provider_registry.py tests/test_integrations_endpoint.py tests/test_waitlist_endpoint.py -q
+      - run: test -f docs/PRODUCTION_LOCK.md
