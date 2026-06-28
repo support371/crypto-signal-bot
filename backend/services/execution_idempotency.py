@@ -297,7 +297,7 @@ async def complete_execution(
 
 async def apply_reconciliation(
     *,
-    idempotency_key: str,
+   idempotency_key: str,
     operation_id: str,
     decision: Mapping[str, Any],
 ) -> bool:
@@ -310,30 +310,43 @@ async def apply_reconciliation(
     exchange_order_id = (
         str(exchange_order_id_raw).strip() if exchange_order_id_raw else None
     )
-    serialized = json.dumps(decision_payload, sort_keys=True, default=str)
     reason = str(decision_payload.get("reason") or "").strip() or None
+
     async with get_session() as session:
         result = await session.execute(
-            update(ExecutionRequestRecord)
+            select(ExecutionRequestRecord)
             .where(
                 ExecutionRequestRecord.idempotency_key == key,
                 ExecutionRequestRecord.operation_id == operation_id,
-                ExecutionRequestRecord.status.in_(tuple(_ACTIVE_STATUSES)),
             )
-            .values(
-                status=ledger_status,
-                exchange_order_id=exchange_order_id,
-                response_json=serialized,
-                error_code=(
-                    (reason or "reconciliation_required")[:64]
-                    if ledger_status == "RECOVERY_REQUIRED"
-                    else None
-                ),
-                updated_at=int(time.time()),
-            )
+            .with_for_update()
         )
+        record = result.scalar_one_or_none()
+        if record is None or record.status not in _ACTIVE_STATUSES:
+            return False
+
+        replay_response = _decode_response(record.response_json) or {}
+        if record.intent_id and not replay_response.get("id"):
+            replay_response["id"] = record.intent_id
+        replay_response["status"] = str(
+            decision_payload.get("status") or "RECOVERY_REQUIRED"
+        ).upper()
+        replay_response["notes"] = reason
+        record.status = ledger_status
+        record.exchange_order_id = exchange_order_id or record.exchange_order_id
+        record.response_json = json.dumps(
+            replay_response,
+            sort_keys=True,
+            default=str,
+        )
+        record.error_code = (
+            (reason or "reconciliation_required")[:64]
+            if ledger_status == "RECOVERY_REQUIRED"
+            else None
+        )
+        record.updated_at = int(time.time())
         await session.commit()
-        return bool(result.rowcount)
+        return True
 
 
 async def mark_recovery_required(
