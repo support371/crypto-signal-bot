@@ -45,3 +45,7 @@
 ## 2026-07-15 - [Efficient RSI Series Calculation]
 **Learning:** The traditional RSI formula $100 - (100 / (1 + RS))$ involves multiple divisions and nested calculations. It can be simplified to $100 \cdot avg\_gain / (avg\_gain + avg\_loss)$, which is mathematically equivalent and significantly faster.
 **Action:** Use the ratio-based RSI formula to reduce floating-point divisions and simplify the update logic inside hot loops.
+
+## 2026-07-22 - [CPython Iterator-based Hot Loops]
+**Learning:** In CPython, the overhead of integer indexing (`__getitem__`) in tight loops is measurable. Using `itertools.islice` and `zip` to create iterators for current and shifted values (e.g., `zip(islice(values, 1, None), values)`) is significantly faster than using `range(n)` and index lookups. Additionally, building result lists with `.append()` is slightly faster than pre-allocating and assigning by index in CPython 3.12.
+**Action:** Always favor iterator-based patterns (`islice`, `zip`, `enumerate`) over index-based access in performance-critical calculation loops. Use `.append()` for incremental result list building unless fixed-size pre-allocation is strictly required by logic.
