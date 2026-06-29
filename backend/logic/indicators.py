@@ -10,6 +10,7 @@ insufficient data rather than raising.
 """
 from __future__ import annotations
 
+import itertools
 import math
 from typing import Any, List, Optional, Tuple
 
@@ -23,26 +24,29 @@ def ema(values: List[float], period: int) -> List[Optional[float]]:
     Exponential Moving Average.
     Returns a list of the same length — leading values are None until
     `period` bars of data are available.
+    Optimized with list.append and itertools.islice to reduce indexing overhead.
     """
-    if not values or period <= 0:
-        return [None] * len(values)
+    n = len(values)
+    if n == 0 or period <= 0:
+        return [None] * n
 
-    result: List[Optional[float]] = [None] * len(values)
-    k = 2.0 / (period + 1)
-    seed_idx = period - 1
-
-    if len(values) < period:
-        return result
+    if n < period:
+        return [None] * n
 
     # Seed with SMA
     seed = sum(values[:period]) / period
-    result[seed_idx] = seed
+    k = 2.0 / (period + 1)
+
+    # Pre-allocate None-padding and add seed
+    result: List[Optional[float]] = [None] * (period - 1)
+    result.append(seed)
 
     prev = seed
-    for i in range(seed_idx + 1, len(values)):
+    # Use islice to avoid indexing or list slicing in the loop
+    for val in itertools.islice(values, period, None):
         # Simplified update rule: val += k * (input - val)
-        prev += k * (values[i] - prev)
-        result[i] = prev
+        prev += k * (val - prev)
+        result.append(prev)
 
     return result
 
@@ -51,6 +55,7 @@ def last_ema(values: List[float], period: int) -> Optional[float]:
     """
     Return the most recent EMA value, or None if insufficient data.
     Optimized to O(n) time and O(1) space by avoiding full list allocation.
+    Further optimized with itertools.islice to reduce loop overhead.
     """
     if len(values) < period or period <= 0:
         return None
@@ -59,10 +64,9 @@ def last_ema(values: List[float], period: int) -> Optional[float]:
     # Seed with SMA of first 'period' values
     val = sum(values[:period]) / period
 
-    # Progressively calculate EMA for the rest
-    # Using simplified update rule: val += k * (input - val)
-    for i in range(period, len(values)):
-        val += k * (values[i] - val)
+    # Progressively calculate EMA for the rest using iterator to avoid index overhead
+    for v in itertools.islice(values, period, None):
+        val += k * (v - val)
 
     return val
 
