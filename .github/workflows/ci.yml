@@ -1,51 +1,80 @@
 name: CI
+# Pull request validation is owned by CircleCI for this repository.
+# GitHub Actions validation now uses the self-hosted CryptoOps runner lane.
 
 on:
   workflow_dispatch:
-
-permissions:
-  contents: write
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
-  patch-agent-context:
-    runs-on: ubuntu-latest
+  backend:
+    name: Backend tests
+    runs-on: [self-hosted, cryptoops, linux]
+
     steps:
-      - name: Checkout feature branch
+      - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          ref: feat/agent-context-route
-          fetch-depth: 0
+          python-version: '3.11'
 
-      - name: Register agent context router
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements.txt') }}
+          restore-keys: ${{ runner.os }}-pip-
+
+      - name: Install backend dependencies
         run: |
-          python - <<'PY'
-          from pathlib import Path
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements.txt
 
-          path = Path("worker/src/index.ts")
-          text = path.read_text()
+      - name: Verify backend imports
+        run: python -m py_compile backend/app.py backend/public_app.py
 
-          import_line = "import { agentRouter } from './routes/agent'\n"
-          import_anchor = "import { cors } from 'hono/cors'\n"
-          route_line = "app.route('/agent', agentRouter)\n"
-          route_anchor = "// ── CATCH-ALL "
+      - name: Lint backend (ruff)
+        run: python -m ruff check backend/ --select E,W,F --ignore E402,F401,E501,E741 --exit-zero
 
-          if import_line not in text:
-              text = text.replace(import_anchor, import_anchor + import_line, 1)
+      - name: Run full backend test suite
+        run: python -m pytest backend/tests/ -x -q
 
-          if route_line not in text:
-              marker = text.find(route_anchor)
-              if marker < 0:
-                  raise SystemExit("catch-all anchor not found")
-              text = text[:marker] + route_line + "\n" + text[marker:]
+      - name: Run repo audit
+        run: python scripts/repo_audit.py
 
-          path.write_text(text)
-          PY
+      - name: Run stabilization test contract
+        run: python -m pytest backend/tests/test_event_log_store.py backend/tests/test_audit_store_event_log.py backend/tests/test_event_log_router.py tests/test_provider_registry.py tests/test_integrations_endpoint.py tests/test_waitlist_endpoint.py -q
 
-      - name: Commit route registration
+  frontend:
+    name: Frontend build
+    runs-on: [self-hosted, cryptoops, linux]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build frontend
+        env:
+          VITE_BACKEND_URL: /api
+          VITE_API_BASE_URL: /api
+        run: npm run build
+
+      - name: Verify dist output
         run: |
-          git config user.name "CryptoOps Agent"
-          git config user.email "cryptoops-agent@users.noreply.github.com"
-          git add worker/src/index.ts
-          git diff --cached --check
-          git commit -m "feat: add /agent/context aggregation route for CryptoOps GPT agent"
-          git push origin HEAD:feat/agent-context-route
+          test -f dist/index.html
+          test -d dist/assets
+          echo "Frontend build output verified"
