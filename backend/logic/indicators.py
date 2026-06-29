@@ -11,6 +11,7 @@ insufficient data rather than raising.
 from __future__ import annotations
 
 import math
+from itertools import islice
 from typing import Any, List, Optional, Tuple
 
 
@@ -23,26 +24,26 @@ def ema(values: List[float], period: int) -> List[Optional[float]]:
     Exponential Moving Average.
     Returns a list of the same length — leading values are None until
     `period` bars of data are available.
+    Optimized with itertools.islice to eliminate O(1) manual indexing overhead.
     """
     if not values or period <= 0:
         return [None] * len(values)
 
-    result: List[Optional[float]] = [None] * len(values)
-    k = 2.0 / (period + 1)
-    seed_idx = period - 1
+    n = len(values)
+    if n < period:
+        return [None] * n
 
-    if len(values) < period:
-        return result
+    result: List[Optional[float]] = [None] * (period - 1)
+    k = 2.0 / (period + 1)
 
     # Seed with SMA
-    seed = sum(values[:period]) / period
-    result[seed_idx] = seed
+    val = sum(islice(values, 0, period)) / period
+    result.append(val)
 
-    prev = seed
-    for i in range(seed_idx + 1, len(values)):
-        # Simplified update rule: val += k * (input - val)
-        prev += k * (values[i] - prev)
-        result[i] = prev
+    # Simplified update rule: val += k * (input - val)
+    for curr in islice(values, period, None):
+        val += k * (curr - val)
+        result.append(val)
 
     return result
 
@@ -51,18 +52,19 @@ def last_ema(values: List[float], period: int) -> Optional[float]:
     """
     Return the most recent EMA value, or None if insufficient data.
     Optimized to O(n) time and O(1) space by avoiding full list allocation.
+    Further optimized with itertools.islice to avoid indexing overhead.
     """
     if len(values) < period or period <= 0:
         return None
 
     k = 2.0 / (period + 1)
     # Seed with SMA of first 'period' values
-    val = sum(values[:period]) / period
+    val = sum(islice(values, 0, period)) / period
 
     # Progressively calculate EMA for the rest
     # Using simplified update rule: val += k * (input - val)
-    for i in range(period, len(values)):
-        val += k * (values[i] - val)
+    for curr in islice(values, period, None):
+        val += k * (curr - val)
 
     return val
 
@@ -76,6 +78,7 @@ def rsi(values: List[float], period: int = 14) -> List[Optional[float]]:
     Relative Strength Index (Wilder smoothing).
     Returns list of same length; leading values are None.
     Optimized to O(n) without intermediate list allocations.
+    Uses itertools.islice and zip to eliminate manual indexing overhead.
     Algebraically simplified update rule for Wilder smoothing:
     val += (input - val) / period
     """
@@ -83,17 +86,16 @@ def rsi(values: List[float], period: int = 14) -> List[Optional[float]]:
     if n < period + 1 or period <= 0:
         return [None] * n
 
-    result: List[Optional[float]] = [None] * n
+    result: List[Optional[float]] = [None] * period
 
     inv_period = 1.0 / period
-
     avg_gain = 0.0
     avg_loss = 0.0
 
     # Initial seed: SMA of first 'period' gains/losses
-    prev = values[0]
-    for i in range(1, period + 1):
-        curr = values[i]
+    it = iter(values)
+    prev = next(it)
+    for curr in islice(it, 0, period):
         change = curr - prev
         if change > 0:
             avg_gain += change
@@ -106,15 +108,11 @@ def rsi(values: List[float], period: int = 14) -> List[Optional[float]]:
 
     # Use combined formula for RSI to reduce divisions: 100 * gain / (gain + loss)
     total = avg_gain + avg_loss
-    if total == 0:
-        result[period] = 50.0
-    else:
-        result[period] = 100.0 * avg_gain / total
+    result.append(50.0 if total == 0 else 100.0 * avg_gain / total)
 
     # Wilder smoothing for the rest
     minus_one_over_period = (period - 1) * inv_period
-    for i in range(period + 1, n):
-        curr = values[i]
+    for curr in islice(values, period + 1, None):
         change = curr - prev
 
         avg_gain *= minus_one_over_period
@@ -125,10 +123,7 @@ def rsi(values: List[float], period: int = 14) -> List[Optional[float]]:
             avg_loss -= change * inv_period
 
         total = avg_gain + avg_loss
-        if total == 0:
-            result[i] = 50.0
-        else:
-            result[i] = 100.0 * avg_gain / total
+        result.append(50.0 if total == 0 else 100.0 * avg_gain / total)
         prev = curr
 
     return result
@@ -137,8 +132,8 @@ def rsi(values: List[float], period: int = 14) -> List[Optional[float]]:
 def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
     """
     Return the most recent RSI value.
-    Optimized to O(n) time and O(1) space by avoiding list allocations for changes, gains, and losses.
-    Further optimized by reducing arithmetic operations and list indexing.
+    Optimized to O(n) time and O(1) space.
+    Uses itertools.islice and iter to eliminate indexing overhead in hot loops.
     """
     n = len(values)
     if n < period + 1 or period <= 0:
@@ -151,9 +146,9 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
     avg_gain = 0.0
     avg_loss = 0.0
 
-    prev = values[0]
-    for i in range(1, period + 1):
-        curr = values[i]
+    it = iter(values)
+    prev = next(it)
+    for curr in islice(it, 0, period):
         change = curr - prev
         if change > 0:
             avg_gain += change
@@ -165,8 +160,7 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
     avg_loss *= inv_period
 
     # Wilder smoothing for the rest
-    for i in range(period + 1, n):
-        curr = values[i]
+    for curr in islice(values, period + 1, None):
         change = curr - prev
         avg_gain *= minus_one_over_period
         avg_loss *= minus_one_over_period
@@ -181,7 +175,6 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
         return 50.0
 
     # Optimized RSI formula: 100 * gain / (gain + loss)
-    # Reduces two divisions to one and is mathematically equivalent.
     return 100.0 * avg_gain / total
 
 
@@ -455,7 +448,7 @@ def atr(
     """
     Average True Range (Wilder smoothing).
     Returns list same length as inputs.
-    Optimized to O(n) without intermediate list allocations.
+    Optimized with zip and itertools.islice to eliminate manual indexing.
     Algebraically simplified update rule for Wilder smoothing:
     val += (tr - val) / period
     """
@@ -465,42 +458,43 @@ def atr(
     if n < period + 1 or period <= 0:
         return [None] * n
 
-    result: List[Optional[float]] = [None] * n
+    result: List[Optional[float]] = [None] * period
     inv_period = 1.0 / period
 
     # Seed with simple average of first `period` TRs
     tr_sum = 0.0
-    for i in range(1, period + 1):
-        hl = highs[i] - lows[i]
-        hpc = abs(highs[i] - closes[i - 1])
-        lpc = abs(lows[i] - closes[i - 1])
-        # Manually find max for performance
+    # zip is lazy and avoids index lookups
+    it = zip(islice(highs, 1, period + 1),
+             islice(lows, 1, period + 1),
+             islice(closes, 0, period))
+    for h, l, pc in it:
+        hl = h - l
+        hpc = abs(h - pc)
+        lpc = abs(l - pc)
+        # tr = max(hl, hpc, lpc) - using conditional logic to avoid max() overhead
         tr = hl
-        if hpc > tr:
-            tr = hpc
-        if lpc > tr:
-            tr = lpc
+        if hpc > tr: tr = hpc
+        if lpc > tr: tr = lpc
         tr_sum += tr
 
     val = tr_sum * inv_period
-    result[period] = val
+    result.append(val)
 
     # Wilder smoothing for the rest
-    for i in range(period + 1, n):
-        hl = highs[i] - lows[i]
-        hpc = abs(highs[i] - closes[i - 1])
-        lpc = abs(lows[i] - closes[i - 1])
+    it = zip(islice(highs, period + 1, None),
+             islice(lows, period + 1, None),
+             islice(closes, period, None))
+    for h, l, pc in it:
+        hl = h - l
+        hpc = abs(h - pc)
+        lpc = abs(l - pc)
 
         tr = hl
-        if hpc > tr:
-            tr = hpc
-        if lpc > tr:
-            tr = lpc
+        if hpc > tr: tr = hpc
+        if lpc > tr: tr = lpc
 
-        # val = (val * (period - 1) + tr) / period
-        # Simplified: val += (tr - val) / period
         val += (tr - val) * inv_period
-        result[i] = val
+        result.append(val)
 
     return result
 
@@ -514,7 +508,7 @@ def last_atr(
     """
     Return the most recent ATR value.
     Optimized to O(n) time and O(1) space.
-    Further optimized by removing internal function calls and streamlining Wilder smoothing.
+    Uses zip and itertools.islice to streamline the Wilder smoothing loop.
     """
     n = len(closes)
     if len(highs) != n or len(lows) != n:
@@ -526,41 +520,31 @@ def last_atr(
     tr_sum = 0.0
 
     # Seed with average of first 'period' TRs
-    for i in range(1, period + 1):
-        h = highs[i]
-        low_val = lows[i]
-        pc = closes[i - 1]
-
-        hl = h - low_val
+    it = zip(islice(highs, 1, period + 1),
+             islice(lows, 1, period + 1),
+             islice(closes, 0, period))
+    for h, l, pc in it:
+        hl = h - l
         hpc = abs(h - pc)
-        lpc = abs(low_val - pc)
-
+        lpc = abs(l - pc)
         tr = hl
-        if hpc > tr:
-            tr = hpc
-        if lpc > tr:
-            tr = lpc
+        if hpc > tr: tr = hpc
+        if lpc > tr: tr = lpc
         tr_sum += tr
 
     val = tr_sum * inv_period
 
     # Wilder smoothing for the rest
-    for i in range(period + 1, n):
-        h = highs[i]
-        low_val = lows[i]
-        pc = closes[i - 1]
-
-        hl = h - low_val
+    it = zip(islice(highs, period + 1, None),
+             islice(lows, period + 1, None),
+             islice(closes, period, None))
+    for h, l, pc in it:
+        hl = h - l
         hpc = abs(h - pc)
-        lpc = abs(low_val - pc)
-
+        lpc = abs(l - pc)
         tr = hl
-        if hpc > tr:
-            tr = hpc
-        if lpc > tr:
-            tr = lpc
-
-        # Smoothed ATR update rule: ATR_i = ATR_{i-1} + (TR_i - ATR_{i-1}) / period
-        val = val + (tr - val) * inv_period
+        if hpc > tr: tr = hpc
+        if lpc > tr: tr = lpc
+        val += (tr - val) * inv_period
 
     return val
