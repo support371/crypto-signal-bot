@@ -16,8 +16,9 @@
 
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
+import { agentRouter } from './routes/agent'
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -66,7 +67,7 @@ type OrderInput = {
   price?: number | string; idempotency_key?: string
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -121,7 +122,7 @@ const safeRuntime = (env: Env) => ({
   withdrawals_enabled:   false,
 })
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────
 // Audit
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -131,9 +132,9 @@ async function audit(env: Env, event: string, detail: unknown): Promise<void> {
     .bind(event, payload).run().catch(() => undefined)
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────
 // Circuit breaker (D1-backed)
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
 
 async function cbIsOpen(env: Env, source: string): Promise<boolean> {
   const row = await env.DB.prepare(
@@ -175,7 +176,7 @@ async function cbRecordFailure(env: Env, source: string): Promise<void> {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Price resolution (Coinbase → Binance → D1 cache → static)
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
 
 async function fetchCoinbase(symbol: string): Promise<number | null> {
   try {
@@ -255,9 +256,9 @@ async function resolvePrice(env: Env, rawSymbol?: string | null, explicitPrice?:
   return { symbol, price: FALLBACK_PRICES[symbol] ?? 1, source: 'fallback', stale: true, ts: ts() }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
 // Guardian helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
 
 async function ensureGuardian(env: Env): Promise<void> {
   await env.DB.prepare(
@@ -292,9 +293,9 @@ async function isHalted(env: Env): Promise<boolean> {
   return bool(row?.triggered ?? 0)
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
 // Balance & portfolio helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
 
 async function getBalance(env: Env): Promise<number> {
   const row = await env.DB.prepare(
@@ -374,9 +375,9 @@ async function getPortfolio(env: Env) {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
 // Paper order engine
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────
 
 async function placePaperOrder(env: Env, input: OrderInput) {
   // Idempotency check
@@ -462,9 +463,9 @@ async function placePaperOrder(env: Env, input: OrderInput) {
   return { status: 200 as const, body: result }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────
 // Auth middleware
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
 
 function requireApiKey(env: Env, req: Request): boolean {
   if (!env.BACKEND_API_KEY) return true   // key not configured → open (dev mode)
@@ -472,9 +473,9 @@ function requireApiKey(env: Env, req: Request): boolean {
   return fromHeader === env.BACKEND_API_KEY
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
 // Rate limiter (D1, per-IP per-minute bucket)
-// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────────
 
 async function checkRateLimit(env: Env, req: Request): Promise<boolean> {
   const rpm = n(env.RATE_LIMIT_RPM, 120)
@@ -497,9 +498,9 @@ async function checkRateLimit(env: Env, req: Request): Promise<boolean> {
   return true
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
 // Scheduled cron jobs
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
 
 async function cronEvery5Min(env: Env): Promise<void> {
   // Refresh prices for all tracked symbols
@@ -559,9 +560,9 @@ async function cronDaily(env: Env): Promise<void> {
   ).run().catch(() => undefined)
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────
 // App
-// ─────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
 
 const app = new Hono<{ Bindings: Env }>()
 
@@ -588,7 +589,7 @@ app.use('*', async (c, next) => {
   return next()
 })
 
-// ── LIVENESS & READINESS ──────────────────────────────────────────────────────
+// ── LIVENESS & READINESS ─────────────────────────────────────────────────────
 
 const healthPayload = async (env: Env) => {
   const g = await getGuardian(env)
@@ -624,7 +625,7 @@ app.get('/ready', async (c) => {
   return c.json({ ready: true, status: 'ok', guardian_triggered: bool(g.triggered), ...safeRuntime(c.env), ts: ts() })
 })
 
-// ── RUNTIME STATUS ────────────────────────────────────────────────────────────
+// ── RUNTIME STATUS ──────────────────────────────────────────────────────────
 
 app.get('/runtime/status', (c) => c.json({
   ...safeRuntime(c.env),
@@ -636,7 +637,7 @@ app.get('/runtime/status', (c) => c.json({
   ts: ts(),
 }))
 
-// ── MARKET DATA ───────────────────────────────────────────────────────────────
+// ── MARKET DATA ────────────────────────────────────────────────────────────────────────────────
 
 app.get('/market/feed/status', async (c) => {
   const cbRows = await c.env.DB.prepare('SELECT * FROM circuit_breaker_state')
@@ -730,7 +731,7 @@ app.get('/signal/history', async (c) => {
   return c.json({ signals: rows.results ?? [], count: (rows.results ?? []).length, ts: ts() })
 })
 
-// ── EXCHANGE ──────────────────────────────────────────────────────────────────
+// ── EXCHANGE ───────────────────────────────────────────────────────────────
 
 app.get('/exchange/status', (c) => c.json({
   status:              'paper_only',
@@ -805,7 +806,7 @@ app.get('/portfolio/balance', async (c) => {
   return c.json({ balance_usdt: balance, cash_usdt: balance, ...safeRuntime(c.env), ts: ts() })
 })
 
-// ── GUARDIAN ──────────────────────────────────────────────────────────────────
+// ── GUARDIAN ─────────────────────────────────────────────────────────────────
 
 app.get('/guardian/status', async (c) => c.json(await getGuardian(c.env)))
 
@@ -844,7 +845,7 @@ app.post('/guardian/trigger', async (c) => {
   return c.json({ status: 'triggered', triggered: true, ...safeRuntime(c.env), ts: ts() })
 })
 
-// ── SURGE SCANNER ─────────────────────────────────────────────────────────────
+// ── SURGE SCANNER ────────────────────────────────────────────────────────────
 
 app.get('/surge/status', async (c) => {
   const rows = await c.env.DB.prepare(
@@ -935,11 +936,13 @@ app.post('/withdraw',    (c) => c.json({ error: 'Withdrawals are disabled', code
 app.post('/live/order',  (c) => c.json({ error: 'Live orders are disabled', code: 403, mode: PAPER }, 403))
 app.post('/live/trade',  (c) => c.json({ error: 'Live trades are disabled', code: 403, mode: PAPER }, 403))
 
+app.route('/agent', agentRouter)
+
 // ── CATCH-ALL ─────────────────────────────────────────────────────────────────
 
 app.all('*', (c) => c.json({ error: 'Not found', path: new URL(c.req.url).pathname, ts: ts() }, 404))
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────────────────
 // Export
 // ─────────────────────────────────────────────────────────────────────────────
 
