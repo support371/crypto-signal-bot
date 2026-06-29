@@ -45,3 +45,7 @@
 ## 2026-07-15 - [Efficient RSI Series Calculation]
 **Learning:** The traditional RSI formula $100 - (100 / (1 + RS))$ involves multiple divisions and nested calculations. It can be simplified to $100 \cdot avg\_gain / (avg\_gain + avg\_loss)$, which is mathematically equivalent and significantly faster.
 **Action:** Use the ratio-based RSI formula to reduce floating-point divisions and simplify the update logic inside hot loops.
+
+## 2026-06-27 - [Iterator-based technical indicator optimization]
+**Learning:** In CPython, iterating over a list using `itertools.islice` and `enumerate` (or `zip` for multiple lists) is measurably faster (~15-40%) than using `range(len(values))` and indexing `values[i]`. This is because it avoids repeated `__getitem__` calls and bounds checks. However, when replacing index-based loops with iterators, care must be taken with loop bounds and "next" pointers to avoid off-by-one errors in technical analysis.
+**Action:** Use `itertools.islice` and `zip` for all hot loops in technical indicators. When zipping multiple series (e.g., High, Low, Close), ensure all slices are correctly offset. Prefer `enumerate(islice(...), start=...) ` when the absolute index is needed for result list assignment.
