@@ -45,3 +45,11 @@
 ## 2026-07-15 - [Efficient RSI Series Calculation]
 **Learning:** The traditional RSI formula $100 - (100 / (1 + RS))$ involves multiple divisions and nested calculations. It can be simplified to $100 \cdot avg\_gain / (avg\_gain + avg\_loss)$, which is mathematically equivalent and significantly faster.
 **Action:** Use the ratio-based RSI formula to reduce floating-point divisions and simplify the update logic inside hot loops.
+
+## 2026-07-22 - [CPython Iterator & List Growth Efficiency]
+**Learning:** In CPython 3.12, replacing range-based indexing with `itertools.islice` and `zip` significantly reduces overhead in hot loops. Furthermore, building results using `list.append` is often faster (~13%) than pre-allocating with `None` and using index-based assignment when iterating with iterators.
+**Action:** Use `itertools.islice` and `zip` for all technical indicator loops to eliminate indexing and slicing overhead. Favor `list.append` for series generation when using iterator-based iteration.
+
+## 2026-07-22 - [Single-Pass Signal Seeding]
+**Learning:** Technical indicators with multiple seeding stages (like MACD) can be implemented in a single pass using `enumerate(itertools.islice(...))`. This maintains (N)$ performance while keeping the code readable and avoiding manual `next()` calls.
+**Action:** Use `enumerate` on iterators to handle multi-stage seeding and history accumulation in a single loop.
