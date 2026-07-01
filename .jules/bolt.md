@@ -45,3 +45,7 @@
 ## 2026-07-15 - [Efficient RSI Series Calculation]
 **Learning:** The traditional RSI formula $100 - (100 / (1 + RS))$ involves multiple divisions and nested calculations. It can be simplified to $100 \cdot avg\_gain / (avg\_gain + avg\_loss)$, which is mathematically equivalent and significantly faster.
 **Action:** Use the ratio-based RSI formula to reduce floating-point divisions and simplify the update logic inside hot loops.
+
+## 2026-07-22 - [List Pre-allocation vs Dynamic Append]
+**Learning:** For large time series result sets (N > 10,000), pre-allocating lists with `[None] * n` and using indexed assignment is consistently more efficient than dynamic `list.append`. While `append` is fast in CPython 3.12, the cumulative cost of memory reallocations and potential over-allocation overhead for very large arrays still makes pre-allocation the superior choice for deterministic trading indicators.
+**Action:** Always pre-allocate result lists for series indicators when the final size is known upfront.
