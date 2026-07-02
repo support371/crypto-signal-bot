@@ -10,6 +10,7 @@ insufficient data rather than raising.
 """
 from __future__ import annotations
 
+import itertools
 import math
 from typing import Any, List, Optional, Tuple
 
@@ -39,9 +40,10 @@ def ema(values: List[float], period: int) -> List[Optional[float]]:
     result[seed_idx] = seed
 
     prev = seed
-    for i in range(seed_idx + 1, len(values)):
+    # Use enumerate with islice to avoid O(N) indexing overhead in CPython
+    for i, val in enumerate(itertools.islice(values, seed_idx + 1, None), start=seed_idx + 1):
         # Simplified update rule: val += k * (input - val)
-        prev += k * (values[i] - prev)
+        prev += k * (val - prev)
         result[i] = prev
 
     return result
@@ -61,8 +63,9 @@ def last_ema(values: List[float], period: int) -> Optional[float]:
 
     # Progressively calculate EMA for the rest
     # Using simplified update rule: val += k * (input - val)
-    for i in range(period, len(values)):
-        val += k * (values[i] - val)
+    # Use itertools.islice to avoid O(N) indexing overhead in CPython
+    for v in itertools.islice(values, period, None):
+        val += k * (v - val)
 
     return val
 
@@ -91,9 +94,10 @@ def rsi(values: List[float], period: int = 14) -> List[Optional[float]]:
     avg_loss = 0.0
 
     # Initial seed: SMA of first 'period' gains/losses
-    prev = values[0]
-    for i in range(1, period + 1):
-        curr = values[i]
+    # Use islice and zip to avoid manual indexing
+    vals_iter = iter(values)
+    prev = next(vals_iter)
+    for curr in itertools.islice(vals_iter, period):
         change = curr - prev
         if change > 0:
             avg_gain += change
@@ -113,8 +117,8 @@ def rsi(values: List[float], period: int = 14) -> List[Optional[float]]:
 
     # Wilder smoothing for the rest
     minus_one_over_period = (period - 1) * inv_period
-    for i in range(period + 1, n):
-        curr = values[i]
+    # Use enumerate with islice to avoid O(N) indexing overhead in CPython
+    for i, curr in enumerate(itertools.islice(values, period + 1, None), start=period + 1):
         change = curr - prev
 
         avg_gain *= minus_one_over_period
@@ -151,9 +155,10 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
     avg_gain = 0.0
     avg_loss = 0.0
 
-    prev = values[0]
-    for i in range(1, period + 1):
-        curr = values[i]
+    # Use islice and zip to avoid manual indexing
+    vals_iter = iter(values)
+    prev = next(vals_iter)
+    for curr in itertools.islice(vals_iter, period):
         change = curr - prev
         if change > 0:
             avg_gain += change
@@ -165,8 +170,7 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
     avg_loss *= inv_period
 
     # Wilder smoothing for the rest
-    for i in range(period + 1, n):
-        curr = values[i]
+    for curr in itertools.islice(values, period + 1, None):
         change = curr - prev
         avg_gain *= minus_one_over_period
         avg_loss *= minus_one_over_period
@@ -216,12 +220,12 @@ def macd(
 
     # 1. Seed fast and slow EMAs
     ema_f = sum(values[:fast]) / fast
-    for i in range(fast, p_max):
-        ema_f += k_fast * (values[i] - ema_f)
+    for val in itertools.islice(values, fast, p_max):
+        ema_f += k_fast * (val - ema_f)
 
     ema_s = sum(values[:slow]) / slow
-    for i in range(slow, p_max):
-        ema_s += k_slow * (values[i] - ema_s)
+    for val in itertools.islice(values, slow, p_max):
+        ema_s += k_slow * (val - ema_s)
 
     # First MACD value at index p_max - 1
     m_val = ema_f - ema_s
@@ -232,34 +236,35 @@ def macd(
     # The first signal value is the SMA of the first 'signal_period' MACD values.
     macd_sum = m_val
     signal_start_idx = p_max + signal_period - 2
-    curr = p_max
+    curr_idx = p_max
 
-    while curr < n and curr < signal_start_idx:
-        v = values[curr]
+    # Use islice to progress without manual indexing where possible
+    # We use enumerate for the macd_line/signal_line/histogram assignment
+    prog_iter = enumerate(itertools.islice(values, p_max, signal_start_idx), start=p_max)
+    for i, v in prog_iter:
         ema_f += k_fast * (v - ema_f)
         ema_s += k_slow * (v - ema_s)
         m_val = ema_f - ema_s
-        macd_line[curr] = m_val
+        macd_line[i] = m_val
         macd_sum += m_val
-        curr += 1
+        curr_idx = i + 1
 
-    if curr == signal_start_idx and curr < n:
+    if curr_idx == signal_start_idx and curr_idx < n:
         # Seed signal SMA at signal_start_idx
-        v = values[curr]
+        v = values[curr_idx]
         ema_f += k_fast * (v - ema_f)
         ema_s += k_slow * (v - ema_s)
         m_val = ema_f - ema_s
-        macd_line[curr] = m_val
+        macd_line[curr_idx] = m_val
         macd_sum += m_val
 
         sig_ema = macd_sum / signal_period
-        signal_line[curr] = sig_ema
-        histogram[curr] = m_val - sig_ema
-        curr += 1
+        signal_line[curr_idx] = sig_ema
+        histogram[curr_idx] = m_val - sig_ema
+        curr_idx += 1
 
         # 3. Process remaining bars
-        for i in range(curr, n):
-            v = values[i]
+        for i, v in enumerate(itertools.islice(values, curr_idx, None), start=curr_idx):
             ema_f += k_fast * (v - ema_f)
             ema_s += k_slow * (v - ema_s)
             m_val = ema_f - ema_s
@@ -301,12 +306,12 @@ def last_macd(
     # 1. Seed fast and slow EMAs
     # Seed short period EMA first, then progress it to p_max-1
     ema_f = sum(values[:fast]) / fast
-    for i in range(fast, p_max):
-        ema_f += k_fast * (values[i] - ema_f)
+    for val in itertools.islice(values, fast, p_max):
+        ema_f += k_fast * (val - ema_f)
 
     ema_s = sum(values[:slow]) / slow
-    for i in range(slow, p_max):
-        ema_s += k_slow * (values[i] - ema_s)
+    for val in itertools.islice(values, slow, p_max):
+        ema_s += k_slow * (val - ema_s)
 
     # Both EMAs are now at index p_max - 1. Calculate first MACD value.
     macd_val = ema_f - ema_s
@@ -314,14 +319,15 @@ def last_macd(
     # 2. Seed Signal EMA
     # We need 'signal_period' MACD values to calculate the first signal SMA.
     macd_history = [macd_val]
-    curr = p_max
-    while len(macd_history) < signal_period:
-        v = values[curr]
+    # Use enumerate with islice to track original index while avoiding range()
+    seed_iter = enumerate(itertools.islice(values, p_max, p_max + signal_period - 1), start=p_max)
+    curr_idx = p_max
+    for i, v in seed_iter:
         ema_f += k_fast * (v - ema_f)
         ema_s += k_slow * (v - ema_s)
         macd_val = ema_f - ema_s
         macd_history.append(macd_val)
-        curr += 1
+        curr_idx = i + 1
 
     # First signal EMA value is the SMA of the first 'signal_period' MACD values.
     # This corresponds to original index (p_max - 1) + (signal_period - 1).
@@ -329,12 +335,12 @@ def last_macd(
 
     results = []
     # If the current index is within the 'count' range, capture the result.
-    if curr >= n - count + 1:
+    # curr_idx is the index of the last processed value + 1
+    if curr_idx > n - count:
         results.append((macd_history[-1], sig_ema, macd_history[-1] - sig_ema))
 
     # 3. Process remaining bars iteratively
-    for i in range(curr, n):
-        v = values[i]
+    for i, v in enumerate(itertools.islice(values, curr_idx, None), start=curr_idx):
         ema_f += k_fast * (v - ema_f)
         ema_s += k_slow * (v - ema_s)
         macd_val = ema_f - ema_s
@@ -379,33 +385,36 @@ def bollinger_bands(
     current_sum = 0.0
     current_sq_sum = 0.0
 
-    # 1. Prime the sums for the first window (excluding the last element)
-    for i in range(period - 1):
-        val = values[i]
+    # 1. Prime the sums for the first window
+    for val in itertools.islice(values, period):
         current_sum += val
         current_sq_sum += val * val
 
-    # 2. Main loop: process elements from 'period - 1' to 'n - 1'
-    for i in range(period - 1, n):
-        val = values[i]
-        current_sum += val
-        current_sq_sum += val * val
+    # 2. Calculate for the first full window at index 'period - 1'
+    sma = current_sum * inv_period
+    variance = (current_sq_sum * inv_period) - (sma * sma)
+    std = math.sqrt(max(variance, 0.0))
+    middle[period - 1] = sma
+    offset = num_std * std
+    upper[period - 1] = sma + offset
+    lower[period - 1] = sma - offset
 
-        # Calculate SMA and Variance: Variance = E[X^2] - (E[X])^2
+    # 3. Main loop: Use zip with islice to efficiently update rolling sums
+    # zip(new_values, old_values)
+    # new_values starts at index 'period'
+    # old_values starts at index '0'
+    for i, (new_val, old_val) in enumerate(zip(itertools.islice(values, period, None), values), start=period):
+        current_sum += new_val - old_val
+        current_sq_sum += new_val * new_val - old_val * old_val
+
         sma = current_sum * inv_period
         variance = (current_sq_sum * inv_period) - (sma * sma)
-        # Safeguard against tiny negative numbers due to floating point precision
         std = math.sqrt(max(variance, 0.0))
 
         middle[i] = sma
         offset = num_std * std
         upper[i] = sma + offset
         lower[i] = sma - offset
-
-        # Remove the value that will leave the window in the next iteration
-        old_val = values[i - period + 1]
-        current_sum -= old_val
-        current_sq_sum -= old_val * old_val
 
     return upper, middle, lower
 
@@ -470,10 +479,17 @@ def atr(
 
     # Seed with simple average of first `period` TRs
     tr_sum = 0.0
-    for i in range(1, period + 1):
-        hl = highs[i] - lows[i]
-        hpc = abs(highs[i] - closes[i - 1])
-        lpc = abs(lows[i] - closes[i - 1])
+    # Use zip with islice to avoid manual indexing
+    # TR at index i uses highs[i], lows[i] and closes[i-1]
+    seed_iter = zip(
+        itertools.islice(highs, 1, period + 1),
+        itertools.islice(lows, 1, period + 1),
+        itertools.islice(closes, 0, period),
+    )
+    for h, l, pc in seed_iter:
+        hl = h - l
+        hpc = abs(h - pc)
+        lpc = abs(l - pc)
         # Manually find max for performance
         tr = hl
         if hpc > tr:
@@ -486,10 +502,18 @@ def atr(
     result[period] = val
 
     # Wilder smoothing for the rest
-    for i in range(period + 1, n):
-        hl = highs[i] - lows[i]
-        hpc = abs(highs[i] - closes[i - 1])
-        lpc = abs(lows[i] - closes[i - 1])
+    smooth_iter = enumerate(
+        zip(
+            itertools.islice(highs, period + 1, None),
+            itertools.islice(lows, period + 1, None),
+            itertools.islice(closes, period, None),
+        ),
+        start=period + 1,
+    )
+    for i, (h, l, pc) in smooth_iter:
+        hl = h - l
+        hpc = abs(h - pc)
+        lpc = abs(l - pc)
 
         tr = hl
         if hpc > tr:
@@ -526,14 +550,16 @@ def last_atr(
     tr_sum = 0.0
 
     # Seed with average of first 'period' TRs
-    for i in range(1, period + 1):
-        h = highs[i]
-        low_val = lows[i]
-        pc = closes[i - 1]
-
-        hl = h - low_val
+    # Use zip with islice to avoid manual indexing
+    seed_iter = zip(
+        itertools.islice(highs, 1, period + 1),
+        itertools.islice(lows, 1, period + 1),
+        itertools.islice(closes, 0, period),
+    )
+    for h, l, pc in seed_iter:
+        hl = h - l
         hpc = abs(h - pc)
-        lpc = abs(low_val - pc)
+        lpc = abs(l - pc)
 
         tr = hl
         if hpc > tr:
@@ -545,14 +571,15 @@ def last_atr(
     val = tr_sum * inv_period
 
     # Wilder smoothing for the rest
-    for i in range(period + 1, n):
-        h = highs[i]
-        low_val = lows[i]
-        pc = closes[i - 1]
-
-        hl = h - low_val
+    smooth_iter = zip(
+        itertools.islice(highs, period + 1, None),
+        itertools.islice(lows, period + 1, None),
+        itertools.islice(closes, period, None),
+    )
+    for h, l, pc in smooth_iter:
+        hl = h - l
         hpc = abs(h - pc)
-        lpc = abs(low_val - pc)
+        lpc = abs(l - pc)
 
         tr = hl
         if hpc > tr:
