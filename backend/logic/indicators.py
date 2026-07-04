@@ -10,6 +10,7 @@ insufficient data rather than raising.
 """
 from __future__ import annotations
 
+import itertools
 import math
 from typing import Any, List, Optional, Tuple
 
@@ -50,19 +51,20 @@ def ema(values: List[float], period: int) -> List[Optional[float]]:
 def last_ema(values: List[float], period: int) -> Optional[float]:
     """
     Return the most recent EMA value, or None if insufficient data.
-    Optimized to O(n) time and O(1) space by avoiding full list allocation.
+    Optimized to O(n) time and O(1) space.
+    Further optimized by using iterator-based iteration to avoid indexing overhead.
     """
     if len(values) < period or period <= 0:
         return None
 
     k = 2.0 / (period + 1)
+    it = iter(values)
     # Seed with SMA of first 'period' values
-    val = sum(values[:period]) / period
+    val = sum(itertools.islice(it, period)) / period
 
     # Progressively calculate EMA for the rest
-    # Using simplified update rule: val += k * (input - val)
-    for i in range(period, len(values)):
-        val += k * (values[i] - val)
+    for x in it:
+        val += k * (x - val)
 
     return val
 
@@ -137,23 +139,23 @@ def rsi(values: List[float], period: int = 14) -> List[Optional[float]]:
 def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
     """
     Return the most recent RSI value.
-    Optimized to O(n) time and O(1) space by avoiding list allocations for changes, gains, and losses.
-    Further optimized by reducing arithmetic operations and list indexing.
+    Optimized to O(n) time and O(1) space.
+    Further optimized by using iterator-based iteration and branch-optimized Wilder update rule.
     """
-    n = len(values)
-    if n < period + 1 or period <= 0:
+    if len(values) < period + 1 or period <= 0:
         return None
 
     inv_period = 1.0 / period
     minus_one_over_period = (period - 1) * inv_period
 
-    # Initial averages
+    it = iter(values)
+    prev = next(it)
     avg_gain = 0.0
     avg_loss = 0.0
 
-    prev = values[0]
-    for i in range(1, period + 1):
-        curr = values[i]
+    # Initial averages
+    for _ in range(period):
+        curr = next(it)
         change = curr - prev
         if change > 0:
             avg_gain += change
@@ -165,15 +167,17 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
     avg_loss *= inv_period
 
     # Wilder smoothing for the rest
-    for i in range(period + 1, n):
-        curr = values[i]
+    for curr in it:
         change = curr - prev
-        avg_gain *= minus_one_over_period
-        avg_loss *= minus_one_over_period
         if change > 0:
-            avg_gain += change * inv_period
+            avg_gain += (change - avg_gain) * inv_period
+            avg_loss *= minus_one_over_period
         elif change < 0:
-            avg_loss -= change * inv_period
+            avg_loss += (-change - avg_loss) * inv_period
+            avg_gain *= minus_one_over_period
+        else:
+            avg_gain *= minus_one_over_period
+            avg_loss *= minus_one_over_period
         prev = curr
 
     total = avg_gain + avg_loss
@@ -514,7 +518,7 @@ def last_atr(
     """
     Return the most recent ATR value.
     Optimized to O(n) time and O(1) space.
-    Further optimized by removing internal function calls and streamlining Wilder smoothing.
+    Further optimized by using iterator-based iteration and eliminating range-based indexing.
     """
     n = len(closes)
     if len(highs) != n or len(lows) != n:
@@ -525,11 +529,15 @@ def last_atr(
     inv_period = 1.0 / period
     tr_sum = 0.0
 
+    it_highs = itertools.islice(highs, 1, None)
+    it_lows = itertools.islice(lows, 1, None)
+    it_prev_closes = iter(closes)
+
     # Seed with average of first 'period' TRs
-    for i in range(1, period + 1):
-        h = highs[i]
-        low_val = lows[i]
-        pc = closes[i - 1]
+    for _ in range(period):
+        h = next(it_highs)
+        low_val = next(it_lows)
+        pc = next(it_prev_closes)
 
         hl = h - low_val
         hpc = abs(h - pc)
@@ -545,11 +553,7 @@ def last_atr(
     val = tr_sum * inv_period
 
     # Wilder smoothing for the rest
-    for i in range(period + 1, n):
-        h = highs[i]
-        low_val = lows[i]
-        pc = closes[i - 1]
-
+    for h, low_val, pc in zip(it_highs, it_lows, it_prev_closes):
         hl = h - low_val
         hpc = abs(h - pc)
         lpc = abs(low_val - pc)
@@ -561,6 +565,6 @@ def last_atr(
             tr = lpc
 
         # Smoothed ATR update rule: ATR_i = ATR_{i-1} + (TR_i - ATR_{i-1}) / period
-        val = val + (tr - val) * inv_period
+        val += (tr - val) * inv_period
 
     return val
