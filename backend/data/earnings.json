@@ -1,0 +1,45 @@
+{
+  "open_lots": {
+    "BTCUSDT": [
+      {
+        "qty": 0.001,
+        "cost_basis": 42968.17285044,
+        "intent_id": "97f35ad7-afcb-43df-9cdc-9756581990a6",
+        "opened_at": 1783125567.5934873
+      },
+      {
+        "qty": 0.001,
+        "cost_basis": 43034.84858718,
+        "intent_id": "f2de7cf4-0542-42e5-8e14-b1cecbebd2f4",
+        "opened_at": 1783125567.6405025
+      },
+      {
+        "qty": 0.001,
+        "cost_basis": 43034.84858718,
+        "intent_id": "1bae933a-7111-46fb-b8c4-bc4a46485f2d",
+        "opened_at": 1783125567.671401
+      },
+      {
+        "qty": 0.001,
+        "cost_basis": 43034.84858718,
+        "intent_id": "832f11ac-7519-4335-8863-5c3afc700511",
+        "opened_at": 1783125567.6911497
+      }
+    ],
+    "ETHUSDT": [
+      {
+        "qty": 0.01,
+        "cost_basis": 2599.58605797,
+        "intent_id": "a13df1f7-f9c4-49c5-a9d6-c3aa26a618cd",
+        "opened_at": 1783125567.613139
+      },
+      {
+        "qty": 0.01,
+        "cost_basis": 2601.60638605,
+        "intent_id": "95ba08c7-7fd3-41fc-aa6d-32c58084ad60",
+        "opened_at": 1783125567.6513689
+      }
+    ]
+  },
+  "closed_trades": []
+}
