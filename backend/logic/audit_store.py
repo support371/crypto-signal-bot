@@ -142,25 +142,15 @@ def append_trace(trace_data: Dict[str, Any]):
 
 
 def get_traces(symbol: Optional[str] = None, status: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
-    results = []
-    symbol_upper = symbol.upper() if symbol else None
     with _lock:
-        traces = _load().get("traces", [])
-        # Optimization: iterate backwards and stop early once limit is reached.
-        # This avoids an O(N) list copy and potentially processing the entire history.
-        for i in range(len(traces) - 1, -1, -1):
-            if len(results) >= limit:
-                break
-            t = traces[i]
-            if symbol_upper and t.get("symbol", "").upper() != symbol_upper:
-                continue
-            if status and t.get("execution", {}).get("status") != status:
-                continue
-            results.append(t)
-
-    # Return in original chronological order (oldest first)
-    results.reverse()
-    return results
+        # Copy the list while holding the lock so subsequent appends cannot
+        # mutate the slice we hand back to the caller.
+        traces = list(_load().get("traces", []))
+    if symbol:
+        traces = [t for t in traces if t.get("symbol", "").upper() == symbol.upper()]
+    if status:
+        traces = [t for t in traces if t.get("execution", {}).get("status") == status]
+    return traces[-limit:]
 
 
 def get_trace_by_intent_id(intent_id: str) -> Optional[Dict[str, Any]]:
@@ -170,12 +160,10 @@ def get_trace_by_intent_id(intent_id: str) -> Optional[Dict[str, Any]]:
     traces remain retrievable via GET /trace/{intent_id}.
     """
     with _lock:
-        traces = _load().get("traces", [])
-        # Optimization: iterate backwards assuming recent intents are queried more frequently.
-        # Also avoids an O(N) list copy.
-        for i in range(len(traces) - 1, -1, -1):
-            if traces[i].get("intent_id") == intent_id:
-                return traces[i]
+        traces = list(_load().get("traces", []))
+    for trace in traces:
+        if trace.get("intent_id") == intent_id:
+            return trace
     return None
 
 
