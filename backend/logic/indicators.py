@@ -10,6 +10,7 @@ insufficient data rather than raising.
 """
 from __future__ import annotations
 
+import itertools
 import math
 from typing import Any, List, Optional, Tuple
 
@@ -39,9 +40,10 @@ def ema(values: List[float], period: int) -> List[Optional[float]]:
     result[seed_idx] = seed
 
     prev = seed
-    for i in range(seed_idx + 1, len(values)):
+    # Use enumerate and itertools.islice to avoid indexing overhead in the hot loop
+    for i, val in enumerate(itertools.islice(values, seed_idx + 1, None), start=seed_idx + 1):
         # Simplified update rule: val += k * (input - val)
-        prev += k * (values[i] - prev)
+        prev += k * (val - prev)
         result[i] = prev
 
     return result
@@ -60,9 +62,9 @@ def last_ema(values: List[float], period: int) -> Optional[float]:
     val = sum(values[:period]) / period
 
     # Progressively calculate EMA for the rest
-    # Using simplified update rule: val += k * (input - val)
-    for i in range(period, len(values)):
-        val += k * (values[i] - val)
+    # Using islice to avoid indexing overhead in the loop
+    for x in itertools.islice(values, period, None):
+        val += k * (x - val)
 
     return val
 
@@ -91,9 +93,10 @@ def rsi(values: List[float], period: int = 14) -> List[Optional[float]]:
     avg_loss = 0.0
 
     # Initial seed: SMA of first 'period' gains/losses
-    prev = values[0]
-    for i in range(1, period + 1):
-        curr = values[i]
+    it = iter(values)
+    prev = next(it)
+    for _ in range(period):
+        curr = next(it)
         change = curr - prev
         if change > 0:
             avg_gain += change
@@ -113,8 +116,7 @@ def rsi(values: List[float], period: int = 14) -> List[Optional[float]]:
 
     # Wilder smoothing for the rest
     minus_one_over_period = (period - 1) * inv_period
-    for i in range(period + 1, n):
-        curr = values[i]
+    for i, curr in enumerate(it, start=period + 1):
         change = curr - prev
 
         avg_gain *= minus_one_over_period
@@ -151,9 +153,10 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
     avg_gain = 0.0
     avg_loss = 0.0
 
-    prev = values[0]
-    for i in range(1, period + 1):
-        curr = values[i]
+    it = iter(values)
+    prev = next(it)
+    for _ in range(period):
+        curr = next(it)
         change = curr - prev
         if change > 0:
             avg_gain += change
@@ -165,8 +168,7 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
     avg_loss *= inv_period
 
     # Wilder smoothing for the rest
-    for i in range(period + 1, n):
-        curr = values[i]
+    for curr in it:
         change = curr - prev
         avg_gain *= minus_one_over_period
         avg_loss *= minus_one_over_period
@@ -216,12 +218,12 @@ def macd(
 
     # 1. Seed fast and slow EMAs
     ema_f = sum(values[:fast]) / fast
-    for i in range(fast, p_max):
-        ema_f += k_fast * (values[i] - ema_f)
+    for val in itertools.islice(values, fast, p_max):
+        ema_f += k_fast * (val - ema_f)
 
     ema_s = sum(values[:slow]) / slow
-    for i in range(slow, p_max):
-        ema_s += k_slow * (values[i] - ema_s)
+    for val in itertools.islice(values, slow, p_max):
+        ema_s += k_slow * (val - ema_s)
 
     # First MACD value at index p_max - 1
     m_val = ema_f - ema_s
@@ -232,10 +234,16 @@ def macd(
     # The first signal value is the SMA of the first 'signal_period' MACD values.
     macd_sum = m_val
     signal_start_idx = p_max + signal_period - 2
+
+    # Use iterator for the rest of the values
+    it = itertools.islice(values, p_max, None)
     curr = p_max
 
-    while curr < n and curr < signal_start_idx:
-        v = values[curr]
+    while curr < signal_start_idx:
+        try:
+            v = next(it)
+        except StopIteration:
+            break
         ema_f += k_fast * (v - ema_f)
         ema_s += k_slow * (v - ema_s)
         m_val = ema_f - ema_s
@@ -243,9 +251,13 @@ def macd(
         macd_sum += m_val
         curr += 1
 
-    if curr == signal_start_idx and curr < n:
+    if curr == signal_start_idx:
+        try:
+            v = next(it)
+        except StopIteration:
+            return macd_line, signal_line, histogram
+
         # Seed signal SMA at signal_start_idx
-        v = values[curr]
         ema_f += k_fast * (v - ema_f)
         ema_s += k_slow * (v - ema_s)
         m_val = ema_f - ema_s
@@ -258,8 +270,7 @@ def macd(
         curr += 1
 
         # 3. Process remaining bars
-        for i in range(curr, n):
-            v = values[i]
+        for i, v in enumerate(it, start=curr):
             ema_f += k_fast * (v - ema_f)
             ema_s += k_slow * (v - ema_s)
             m_val = ema_f - ema_s
@@ -301,12 +312,12 @@ def last_macd(
     # 1. Seed fast and slow EMAs
     # Seed short period EMA first, then progress it to p_max-1
     ema_f = sum(values[:fast]) / fast
-    for i in range(fast, p_max):
-        ema_f += k_fast * (values[i] - ema_f)
+    for val in itertools.islice(values, fast, p_max):
+        ema_f += k_fast * (val - ema_f)
 
     ema_s = sum(values[:slow]) / slow
-    for i in range(slow, p_max):
-        ema_s += k_slow * (values[i] - ema_s)
+    for val in itertools.islice(values, slow, p_max):
+        ema_s += k_slow * (val - ema_s)
 
     # Both EMAs are now at index p_max - 1. Calculate first MACD value.
     macd_val = ema_f - ema_s
@@ -314,9 +325,13 @@ def last_macd(
     # 2. Seed Signal EMA
     # We need 'signal_period' MACD values to calculate the first signal SMA.
     macd_history = [macd_val]
+    it = itertools.islice(values, p_max, None)
     curr = p_max
     while len(macd_history) < signal_period:
-        v = values[curr]
+        try:
+            v = next(it)
+        except StopIteration:
+            break
         ema_f += k_fast * (v - ema_f)
         ema_s += k_slow * (v - ema_s)
         macd_val = ema_f - ema_s
@@ -333,8 +348,7 @@ def last_macd(
         results.append((macd_history[-1], sig_ema, macd_history[-1] - sig_ema))
 
     # 3. Process remaining bars iteratively
-    for i in range(curr, n):
-        v = values[i]
+    for i, v in enumerate(it, start=curr):
         ema_f += k_fast * (v - ema_f)
         ema_s += k_slow * (v - ema_s)
         macd_val = ema_f - ema_s
@@ -386,8 +400,10 @@ def bollinger_bands(
         current_sq_sum += val * val
 
     # 2. Main loop: process elements from 'period - 1' to 'n - 1'
-    for i in range(period - 1, n):
-        val = values[i]
+    # Use zip and islice to avoid repeated indexing
+    it_in = itertools.islice(values, period - 1, None)
+    it_out = values
+    for i, (val, old_val) in enumerate(zip(it_in, it_out), start=period - 1):
         current_sum += val
         current_sq_sum += val * val
 
@@ -395,7 +411,8 @@ def bollinger_bands(
         sma = current_sum * inv_period
         variance = (current_sq_sum * inv_period) - (sma * sma)
         # Safeguard against tiny negative numbers due to floating point precision
-        std = math.sqrt(max(variance, 0.0))
+        # Faster conditional instead of max()
+        std = math.sqrt(variance if variance > 0 else 0.0)
 
         middle[i] = sma
         offset = num_std * std
@@ -403,7 +420,6 @@ def bollinger_bands(
         lower[i] = sma - offset
 
         # Remove the value that will leave the window in the next iteration
-        old_val = values[i - period + 1]
         current_sum -= old_val
         current_sq_sum -= old_val * old_val
 
@@ -437,9 +453,11 @@ def last_bollinger(
         sq_diff_sum += diff * diff
 
     variance = sq_diff_sum * inv_period
-    std = math.sqrt(max(variance, 0.0))
+    # Faster conditional instead of max()
+    std = math.sqrt(variance if variance > 0 else 0.0)
 
-    return sma + num_std * std, sma, sma - num_std * std
+    offset = num_std * std
+    return sma + offset, sma, sma - offset
 
 
 # ---------------------------------------------------------------------------
@@ -470,10 +488,16 @@ def atr(
 
     # Seed with simple average of first `period` TRs
     tr_sum = 0.0
-    for i in range(1, period + 1):
-        hl = highs[i] - lows[i]
-        hpc = abs(highs[i] - closes[i - 1])
-        lpc = abs(lows[i] - closes[i - 1])
+    # Use zip and islice for iterator-based seed calculation
+    seed_it = zip(
+        itertools.islice(highs, 1, period + 1),
+        itertools.islice(lows, 1, period + 1),
+        itertools.islice(closes, 0, period),
+    )
+    for h, l, pc in seed_it:
+        hl = h - l
+        hpc = abs(h - pc)
+        lpc = abs(l - pc)
         # Manually find max for performance
         tr = hl
         if hpc > tr:
@@ -486,10 +510,16 @@ def atr(
     result[period] = val
 
     # Wilder smoothing for the rest
-    for i in range(period + 1, n):
-        hl = highs[i] - lows[i]
-        hpc = abs(highs[i] - closes[i - 1])
-        lpc = abs(lows[i] - closes[i - 1])
+    # zip multiple islices to avoid indexing overhead in the hot loop
+    it = zip(
+        itertools.islice(highs, period + 1, None),
+        itertools.islice(lows, period + 1, None),
+        itertools.islice(closes, period, None),
+    )
+    for i, (h, l, pc) in enumerate(it, start=period + 1):
+        hl = h - l
+        hpc = abs(h - pc)
+        lpc = abs(l - pc)
 
         tr = hl
         if hpc > tr:
@@ -497,8 +527,7 @@ def atr(
         if lpc > tr:
             tr = lpc
 
-        # val = (val * (period - 1) + tr) / period
-        # Simplified: val += (tr - val) / period
+        # Simplified Wilder update: val += (tr - val) / period
         val += (tr - val) * inv_period
         result[i] = val
 
@@ -526,14 +555,15 @@ def last_atr(
     tr_sum = 0.0
 
     # Seed with average of first 'period' TRs
-    for i in range(1, period + 1):
-        h = highs[i]
-        low_val = lows[i]
-        pc = closes[i - 1]
-
-        hl = h - low_val
+    seed_it = zip(
+        itertools.islice(highs, 1, period + 1),
+        itertools.islice(lows, 1, period + 1),
+        itertools.islice(closes, 0, period),
+    )
+    for h, l, pc in seed_it:
+        hl = h - l
         hpc = abs(h - pc)
-        lpc = abs(low_val - pc)
+        lpc = abs(l - pc)
 
         tr = hl
         if hpc > tr:
@@ -545,14 +575,15 @@ def last_atr(
     val = tr_sum * inv_period
 
     # Wilder smoothing for the rest
-    for i in range(period + 1, n):
-        h = highs[i]
-        low_val = lows[i]
-        pc = closes[i - 1]
-
-        hl = h - low_val
+    it = zip(
+        itertools.islice(highs, period + 1, None),
+        itertools.islice(lows, period + 1, None),
+        itertools.islice(closes, period, None),
+    )
+    for h, l, pc in it:
+        hl = h - l
         hpc = abs(h - pc)
-        lpc = abs(low_val - pc)
+        lpc = abs(l - pc)
 
         tr = hl
         if hpc > tr:
