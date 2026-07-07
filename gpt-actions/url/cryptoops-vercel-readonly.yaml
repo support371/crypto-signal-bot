@@ -1,15 +1,15 @@
 openapi: 3.1.0
 info:
   title: CryptoOps Vercel Read-Only API
-  version: 2.1.0
-  description: Read-only Vercel deployment and environment-metadata access for the frontend.
+  version: 2.1.1
+  description: Read-only deployment status for the frontend.
 servers:
   - url: https://api.vercel.com
 paths:
   /v6/deployments:
     get:
       operationId: listDeployments
-      summary: List deployments for the crypto-signal-bot frontend
+      summary: List frontend deployments
       parameters:
         - name: teamId
           in: query
@@ -31,24 +31,33 @@ paths:
             minimum: 1
             maximum: 30
             default: 10
-        - name: state
-          in: query
-          required: false
-          schema:
-            type: string
-            enum: [BUILDING, ERROR, INITIALIZING, QUEUED, READY, CANCELED]
       responses:
         '200':
-          description: Deployments
+          description: Deployment list
           content:
             application/json:
               schema:
                 type: object
+                properties:
+                  deployments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        uid:
+                          type: string
+                        name:
+                          type: string
+                        state:
+                          type: string
+                        url:
+                          type: string
+                      additionalProperties: true
                 additionalProperties: true
   /v9/projects/{projectId}/env:
     get:
       operationId: getEnvironmentMetadata
-      summary: Get environment-variable metadata without revealing values
+      summary: Get project variable metadata without values
       parameters:
         - name: projectId
           in: path
@@ -62,23 +71,25 @@ paths:
           schema:
             type: string
             default: team_7lMXW95WSLeyK4yAObe8FptW
-        - name: gitBranch
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: target
-          in: query
-          required: false
-          schema:
-            type: string
-            enum: [production, preview, development]
       responses:
         '200':
-          description: Environment metadata
+          description: Variable metadata
           content:
             application/json:
               schema:
                 type: object
+                properties:
+                  envs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        key:
+                          type: string
+                        type:
+                          type: string
+                      additionalProperties: true
                 additionalProperties: true
 security: []
