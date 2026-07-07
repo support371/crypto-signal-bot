@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: CryptoOps Cloudflare Inventory Read-Only API
-  version: 2.1.0
+  version: 2.1.1
   description: Read-only Cloudflare inventory for D1, R2, KV, and Worker scripts.
 servers:
   - url: https://api.cloudflare.com/client/v4
@@ -23,6 +23,19 @@ paths:
             application/json:
               schema:
                 type: object
+                properties:
+                  success:
+                    type: boolean
+                  result:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        uuid:
+                          type: string
+                        name:
+                          type: string
+                      additionalProperties: true
                 additionalProperties: true
   /accounts/{account_id}/r2/buckets:
     get:
@@ -41,6 +54,19 @@ paths:
             application/json:
               schema:
                 type: object
+                properties:
+                  success:
+                    type: boolean
+                  result:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        creation_date:
+                          type: string
+                      additionalProperties: true
                 additionalProperties: true
   /accounts/{account_id}/storage/kv/namespaces:
     get:
@@ -59,6 +85,19 @@ paths:
             application/json:
               schema:
                 type: object
+                properties:
+                  success:
+                    type: boolean
+                  result:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        title:
+                          type: string
+                      additionalProperties: true
                 additionalProperties: true
   /accounts/{account_id}/workers/scripts:
     get:
@@ -77,5 +116,18 @@ paths:
             application/json:
               schema:
                 type: object
+                properties:
+                  success:
+                    type: boolean
+                  result:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        modified_on:
+                          type: string
+                      additionalProperties: true
                 additionalProperties: true
 security: []
