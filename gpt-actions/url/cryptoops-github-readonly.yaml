@@ -1,20 +1,10 @@
 openapi: 3.1.0
 info:
   title: CryptoOps GitHub Read-Only API
-  version: 2.0.0
+  version: 2.1.0
   description: Read-only repository, pull-request, comparison, and current commit-status access for support371/crypto-signal-bot.
 servers:
   - url: https://api.github.com
-components:
-  schemas:
-    Object:
-      type: object
-      additionalProperties: true
-    ObjectList:
-      type: array
-      items:
-        type: object
-        additionalProperties: true
 paths:
   /repos/support371/crypto-signal-bot:
     get:
@@ -22,10 +12,12 @@ paths:
       summary: Get repository metadata and default branch
       responses:
         '200':
-          description: Repository
+          description: Repository metadata
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Object' }
+              schema:
+                type: object
+                additionalProperties: true
   /repos/support371/crypto-signal-bot/branches/{branch}:
     get:
       operationId: getBranch
@@ -34,45 +26,53 @@ paths:
         - name: branch
           in: path
           required: true
-          schema: { type: string }
+          schema:
+            type: string
       responses:
         '200':
-          description: Branch
+          description: Branch metadata
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Object' }
+              schema:
+                type: object
+                additionalProperties: true
   /repos/support371/crypto-signal-bot/commits/{ref}/status:
     get:
       operationId: getCommitStatus
-      summary: Get current combined CI and deployment status
+      summary: Get current combined status for a commit or branch
       parameters:
         - name: ref
           in: path
           required: true
-          schema: { type: string }
+          schema:
+            type: string
       responses:
         '200':
           description: Combined status
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Object' }
+              schema:
+                type: object
+                additionalProperties: true
   /repos/support371/crypto-signal-bot/compare/{basehead}:
     get:
       operationId: compareRefs
-      summary: Return exact ahead and behind counts
+      summary: Compare two refs and return exact ahead and behind counts
       parameters:
         - name: basehead
           in: path
           required: true
           schema:
             type: string
-            example: main...fix/cloudflare-production-readiness
+            example: main...fix%2Fcloudflare-production-readiness
       responses:
         '200':
-          description: Comparison
+          description: Comparison result
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Object' }
+              schema:
+                type: object
+                additionalProperties: true
   /repos/support371/crypto-signal-bot/pulls:
     get:
       operationId: listPullRequests
@@ -88,11 +88,13 @@ paths:
         - name: head
           in: query
           required: false
-          schema: { type: string }
+          schema:
+            type: string
         - name: base
           in: query
           required: false
-          schema: { type: string }
+          schema:
+            type: string
         - name: per_page
           in: query
           required: false
@@ -106,7 +108,11 @@ paths:
           description: Pull requests
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ObjectList' }
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
   /repos/support371/crypto-signal-bot/pulls/{pull_number}:
     get:
       operationId: getPullRequest
@@ -115,13 +121,16 @@ paths:
         - name: pull_number
           in: path
           required: true
-          schema: { type: integer }
+          schema:
+            type: integer
       responses:
         '200':
-          description: Pull request
+          description: Pull-request metadata
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Object' }
+              schema:
+                type: object
+                additionalProperties: true
   /repos/support371/crypto-signal-bot/pulls/{pull_number}/files:
     get:
       operationId: listPullRequestFiles
@@ -130,7 +139,8 @@ paths:
         - name: pull_number
           in: path
           required: true
-          schema: { type: integer }
+          schema:
+            type: integer
         - name: per_page
           in: query
           required: false
@@ -144,7 +154,11 @@ paths:
           description: Changed files
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ObjectList' }
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
   /repos/support371/crypto-signal-bot/contents/{path}:
     get:
       operationId: getFileContents
@@ -153,7 +167,8 @@ paths:
         - name: path
           in: path
           required: true
-          schema: { type: string }
+          schema:
+            type: string
         - name: ref
           in: query
           required: false
@@ -162,8 +177,15 @@ paths:
             default: main
       responses:
         '200':
-          description: Content
+          description: File or directory content
           content:
             application/json:
-              schema: {}
+              schema:
+                oneOf:
+                  - type: object
+                    additionalProperties: true
+                  - type: array
+                    items:
+                      type: object
+                      additionalProperties: true
 security: []
