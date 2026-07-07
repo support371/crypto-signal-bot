@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CryptoOps Agent Privacy Policy</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.6; max-width: 860px; margin: 40px auto; padding: 0 20px; color: #111827; }
+    h1, h2 { color: #0f172a; }
+    .meta { color: #475569; }
+    code { background: #f1f5f9; padding: 2px 5px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>CryptoOps Agent Privacy Policy</h1>
+  <p class="meta"><strong>Effective date:</strong> July 7, 2026</p>
+
+  <p>This Privacy Policy explains how the CryptoOps Agent custom GPT and its connected Actions handle information when used to inspect and manage the <code>support371/crypto-signal-bot</code> project.</p>
+
+  <h2>1. Information processed</h2>
+  <p>The Actions may process limited technical information needed to complete a request, including repository names, branch names, commit identifiers, pull-request metadata, deployment metadata, Cloudflare resource metadata, runtime health information, paper-trading portfolio data, and other operational status information returned by the connected services.</p>
+  <p>The current read-only Action set is not designed to collect names, addresses, payment-card data, government identifiers, passwords, private keys, exchange credentials, or other sensitive personal information. Users should not submit such information.</p>
+
+  <h2>2. How information is used</h2>
+  <p>Information is used only to provide project-related functions such as checking runtime health, reviewing repository and CI status, inspecting deployment metadata, and reporting the safety state of the paper-trading system.</p>
+
+  <h2>3. Connected services</h2>
+  <p>The GPT may send the minimum required Action request data to the service selected by the user or required by the requested operation. These services may include:</p>
+  <ul>
+    <li>Cloudflare, for Worker, D1, R2, and KV operational data;</li>
+    <li>GitHub, for repository, commit, pull-request, and status information;</li>
+    <li>Vercel, for frontend deployment metadata; and</li>
+    <li>OpenAI, for operation of ChatGPT and GPT Actions.</li>
+  </ul>
+  <p>Each service processes information under its own terms and privacy policy.</p>
+
+  <h2>4. Authentication and secrets</h2>
+  <p>Authentication credentials are configured through the ChatGPT Action settings and are sent to the relevant service when an Action runs. The CryptoOps Agent is instructed not to reveal, print, store in Knowledge files, or include credentials in responses. Users must not place secrets directly inside OpenAPI schemas or chat messages.</p>
+
+  <h2>5. Storage and retention</h2>
+  <p>The current read-only Actions do not intentionally create a separate user profile or store chat prompts in the crypto-signal-bot repository. Connected service providers may retain request logs, security logs, deployment records, and operational metadata according to their own retention policies.</p>
+  <p>If authenticated administrative memory functions are enabled later, clearly identified operational values may be stored in Cloudflare KV for the period configured by the system. Such functions are not part of the default read-only Action set.</p>
+
+  <h2>6. Sharing and sale of information</h2>
+  <p>Information is not sold. Information is shared only with the connected service required to perform the requested Action, or when required for security, abuse prevention, legal compliance, or protection of the service.</p>
+
+  <h2>7. Security</h2>
+  <p>Reasonable technical safeguards are used, including read-only scopes where possible, separation of read and write Actions, paper-mode safety controls, restricted Action permissions, and explicit confirmation before consequential operations. No internet-connected system can guarantee absolute security.</p>
+
+  <h2>8. User choices</h2>
+  <p>Users can choose not to run an Action, disconnect a connected account, revoke service tokens, or stop using the GPT. Requests to review or remove project-specific stored operational data can be submitted through the project contact channel below.</p>
+
+  <h2>9. Children and sensitive data</h2>
+  <p>The CryptoOps Agent is not intended to collect personal information from children or to process sensitive personal data. Do not submit such information through the GPT or its Actions.</p>
+
+  <h2>10. Changes to this policy</h2>
+  <p>This policy may be updated when the Action set, connected services, or data practices change. The effective date above will be revised when material changes are made.</p>
+
+  <h2>11. Contact</h2>
+  <p>For privacy questions or requests, use the public project issue tracker:</p>
+  <p><a href="https://github.com/support371/crypto-signal-bot/issues">https://github.com/support371/crypto-signal-bot/issues</a></p>
+</body>
+</html>
