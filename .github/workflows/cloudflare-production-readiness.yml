@@ -1,0 +1,36 @@
+name: Cloudflare production readiness
+
+on:
+  pull_request:
+    paths:
+      - "worker/**"
+      - "wrangler.production.toml"
+      - ".github/workflows/cloudflare-production-readiness.yml"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-readiness-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+      - name: Install Worker dependencies
+        run: cd worker && npm ci
+      - name: Type-check Worker
+        run: cd worker && npm run build
+      - name: Verify production safety boundary
+        run: cd worker && npm run verify:paper-safety
+      - name: Validate production bundle
+        run: npx wrangler deploy --dry-run --outdir /tmp/crypto-signal-bot-worker-dry-run --config wrangler.production.toml
