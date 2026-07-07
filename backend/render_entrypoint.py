@@ -75,16 +75,29 @@ def _replace_cors_middleware() -> None:
         allow_origins=origins,
         allow_credentials=False,
         allow_methods=["GET", "HEAD", "OPTIONS", "POST"],
-        allow_headers=["Content-Type", "Authorization", "X-API-Key", "Idempotency-Key"],
+        allow_headers=[
+            "Content-Type",
+            "Authorization",
+            "X-API-Key",
+            "Idempotency-Key",
+        ],
         max_age=600,
     )
 
 
 def _deployment_checks() -> dict[str, bool]:
-    mode = str(getattr(backend_app_module, "TRADING_MODE", "paper")).strip().lower()
-    network = str(getattr(backend_app_module, "NETWORK", "testnet")).strip().lower()
-    adapter_mode = str(getattr(backend_app_module.exchange_adapter, "mode", "unknown")).strip().lower()
-    configured_origins = list(getattr(backend_app_module, "ALLOWED_ORIGINS", []) or [])
+    mode = str(
+        getattr(backend_app_module, "TRADING_MODE", "paper")
+    ).strip().lower()
+    network = str(
+        getattr(backend_app_module, "NETWORK", "testnet")
+    ).strip().lower()
+    adapter_mode = str(
+        getattr(backend_app_module.exchange_adapter, "mode", "unknown")
+    ).strip().lower()
+    configured_origins = list(
+        getattr(backend_app_module, "ALLOWED_ORIGINS", []) or []
+    )
     return {
         "paper_mode": mode == "paper",
         "testnet_network": network == "testnet",
@@ -96,9 +109,22 @@ def _deployment_checks() -> dict[str, bool]:
     }
 
 
-def _unsafe_hosted_configuration() -> list[str]:
-    checks = _deployment_checks()
-    return [name for name, passed in checks.items() if not passed]
+def _deployment_blockers(checks: dict[str, bool]) -> list[str]:
+    """Return safety blockers for serving the read-only paper application.
+
+    A missing operator key does not make liveness/readiness fail because the
+    fail-closed lock keeps all protected mutations inaccessible. It does block
+    trading readiness, where an authenticated operator path is required.
+    """
+
+    required = (
+        "paper_mode",
+        "testnet_network",
+        "mainnet_disabled",
+        "cors_exact_origins",
+        "paper_adapter",
+    )
+    return [name for name in required if not checks.get(name, False)]
 
 
 # The configured key is installed as-is. When it is absent, a process-local
@@ -128,13 +154,18 @@ async def render_health() -> dict:
 
 async def render_ready():
     checks = _deployment_checks()
-    failures = [name for name, passed in checks.items() if not passed]
+    failures = _deployment_blockers(checks)
+    ready = not failures
     payload = {
-        "status": "ready" if not failures else "degraded",
+        # Keep the existing success value for API compatibility while adding
+        # detailed blocking reasons and a correct non-200 response when unsafe.
+        "status": "ok" if ready else "degraded",
         "service": "crypto-signal-bot-backend",
         "runtime": "render",
         "mode": str(getattr(backend_app_module, "TRADING_MODE", "paper")),
         "network": str(getattr(backend_app_module, "NETWORK", "testnet")),
+        "backend_api_key_configured": _OPERATOR_LOCK.configured,
+        "cors_origins_configured": bool(backend_app_module.ALLOWED_ORIGINS),
         "checks": checks,
         "blocking_reasons": failures,
         "operator_routes_locked": _OPERATOR_LOCK.locked,
@@ -142,7 +173,7 @@ async def render_ready():
         "withdrawals_enabled": False,
     }
     return JSONResponse(
-        status_code=200 if not failures else 503,
+        status_code=200 if ready else 503,
         content=payload,
         headers={"Cache-Control": "no-store"},
     )
@@ -150,25 +181,35 @@ async def render_ready():
 
 async def trading_readiness():
     checks = _deployment_checks()
+    failures = _deployment_blockers(checks)
+    if not checks["operator_key_configured"]:
+        failures.append("operator_key_missing")
+
     guardian_blocked = bool(
         getattr(runtime_context, "kill_switch_active", False)
         or getattr(runtime_context, "guardian_triggered", False)
     )
-    failures = [name for name, passed in checks.items() if not passed]
     if guardian_blocked:
         failures.append("guardian_or_kill_switch_active")
+
     paper_ready = not failures
     payload = {
         "status": "ready" if paper_ready else "blocked",
         "paper_ready": paper_ready,
         "live_ready": False,
-        "trading_mode": str(getattr(backend_app_module, "TRADING_MODE", "paper")),
+        "trading_mode": str(
+            getattr(backend_app_module, "TRADING_MODE", "paper")
+        ),
         "network": str(getattr(backend_app_module, "NETWORK", "testnet")),
         "allow_mainnet": False,
         "live_execution_enabled": False,
         "withdrawals_enabled": False,
-        "kill_switch_active": bool(getattr(runtime_context, "kill_switch_active", False)),
-        "guardian_triggered": bool(getattr(runtime_context, "guardian_triggered", False)),
+        "kill_switch_active": bool(
+            getattr(runtime_context, "kill_switch_active", False)
+        ),
+        "guardian_triggered": bool(
+            getattr(runtime_context, "guardian_triggered", False)
+        ),
         "checks": checks,
         "blocking_reasons": failures,
     }
