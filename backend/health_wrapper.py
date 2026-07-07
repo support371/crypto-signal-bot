@@ -1,10 +1,8 @@
-"""ASGI health wrapper for hosted deployments.
+"""ASGI liveness wrapper for hosted deployments.
 
-Render can mark a service unhealthy when its configured health-check path fails,
-even if the application root is reachable. This module makes hosted root,
-liveness, and readiness probes dependency-free and handles Render HEAD probes
-before the full FastAPI app/router stack is entered. All non-probe traffic is
-lazily delegated to the canonical backend app.
+Root and liveness probes remain dependency-light. Readiness requests are delegated
+to the hardened Render entrypoint so hosting diagnostics cannot report a false
+success when configuration or operator authentication is incomplete.
 """
 
 from __future__ import annotations
@@ -16,12 +14,16 @@ from typing import Any, Awaitable, Callable, Dict
 
 _STARTED_AT = time.time()
 _HEALTH_PATHS = {"/health", "/healthz", "/api/health"}
-_READY_PATHS = {"/ready"}
 _ROOT_PATHS = {"/", ""}
-_delegate_app: Callable[[Dict[str, Any], Callable[..., Awaitable[Any]], Callable[..., Awaitable[Any]]], Awaitable[Any]] | None = None
+_delegate_app: Callable[
+    [Dict[str, Any], Callable[..., Awaitable[Any]], Callable[..., Awaitable[Any]]],
+    Awaitable[Any],
+] | None = None
 
 
-def _json_response(body: dict[str, Any], status: int = 200) -> tuple[int, list[tuple[bytes, bytes]], bytes]:
+def _json_response(
+    body: dict[str, Any], status: int = 200
+) -> tuple[int, list[tuple[bytes, bytes]], bytes]:
     payload = json.dumps(body, separators=(",", ":")).encode("utf-8")
     headers = [
         (b"content-type", b"application/json"),
@@ -44,27 +46,21 @@ def _health_payload(path: str = "/health") -> dict[str, Any]:
     }
 
 
-def _ready_payload() -> dict[str, Any]:
-    # Keep readiness public and generic. Do not expose API-key or CORS details.
-    return {
-        "status": "ok",
-        "service": "crypto-signal-bot-backend",
-        "runtime": "render" if os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID") else "asgi",
-        "mode": os.getenv("TRADING_MODE", "paper"),
-    }
-
-
 def _root_payload() -> dict[str, Any]:
     return {
         "name": "Crypto Signal Bot API",
-        "version": "2.2.0",
+        "version": "2.3.0",
         "status": "online",
         "docs": "/docs",
         "health": "/health",
+        "readiness": "/ready",
     }
 
 
-def _get_delegate_app() -> Callable[[Dict[str, Any], Callable[..., Awaitable[Any]], Callable[..., Awaitable[Any]]], Awaitable[Any]]:
+def _get_delegate_app() -> Callable[
+    [Dict[str, Any], Callable[..., Awaitable[Any]], Callable[..., Awaitable[Any]]],
+    Awaitable[Any],
+]:
     global _delegate_app
     if _delegate_app is None:
         from backend.render_entrypoint import app as render_app
@@ -79,7 +75,6 @@ async def _send_json(
     status: int = 200,
     method: str | None = None,
 ) -> None:
-    """Send JSON for GET and headers-only for HEAD probes."""
     status_code, headers, payload = _json_response(body, status=status)
     await send({"type": "http.response.start", "status": status_code, "headers": headers})
     if (method or "").upper() == "HEAD":
@@ -88,7 +83,11 @@ async def _send_json(
         await send({"type": "http.response.body", "body": payload})
 
 
-async def app(scope: Dict[str, Any], receive: Callable[..., Awaitable[Any]], send: Callable[..., Awaitable[Any]]) -> None:
+async def app(
+    scope: Dict[str, Any],
+    receive: Callable[..., Awaitable[Any]],
+    send: Callable[..., Awaitable[Any]],
+) -> None:
     if scope.get("type") == "lifespan":
         await _get_delegate_app()(scope, receive, send)
         return
@@ -101,9 +100,6 @@ async def app(scope: Dict[str, Any], receive: Callable[..., Awaitable[Any]], sen
             return
         if path in _HEALTH_PATHS and method in {"GET", "HEAD"}:
             await _send_json(send, _health_payload(path), method=method)
-            return
-        if path in _READY_PATHS and method in {"GET", "HEAD"}:
-            await _send_json(send, _ready_payload(), method=method)
             return
 
     await _get_delegate_app()(scope, receive, send)
