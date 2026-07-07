@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: CryptoOps Worker Read-Only API
-  version: 3.1.0
+  version: 3.1.1
   description: Read-only operational access to the canonical Cloudflare Worker backend.
 servers:
   - url: https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
@@ -17,6 +17,16 @@ paths:
             application/json:
               schema:
                 type: object
+                properties:
+                  status:
+                    type: string
+                  ok:
+                    type: boolean
+                  ts:
+                    oneOf:
+                      - type: integer
+                      - type: number
+                      - type: string
                 additionalProperties: true
   /ready:
     get:
@@ -29,6 +39,15 @@ paths:
             application/json:
               schema:
                 type: object
+                properties:
+                  status:
+                    type: string
+                  ready:
+                    type: boolean
+                  paper_ready:
+                    type: boolean
+                  live_ready:
+                    type: boolean
                 additionalProperties: true
         '503':
           description: Not ready
@@ -36,6 +55,15 @@ paths:
             application/json:
               schema:
                 type: object
+                properties:
+                  status:
+                    type: string
+                  ready:
+                    type: boolean
+                  blocking_reasons:
+                    type: array
+                    items:
+                      type: string
                 additionalProperties: true
   /runtime/status:
     get:
@@ -48,6 +76,19 @@ paths:
             application/json:
               schema:
                 type: object
+                properties:
+                  trading_mode:
+                    type: string
+                  exchange_mode:
+                    type: string
+                  network:
+                    type: string
+                  allow_mainnet:
+                    type: boolean
+                  live_trading_enabled:
+                    type: boolean
+                  withdrawals_enabled:
+                    type: boolean
                 additionalProperties: true
   /guardian/status:
     get:
@@ -60,6 +101,15 @@ paths:
             application/json:
               schema:
                 type: object
+                properties:
+                  triggered:
+                    type: boolean
+                  reason:
+                    oneOf:
+                      - type: string
+                      - type: 'null'
+                  drawdown_pct:
+                    type: number
                 additionalProperties: true
   /agent/context:
     get:
@@ -72,6 +122,16 @@ paths:
             application/json:
               schema:
                 type: object
+                properties:
+                  ok:
+                    type: boolean
+                  mode:
+                    type: string
+                  ts:
+                    oneOf:
+                      - type: integer
+                      - type: number
+                      - type: string
                 additionalProperties: true
         '207':
           description: Partially degraded context
@@ -79,6 +139,13 @@ paths:
             application/json:
               schema:
                 type: object
+                properties:
+                  ok:
+                    type: boolean
+                  status:
+                    type: string
+                  error:
+                    type: string
                 additionalProperties: true
   /portfolio:
     get:
@@ -91,5 +158,12 @@ paths:
             application/json:
               schema:
                 type: object
+                properties:
+                  equity_usdt:
+                    type: number
+                  cash_usdt:
+                    type: number
+                  mode:
+                    type: string
                 additionalProperties: true
 security: []
