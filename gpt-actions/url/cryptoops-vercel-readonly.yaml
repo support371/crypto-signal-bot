@@ -1,0 +1,84 @@
+openapi: 3.1.0
+info:
+  title: CryptoOps Vercel Read-Only API
+  version: 2.0.0
+  description: Read-only Vercel deployment and environment-metadata access for the frontend.
+servers:
+  - url: https://api.vercel.com
+components:
+  schemas:
+    Object:
+      type: object
+      additionalProperties: true
+paths:
+  /v6/deployments:
+    get:
+      operationId: listDeployments
+      summary: List deployments for the crypto-signal-bot frontend
+      parameters:
+        - name: teamId
+          in: query
+          required: false
+          schema:
+            type: string
+            default: team_7lMXW95WSLeyK4yAObe8FptW
+        - name: projectId
+          in: query
+          required: false
+          schema:
+            type: string
+            default: prj_sdk3k44uV3pCj5p5njSzHzm1vOJX
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 30
+            default: 10
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [BUILDING, ERROR, INITIALIZING, QUEUED, READY, CANCELED]
+      responses:
+        '200':
+          description: Deployments
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Object' }
+  /v9/projects/{projectId}/env:
+    get:
+      operationId: getEnvironmentMetadata
+      summary: Get environment-variable metadata without exposing values
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            default: prj_sdk3k44uV3pCj5p5njSzHzm1vOJX
+        - name: teamId
+          in: query
+          required: false
+          schema:
+            type: string
+            default: team_7lMXW95WSLeyK4yAObe8FptW
+        - name: gitBranch
+          in: query
+          required: false
+          schema: { type: string }
+        - name: target
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [production, preview, development]
+      responses:
+        '200':
+          description: Environment metadata
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Object' }
+security: []
