@@ -10,6 +10,7 @@ insufficient data rather than raising.
 """
 from __future__ import annotations
 
+import itertools
 import math
 from typing import Any, List, Optional, Tuple
 
@@ -51,6 +52,7 @@ def last_ema(values: List[float], period: int) -> Optional[float]:
     """
     Return the most recent EMA value, or None if insufficient data.
     Optimized to O(n) time and O(1) space by avoiding full list allocation.
+    Uses itertools.islice to eliminate indexing overhead in CPython.
     """
     if len(values) < period or period <= 0:
         return None
@@ -61,8 +63,8 @@ def last_ema(values: List[float], period: int) -> Optional[float]:
 
     # Progressively calculate EMA for the rest
     # Using simplified update rule: val += k * (input - val)
-    for i in range(period, len(values)):
-        val += k * (values[i] - val)
+    for v in itertools.islice(values, period, None):
+        val += k * (v - val)
 
     return val
 
@@ -138,7 +140,7 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
     """
     Return the most recent RSI value.
     Optimized to O(n) time and O(1) space by avoiding list allocations for changes, gains, and losses.
-    Further optimized by reducing arithmetic operations and list indexing.
+    Further optimized by reducing arithmetic operations and using iterator-based traversal to eliminate indexing overhead.
     """
     n = len(values)
     if n < period + 1 or period <= 0:
@@ -151,9 +153,10 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
     avg_gain = 0.0
     avg_loss = 0.0
 
-    prev = values[0]
-    for i in range(1, period + 1):
-        curr = values[i]
+    it = iter(values)
+    prev = next(it)
+    for _ in range(period):
+        curr = next(it)
         change = curr - prev
         if change > 0:
             avg_gain += change
@@ -165,8 +168,7 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
     avg_loss *= inv_period
 
     # Wilder smoothing for the rest
-    for i in range(period + 1, n):
-        curr = values[i]
+    for curr in it:
         change = curr - prev
         avg_gain *= minus_one_over_period
         avg_loss *= minus_one_over_period
@@ -514,7 +516,7 @@ def last_atr(
     """
     Return the most recent ATR value.
     Optimized to O(n) time and O(1) space.
-    Further optimized by removing internal function calls and streamlining Wilder smoothing.
+    Further optimized by using itertools.islice and zip to eliminate indexing overhead.
     """
     n = len(closes)
     if len(highs) != n or len(lows) != n:
@@ -526,11 +528,11 @@ def last_atr(
     tr_sum = 0.0
 
     # Seed with average of first 'period' TRs
-    for i in range(1, period + 1):
-        h = highs[i]
-        low_val = lows[i]
-        pc = closes[i - 1]
+    it_highs = itertools.islice(highs, 1, period + 1)
+    it_lows = itertools.islice(lows, 1, period + 1)
+    it_prev_closes = itertools.islice(closes, 0, period)
 
+    for h, low_val, pc in zip(it_highs, it_lows, it_prev_closes):
         hl = h - low_val
         hpc = abs(h - pc)
         lpc = abs(low_val - pc)
@@ -545,11 +547,11 @@ def last_atr(
     val = tr_sum * inv_period
 
     # Wilder smoothing for the rest
-    for i in range(period + 1, n):
-        h = highs[i]
-        low_val = lows[i]
-        pc = closes[i - 1]
+    it_highs = itertools.islice(highs, period + 1, None)
+    it_lows = itertools.islice(lows, period + 1, None)
+    it_prev_closes = itertools.islice(closes, period, None)
 
+    for h, low_val, pc in zip(it_highs, it_lows, it_prev_closes):
         hl = h - low_val
         hpc = abs(h - pc)
         lpc = abs(low_val - pc)
