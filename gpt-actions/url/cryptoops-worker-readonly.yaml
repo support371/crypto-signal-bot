@@ -1,0 +1,270 @@
+openapi: 3.1.0
+info:
+  title: CryptoOps Worker Read-Only API
+  version: 3.0.0
+  description: Read-only access to the canonical Cloudflare Worker backend. Paper mode only; live trading and withdrawals remain disabled.
+servers:
+  - url: https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
+components:
+  schemas:
+    GenericObject:
+      type: object
+      additionalProperties: true
+    RuntimeStatus:
+      type: object
+      properties:
+        mode: { type: string }
+        trading_mode: { type: string }
+        exchange_mode: { type: string }
+        network: { type: string }
+        allow_mainnet: { type: boolean }
+        live_trading_enabled: { type: boolean }
+        withdrawals_enabled: { type: boolean }
+        runtime: { type: string }
+      additionalProperties: true
+    Readiness:
+      type: object
+      properties:
+        status: { type: string }
+        ready: { type: boolean }
+        paper_ready: { type: boolean }
+        live_ready: { type: boolean }
+        runtime: { type: string }
+        mode: { type: string }
+        network: { type: string }
+        allow_mainnet: { type: boolean }
+        checks:
+          type: object
+          additionalProperties:
+            type: boolean
+        blocking_reasons:
+          type: array
+          items: { type: string }
+      additionalProperties: true
+paths:
+  /healthz:
+    get:
+      operationId: getHealthz
+      summary: Check Worker liveness
+      responses:
+        '200':
+          description: Liveness response
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericObject' }
+  /health:
+    get:
+      operationId: getWorkerHealth
+      summary: Get Worker health and safety state
+      responses:
+        '200':
+          description: Health response
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericObject' }
+  /ready:
+    get:
+      operationId: getWorkerReadiness
+      summary: Check paper production readiness
+      responses:
+        '200':
+          description: Ready
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Readiness' }
+        '503':
+          description: Blocked or degraded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Readiness' }
+  /trading-readiness:
+    get:
+      operationId: getTradingReadiness
+      summary: Check paper-trading readiness; live readiness must remain false
+      responses:
+        '200':
+          description: Paper-ready
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Readiness' }
+        '503':
+          description: Trading blocked
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Readiness' }
+  /runtime/status:
+    get:
+      operationId: getRuntimeStatus
+      summary: Get current runtime safety configuration
+      responses:
+        '200':
+          description: Runtime status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RuntimeStatus' }
+  /guardian/status:
+    get:
+      operationId: getGuardianStatus
+      summary: Get Guardian and kill-switch state
+      responses:
+        '200':
+          description: Guardian state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericObject' }
+  /agent/context:
+    get:
+      operationId: getAgentContext
+      summary: Get consolidated operational context at session start
+      responses:
+        '200':
+          description: Context snapshot
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericObject' }
+        '207':
+          description: Partially degraded context
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericObject' }
+  /market/feed/status:
+    get:
+      operationId: getMarketFeedStatus
+      summary: Get public market-feed and circuit-breaker status
+      responses:
+        '200':
+          description: Feed status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericObject' }
+  /market/price/{symbol}:
+    get:
+      operationId: getMarketPrice
+      summary: Get a public market-data price snapshot
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Price snapshot
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericObject' }
+  /signal/latest:
+    get:
+      operationId: getLatestSignal
+      summary: Get the latest paper-mode signal
+      parameters:
+        - name: symbol
+          in: query
+          required: false
+          schema:
+            type: string
+            default: BTCUSDT
+      responses:
+        '200':
+          description: Latest signal
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericObject' }
+  /exchange/status:
+    get:
+      operationId: getExchangeStatus
+      summary: Confirm paper-only exchange capability
+      responses:
+        '200':
+          description: Exchange status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericObject' }
+  /exchange/circuit-breakers:
+    get:
+      operationId: getExchangeCircuitBreakers
+      summary: Get public-data adapter circuit-breaker state
+      responses:
+        '200':
+          description: Circuit breakers
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericObject' }
+  /portfolio:
+    get:
+      operationId: getPortfolio
+      summary: Get the paper portfolio
+      responses:
+        '200':
+          description: Portfolio
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericObject' }
+  /portfolio/positions:
+    get:
+      operationId: getPortfolioPositions
+      summary: Get open paper positions
+      responses:
+        '200':
+          description: Positions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericObject' }
+  /portfolio/balance:
+    get:
+      operationId: getPortfolioBalance
+      summary: Get paper cash balance
+      responses:
+        '200':
+          description: Balance
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericObject' }
+  /orders:
+    get:
+      operationId: getPaperOrders
+      summary: Get recent paper orders
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+      responses:
+        '200':
+          description: Orders
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericObject' }
+  /audit:
+    get:
+      operationId: getAuditTrail
+      summary: Get recent non-secret audit events
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        '200':
+          description: Audit trail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericObject' }
+  /stream/latest:
+    get:
+      operationId: getStreamLatest
+      summary: Get the latest streaming snapshot
+      responses:
+        '200':
+          description: Stream snapshot
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericObject' }
+security: []
