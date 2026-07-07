@@ -1,15 +1,10 @@
 openapi: 3.1.0
 info:
   title: CryptoOps Cloudflare Inventory Read-Only API
-  version: 2.0.0
+  version: 2.1.0
   description: Read-only Cloudflare inventory for D1, R2, KV, and Worker scripts.
 servers:
   - url: https://api.cloudflare.com/client/v4
-components:
-  schemas:
-    Object:
-      type: object
-      additionalProperties: true
 paths:
   /accounts/{account_id}/d1/database:
     get:
@@ -19,13 +14,16 @@ paths:
         - name: account_id
           in: path
           required: true
-          schema: { type: string }
+          schema:
+            type: string
       responses:
         '200':
           description: D1 databases
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Object' }
+              schema:
+                type: object
+                additionalProperties: true
   /accounts/{account_id}/r2/buckets:
     get:
       operationId: listR2Buckets
@@ -34,13 +32,16 @@ paths:
         - name: account_id
           in: path
           required: true
-          schema: { type: string }
+          schema:
+            type: string
       responses:
         '200':
           description: R2 buckets
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Object' }
+              schema:
+                type: object
+                additionalProperties: true
   /accounts/{account_id}/storage/kv/namespaces:
     get:
       operationId: listKVNamespaces
@@ -49,13 +50,16 @@ paths:
         - name: account_id
           in: path
           required: true
-          schema: { type: string }
+          schema:
+            type: string
       responses:
         '200':
           description: KV namespaces
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Object' }
+              schema:
+                type: object
+                additionalProperties: true
   /accounts/{account_id}/workers/scripts:
     get:
       operationId: listWorkerScripts
@@ -64,11 +68,14 @@ paths:
         - name: account_id
           in: path
           required: true
-          schema: { type: string }
+          schema:
+            type: string
       responses:
         '200':
           description: Worker scripts
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Object' }
+              schema:
+                type: object
+                additionalProperties: true
 security: []
