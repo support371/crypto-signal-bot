@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import secrets
 from dataclasses import dataclass
-from typing import Callable, Mapping, MutableMapping, Protocol
+from typing import Callable, Mapping, Protocol
 
 
 class _ModuleLike(Protocol):
