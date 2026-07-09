@@ -142,28 +142,49 @@ def append_trace(trace_data: Dict[str, Any]):
 
 
 def get_traces(symbol: Optional[str] = None, status: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+    """
+    Return the most recent decision traces, filtered by symbol or status.
+    Optimization: Iterates backward through the list to avoid full-list copy/filtering,
+    achieving O(limit) complexity in most cases.
+    """
     with _lock:
-        # Copy the list while holding the lock so subsequent appends cannot
-        # mutate the slice we hand back to the caller.
-        traces = list(_load().get("traces", []))
-    if symbol:
-        traces = [t for t in traces if t.get("symbol", "").upper() == symbol.upper()]
-    if status:
-        traces = [t for t in traces if t.get("execution", {}).get("status") == status]
-    return traces[-limit:]
+        traces = _load().get("traces", [])
+        if not traces:
+            return []
+
+        results = []
+        # Upper-case for case-insensitive comparison once
+        sym_upper = symbol.upper() if symbol else None
+
+        # Iterate backwards to find the most recent matches
+        for i in range(len(traces) - 1, -1, -1):
+            t = traces[i]
+            # Match filters
+            if sym_upper and t.get("symbol", "").upper() != sym_upper:
+                continue
+            if status and t.get("execution", {}).get("status") != status:
+                continue
+
+            results.append(t)
+            if len(results) >= limit:
+                break
+
+        # Results were collected newest-first, reverse to maintain chronological order
+        results.reverse()
+        return results
 
 
 def get_trace_by_intent_id(intent_id: str) -> Optional[Dict[str, Any]]:
     """Return the full decision trace for a given intent id, or None if missing.
 
-    Searches every persisted trace (not just the most recent window) so older
-    traces remain retrievable via GET /trace/{intent_id}.
+    Optimization: Iterates backward through the traces assuming most lookups are for recent events.
     """
     with _lock:
-        traces = list(_load().get("traces", []))
-    for trace in traces:
-        if trace.get("intent_id") == intent_id:
-            return trace
+        traces = _load().get("traces", [])
+        # Most likely to be looking up a recent trace, so search backwards.
+        for i in range(len(traces) - 1, -1, -1):
+            if traces[i].get("intent_id") == intent_id:
+                return dict(traces[i])
     return None
 
 
