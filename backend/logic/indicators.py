@@ -10,6 +10,7 @@ insufficient data rather than raising.
 """
 from __future__ import annotations
 
+import itertools
 import math
 from typing import Any, List, Optional, Tuple
 
@@ -61,8 +62,9 @@ def last_ema(values: List[float], period: int) -> Optional[float]:
 
     # Progressively calculate EMA for the rest
     # Using simplified update rule: val += k * (input - val)
-    for i in range(period, len(values)):
-        val += k * (values[i] - val)
+    it = itertools.islice(values, period, None)
+    for x in it:
+        val += k * (x - val)
 
     return val
 
@@ -165,8 +167,8 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
     avg_loss *= inv_period
 
     # Wilder smoothing for the rest
-    for i in range(period + 1, n):
-        curr = values[i]
+    it = itertools.islice(values, period + 1, None)
+    for curr in it:
         change = curr - prev
         avg_gain *= minus_one_over_period
         avg_loss *= minus_one_over_period
@@ -526,11 +528,12 @@ def last_atr(
     tr_sum = 0.0
 
     # Seed with average of first 'period' TRs
-    for i in range(1, period + 1):
-        h = highs[i]
-        low_val = lows[i]
-        pc = closes[i - 1]
-
+    it_seed = zip(
+        itertools.islice(highs, 1, period + 1),
+        itertools.islice(lows, 1, period + 1),
+        itertools.islice(closes, 0, period),
+    )
+    for h, low_val, pc in it_seed:
         hl = h - low_val
         hpc = abs(h - pc)
         lpc = abs(low_val - pc)
@@ -545,11 +548,12 @@ def last_atr(
     val = tr_sum * inv_period
 
     # Wilder smoothing for the rest
-    for i in range(period + 1, n):
-        h = highs[i]
-        low_val = lows[i]
-        pc = closes[i - 1]
-
+    it_smooth = zip(
+        itertools.islice(highs, period + 1, None),
+        itertools.islice(lows, period + 1, None),
+        itertools.islice(closes, period, None),
+    )
+    for h, low_val, pc in it_smooth:
         hl = h - low_val
         hpc = abs(h - pc)
         lpc = abs(low_val - pc)
