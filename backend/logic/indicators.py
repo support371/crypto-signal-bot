@@ -10,6 +10,7 @@ insufficient data rather than raising.
 """
 from __future__ import annotations
 
+import itertools
 import math
 from typing import Any, List, Optional, Tuple
 
@@ -57,12 +58,14 @@ def last_ema(values: List[float], period: int) -> Optional[float]:
 
     k = 2.0 / (period + 1)
     # Seed with SMA of first 'period' values
-    val = sum(values[:period]) / period
+    # Optimized: Use itertools.islice to avoid list slicing memory overhead.
+    val = sum(itertools.islice(values, period)) / period
 
     # Progressively calculate EMA for the rest
     # Using simplified update rule: val += k * (input - val)
-    for i in range(period, len(values)):
-        val += k * (values[i] - val)
+    # Optimized: Replace range-based indexing with itertools.islice to avoid indexing overhead.
+    for x in itertools.islice(values, period, None):
+        val += k * (x - val)
 
     return val
 
