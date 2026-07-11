@@ -58,8 +58,7 @@ def last_ema(values: List[float], period: int) -> Optional[float]:
 
     k = 2.0 / (period + 1)
     # Seed with SMA of first 'period' values
-    # Optimized: Use itertools.islice to avoid list slicing memory overhead.
-    val = sum(itertools.islice(values, period)) / period
+    val = sum(values[:period]) / period
 
     # Progressively calculate EMA for the rest
     # Using simplified update rule: val += k * (input - val)
@@ -168,8 +167,8 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
     avg_loss *= inv_period
 
     # Wilder smoothing for the rest
-    for i in range(period + 1, n):
-        curr = values[i]
+    # Optimized: Replace range-based indexing with itertools.islice to avoid indexing overhead.
+    for curr in itertools.islice(values, period + 1, None):
         change = curr - prev
         avg_gain *= minus_one_over_period
         avg_loss *= minus_one_over_period
@@ -548,11 +547,12 @@ def last_atr(
     val = tr_sum * inv_period
 
     # Wilder smoothing for the rest
-    for i in range(period + 1, n):
-        h = highs[i]
-        low_val = lows[i]
-        pc = closes[i - 1]
+    # Optimized: Use zip and itertools.islice to avoid multiple indexing lookups.
+    it_h = itertools.islice(highs, period + 1, None)
+    it_l = itertools.islice(lows, period + 1, None)
+    it_pc = itertools.islice(closes, period, n - 1)
 
+    for h, low_val, pc in zip(it_h, it_l, it_pc):
         hl = h - low_val
         hpc = abs(h - pc)
         lpc = abs(low_val - pc)
