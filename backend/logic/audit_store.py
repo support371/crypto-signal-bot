@@ -142,15 +142,34 @@ def append_trace(trace_data: Dict[str, Any]):
 
 
 def get_traces(symbol: Optional[str] = None, status: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+    """Fetch recent traces with optional filtering.
+
+    Optimized to iterate backward and stop early once the limit is reached,
+    avoiding full list copies and full-history scans.
+    """
+    if limit <= 0:
+        return []
+
     with _lock:
-        # Copy the list while holding the lock so subsequent appends cannot
-        # mutate the slice we hand back to the caller.
-        traces = list(_load().get("traces", []))
-    if symbol:
-        traces = [t for t in traces if t.get("symbol", "").upper() == symbol.upper()]
-    if status:
-        traces = [t for t in traces if t.get("execution", {}).get("status") == status]
-    return traces[-limit:]
+        raw_traces = _load().get("traces", [])
+        if not symbol and not status:
+            return list(raw_traces[-limit:])
+
+        results = []
+        symbol_upper = symbol.upper() if symbol else None
+        # Iterate backward to find the most recent 'limit' matches
+        for i in range(len(raw_traces) - 1, -1, -1):
+            t = raw_traces[i]
+            if symbol_upper and t.get("symbol", "").upper() != symbol_upper:
+                continue
+            if status and t.get("execution", {}).get("status") != status:
+                continue
+            results.append(t)
+            if len(results) >= limit:
+                break
+
+        # Reverse to restore chronological order (oldest to newest)
+        return results[::-1]
 
 
 def get_trace_by_intent_id(intent_id: str) -> Optional[Dict[str, Any]]:
@@ -158,12 +177,16 @@ def get_trace_by_intent_id(intent_id: str) -> Optional[Dict[str, Any]]:
 
     Searches every persisted trace (not just the most recent window) so older
     traces remain retrievable via GET /trace/{intent_id}.
+
+    Optimized to search backward as most queries target recent intents.
     """
     with _lock:
-        traces = list(_load().get("traces", []))
-    for trace in traces:
-        if trace.get("intent_id") == intent_id:
-            return trace
+        traces = _load().get("traces", [])
+        # Search backward for performance on recent intents
+        for i in range(len(traces) - 1, -1, -1):
+            t = traces[i]
+            if t.get("intent_id") == intent_id:
+                return t
     return None
 
 
