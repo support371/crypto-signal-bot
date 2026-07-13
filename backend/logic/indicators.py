@@ -10,7 +10,6 @@ insufficient data rather than raising.
 """
 from __future__ import annotations
 
-import itertools
 import math
 from typing import Any, List, Optional, Tuple
 
@@ -57,14 +56,13 @@ def last_ema(values: List[float], period: int) -> Optional[float]:
         return None
 
     k = 2.0 / (period + 1)
-    it = iter(values)
     # Seed with SMA of first 'period' values
-    val = sum(itertools.islice(it, period)) / period
+    val = sum(values[:period]) / period
 
     # Progressively calculate EMA for the rest
     # Using simplified update rule: val += k * (input - val)
-    for v in it:
-        val += k * (v - val)
+    for i in range(period, len(values)):
+        val += k * (values[i] - val)
 
     return val
 
@@ -147,16 +145,15 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
         return None
 
     inv_period = 1.0 / period
-    prev_weight = (period - 1) * inv_period
+    minus_one_over_period = (period - 1) * inv_period
 
     # Initial averages
     avg_gain = 0.0
     avg_loss = 0.0
 
-    it = iter(values)
-    prev = next(it)
-    for _ in range(period):
-        curr = next(it)
+    prev = values[0]
+    for i in range(1, period + 1):
+        curr = values[i]
         change = curr - prev
         if change > 0:
             avg_gain += change
@@ -168,10 +165,11 @@ def last_rsi(values: List[float], period: int = 14) -> Optional[float]:
     avg_loss *= inv_period
 
     # Wilder smoothing for the rest
-    for curr in it:
+    for i in range(period + 1, n):
+        curr = values[i]
         change = curr - prev
-        avg_gain *= prev_weight
-        avg_loss *= prev_weight
+        avg_gain *= minus_one_over_period
+        avg_loss *= minus_one_over_period
         if change > 0:
             avg_gain += change * inv_period
         elif change < 0:
@@ -335,8 +333,8 @@ def last_macd(
         results.append((macd_history[-1], sig_ema, macd_history[-1] - sig_ema))
 
     # 3. Process remaining bars iteratively
-    it = itertools.islice(values, curr, None)
-    for i, v in enumerate(it, start=curr):
+    for i in range(curr, n):
+        v = values[i]
         ema_f += k_fast * (v - ema_f)
         ema_s += k_slow * (v - ema_s)
         macd_val = ema_f - ema_s
@@ -528,11 +526,11 @@ def last_atr(
     tr_sum = 0.0
 
     # Seed with average of first 'period' TRs
-    it_high = itertools.islice(highs, 1, period + 1)
-    it_low = itertools.islice(lows, 1, period + 1)
-    it_prev_close = itertools.islice(closes, 0, period)
+    for i in range(1, period + 1):
+        h = highs[i]
+        low_val = lows[i]
+        pc = closes[i - 1]
 
-    for h, low_val, pc in zip(it_high, it_low, it_prev_close):
         hl = h - low_val
         hpc = abs(h - pc)
         lpc = abs(low_val - pc)
@@ -547,11 +545,11 @@ def last_atr(
     val = tr_sum * inv_period
 
     # Wilder smoothing for the rest
-    it_high = itertools.islice(highs, period + 1, None)
-    it_low = itertools.islice(lows, period + 1, None)
-    it_prev_close = itertools.islice(closes, period, None)
+    for i in range(period + 1, n):
+        h = highs[i]
+        low_val = lows[i]
+        pc = closes[i - 1]
 
-    for h, low_val, pc in zip(it_high, it_low, it_prev_close):
         hl = h - low_val
         hpc = abs(h - pc)
         lpc = abs(low_val - pc)
