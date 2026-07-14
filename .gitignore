@@ -30,6 +30,17 @@ npm-debug.log*
 # Cache
 .cache/
 .vitest/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Data
+backend/data/*.json
+!backend/data/providers.json
+!backend/data/waitlist.example.json
+*.db
+*.db-journal
 
 # Supabase
 supabase/
