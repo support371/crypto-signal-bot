@@ -45,3 +45,7 @@
 ## 2026-07-15 - [Efficient RSI Series Calculation]
 **Learning:** The traditional RSI formula $100 - (100 / (1 + RS))$ involves multiple divisions and nested calculations. It can be simplified to $100 \cdot avg\_gain / (avg\_gain + avg\_loss)$, which is mathematically equivalent and significantly faster.
 **Action:** Use the ratio-based RSI formula to reduce floating-point divisions and simplify the update logic inside hot loops.
+
+## 2026-07-16 - [Backward Iteration for Append-only Logs]
+**Learning:** For append-only audit logs or trace stores, most queries target recent data. Filtering by copying the entire list and then slicing is O(N) in both time and memory.
+**Action:** Implement filtering using backward iteration with early stopping. This reduces complexity to O(limit) for the common case of retrieving recent entries, providing orders-of-magnitude speedups on large logs.
