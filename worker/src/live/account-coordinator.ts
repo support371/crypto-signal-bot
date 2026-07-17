@@ -26,17 +26,29 @@ interface CoordinatorMetadata {
   haltReason: 'LIVE_CANDIDATE_EXECUTION_LOCKED'
 }
 
-interface CandidateAssessmentRequest extends Omit<CandidateOrderAssessmentInput, 'previewOptions'> {
+type CandidateAssessmentRequest = Omit<CandidateOrderAssessmentInput, 'previewOptions'> & {
   previewOptions: Omit<CandidateOrderAssessmentInput['previewOptions'], 'now'>
 }
 
-interface LocalAssessmentRow {
+type LocalAssessmentRow = {
   request_hash: string
   envelope_json: string
 }
 
-interface OutboxRow {
+type OutboxRow = {
   projection_status: 'PENDING' | 'PROJECTED' | 'CONFLICT'
+}
+
+type CountRow = {
+  count: number
+}
+
+type CounterRow = {
+  counter_value: number
+}
+
+type EnvelopeRow = {
+  envelope_json: string
 }
 
 interface CommitResult {
@@ -219,10 +231,10 @@ export class ExchangeAccountCoordinator {
   }
 
   private snapshot(): Record<string, unknown> {
-    const assessmentCount = this.state.storage.sql.exec<{ count: number }>(
+    const assessmentCount = this.state.storage.sql.exec<CountRow>(
       'SELECT COUNT(*) AS count FROM candidate_assessment_commits',
     ).one().count
-    const pendingProjectionCount = this.state.storage.sql.exec<{ count: number }>(
+    const pendingProjectionCount = this.state.storage.sql.exec<CountRow>(
       "SELECT COUNT(*) AS count FROM candidate_projection_outbox WHERE projection_status = 'PENDING'",
     ).one().count
 
@@ -274,7 +286,7 @@ export class ExchangeAccountCoordinator {
            SET counter_value = counter_value + 1
          WHERE counter_name = 'candidate_assessment_sequence'
       `)
-      const coordinatorSequence = this.state.storage.sql.exec<{ counter_value: number }>(`
+      const coordinatorSequence = this.state.storage.sql.exec<CounterRow>(`
         SELECT counter_value
           FROM coordinator_counters
          WHERE counter_name = 'candidate_assessment_sequence'
@@ -429,7 +441,7 @@ export class ExchangeAccountCoordinator {
     const unauthorized = this.authorizeInternal(request)
     if (unauthorized) return unauthorized
 
-    const row = this.state.storage.sql.exec<{ envelope_json: string }>(`
+    const row = this.state.storage.sql.exec<EnvelopeRow>(`
       SELECT envelope_json
         FROM candidate_assessment_commits
        WHERE assessment_id = ?
