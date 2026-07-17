@@ -159,7 +159,7 @@ export async function evaluateLiveCandidateReadiness(
     .filter(([, passed]) => !passed)
     .map(([name]) => name)
 
-  // A candidate build never reports live-ready and never executes financial mutations.
+  // Candidate artifacts are certification inputs only. They can never execute.
   reasons.push('candidate_build_cannot_execute_live_orders')
 
   return {
