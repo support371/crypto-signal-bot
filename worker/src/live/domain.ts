@@ -6,6 +6,8 @@ export {
   asSignedDecimalString,
   assertPositiveDecimal,
   compareDecimal,
+  decimalScale,
+  divideDecimalDown,
   isIncrementAligned,
   isPositiveDecimal,
   multiplyDecimal,
