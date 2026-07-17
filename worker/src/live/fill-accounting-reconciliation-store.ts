@@ -69,12 +69,16 @@ type ReconciliationReceiptRow = {
   reasons_json: string
   reconstructed_quantity: string
   reconstructed_cost_basis_quote: string
+  reconstructed_average_entry_price: string | null
   reconstructed_realized_pnl_quote: string
   ledger_base_inventory_balance: string
   exchange_base_balance: string | null
   current_price: string | null
   market_value_quote: string | null
   unrealized_pnl_quote: string | null
+  provider_mutation_allowed: number
+  reservation_applied: number
+  execution_allowed: number
 }
 
 type PositionRow = {
@@ -138,6 +142,10 @@ function optionalHash(value: string | null, field: string): string | null {
   return normalized
 }
 
+function optionalDecimal(value: DecimalString | null, field: string): DecimalString | null {
+  return value === null ? null : asDecimalString(value, field)
+}
+
 function ledgerAccountIds(values: readonly string[]): readonly string[] {
   if (!Array.isArray(values) || values.length === 0 || values.length > MAX_LEDGER_ACCOUNTS) {
     throw new RangeError(`ledgerBaseAccountIds must contain 1-${MAX_LEDGER_ACCOUNTS} accounts`)
@@ -145,6 +153,35 @@ function ledgerAccountIds(values: readonly string[]): readonly string[] {
   const normalized = Array.from(new Set(values.map((value) => required(value, 'ledgerBaseAccountId'))))
   if (normalized.length !== values.length) throw new TypeError('ledgerBaseAccountIds must be unique')
   return Object.freeze(normalized.sort())
+}
+
+function parseReasons(value: string): readonly string[] {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(value) as unknown
+  } catch {
+    throw new FillAccountingReconciliationConflictError(
+      'stored reconciliation reasons are not valid JSON',
+    )
+  }
+  if (!Array.isArray(parsed) || parsed.some((reason) => typeof reason !== 'string')) {
+    throw new FillAccountingReconciliationConflictError(
+      'stored reconciliation reasons must be a string array',
+    )
+  }
+  return Object.freeze(Array.from(new Set(parsed)).sort())
+}
+
+function assertReceiptLocks(row: ReconciliationReceiptRow): void {
+  if (
+    row.provider_mutation_allowed !== 0
+    || row.reservation_applied !== 0
+    || row.execution_allowed !== 0
+  ) {
+    throw new FillAccountingReconciliationConflictError(
+      'stored reconciliation violates permanent capability locks',
+    )
+  }
 }
 
 function stableInput(
@@ -223,8 +260,14 @@ async function loadLots(
   const consumedByLot = new Map<string, { quantity: DecimalString; cost: DecimalString }>()
   for (const row of consumptions.results) {
     const current = consumedByLot.get(row.lot_id) ?? { quantity: ZERO, cost: ZERO }
-    current.quantity = addDecimal(current.quantity, asDecimalString(row.quantity))
-    current.cost = addDecimal(current.cost, asDecimalString(row.cost_basis_quote))
+    current.quantity = addDecimal(
+      current.quantity,
+      asDecimalString(row.quantity, 'consumption.quantity'),
+    )
+    current.cost = addDecimal(
+      current.cost,
+      asDecimalString(row.cost_basis_quote, 'consumption.costBasisQuote'),
+    )
     consumedByLot.set(row.lot_id, current)
   }
 
@@ -272,18 +315,88 @@ async function loadRealizedPnl(
 async function loadLedgerBalance(
   env: FillAccountingReconciliationStoreEnv,
   normalizedLedgerAccountIds: readonly string[],
+  baseAsset: string,
 ): Promise<SignedDecimalString> {
   const placeholders = normalizedLedgerAccountIds.map(() => '?').join(', ')
   const rows = await env.DB.prepare(`
     SELECT direction, amount
       FROM ledger_entries
      WHERE ledger_account_id IN (${placeholders})
+       AND asset = ?
      ORDER BY created_at ASC, entry_id ASC
-  `).bind(...normalizedLedgerAccountIds).all<LedgerEntryRow>()
+  `).bind(...normalizedLedgerAccountIds, baseAsset).all<LedgerEntryRow>()
   return calculateSignedLedgerBalance(rows.results.map((row) => ({
     direction: row.direction,
     amount: asDecimalString(row.amount, 'ledgerEntry.amount'),
   })))
+}
+
+function receiptQuery(): string {
+  return `
+    SELECT input_hash, reconciliation_hash, status, reasons_json,
+           reconstructed_quantity, reconstructed_cost_basis_quote,
+           reconstructed_average_entry_price,
+           reconstructed_realized_pnl_quote, ledger_base_inventory_balance,
+           exchange_base_balance, current_price, market_value_quote,
+           unrealized_pnl_quote, provider_mutation_allowed,
+           reservation_applied, execution_allowed
+      FROM live_fill_accounting_reconciliations
+     WHERE reconciliation_id = ?
+     LIMIT 1
+  `
+}
+
+function replayResult(
+  reconciliationId: string,
+  exchangeName: CanonicalExecutionExchange,
+  row: ReconciliationReceiptRow,
+): PersistFillAccountingReconciliationResult {
+  assertReceiptLocks(row)
+  return Object.freeze({
+    reconciliationId,
+    projectionStatus: 'REPLAYED',
+    exchangeName,
+    status: row.status,
+    reasons: parseReasons(row.reasons_json),
+    reconstructedQuantity: asDecimalString(
+      row.reconstructed_quantity,
+      'receipt.reconstructedQuantity',
+    ),
+    reconstructedCostBasisQuote: asDecimalString(
+      row.reconstructed_cost_basis_quote,
+      'receipt.reconstructedCostBasisQuote',
+    ),
+    reconstructedAverageEntryPrice: row.reconstructed_average_entry_price === null
+      ? null
+      : asDecimalString(
+        row.reconstructed_average_entry_price,
+        'receipt.reconstructedAverageEntryPrice',
+      ),
+    reconstructedRealizedPnlQuote: asSignedDecimalString(
+      row.reconstructed_realized_pnl_quote,
+      'receipt.reconstructedRealizedPnlQuote',
+    ),
+    ledgerBaseInventoryBalance: asSignedDecimalString(
+      row.ledger_base_inventory_balance,
+      'receipt.ledgerBaseInventoryBalance',
+    ),
+    exchangeBaseBalance: row.exchange_base_balance === null
+      ? null
+      : asDecimalString(row.exchange_base_balance, 'receipt.exchangeBaseBalance'),
+    currentPrice: row.current_price === null
+      ? null
+      : asDecimalString(row.current_price, 'receipt.currentPrice'),
+    marketValueQuote: row.market_value_quote === null
+      ? null
+      : asDecimalString(row.market_value_quote, 'receipt.marketValueQuote'),
+    unrealizedPnlQuote: row.unrealized_pnl_quote === null
+      ? null
+      : asSignedDecimalString(row.unrealized_pnl_quote, 'receipt.unrealizedPnlQuote'),
+    reconciliationHash: row.reconciliation_hash,
+    providerMutationAllowed: false,
+    reservationApplied: false,
+    executionAllowed: false,
+  })
 }
 
 export async function persistFillAccountingReconciliation(
@@ -302,25 +415,36 @@ export async function persistFillAccountingReconciliation(
     input.exchangeObservationHash,
     'exchangeObservationHash',
   )
+  const exchangeBaseBalance = optionalDecimal(
+    input.exchangeBaseBalance,
+    'exchangeBaseBalance',
+  )
+  const currentPrice = optionalDecimal(input.currentPrice, 'currentPrice')
   const observedAt = iso(input.observedAt, 'observedAt')
+  const normalizedInput: PersistFillAccountingReconciliationInput = {
+    ...input,
+    exchangeName,
+    exchangeAccountId,
+    productId,
+    baseAsset,
+    quoteAsset,
+    ledgerBaseAccountIds: normalizedLedgerAccountIds,
+    exchangeBaseBalance,
+    currentPrice,
+    exchangeObservationHash,
+    observedAt,
+  }
   const inputHash = await canonicalHash(stableInput(
-    { ...input, exchangeAccountId, productId, baseAsset, quoteAsset },
+    normalizedInput,
     exchangeName,
     normalizedLedgerAccountIds,
     exchangeObservationHash,
     observedAt,
   ))
 
-  const existing = await env.DB.prepare(`
-    SELECT input_hash, reconciliation_hash, status, reasons_json,
-           reconstructed_quantity, reconstructed_cost_basis_quote,
-           reconstructed_realized_pnl_quote, ledger_base_inventory_balance,
-           exchange_base_balance, current_price, market_value_quote,
-           unrealized_pnl_quote
-      FROM live_fill_accounting_reconciliations
-     WHERE reconciliation_id = ?
-     LIMIT 1
-  `).bind(reconciliationId).first<ReconciliationReceiptRow>()
+  const existing = await env.DB.prepare(receiptQuery())
+    .bind(reconciliationId)
+    .first<ReconciliationReceiptRow>()
 
   if (existing) {
     if (existing.input_hash !== inputHash) {
@@ -328,50 +452,16 @@ export async function persistFillAccountingReconciliation(
         'reconciliation ID was already used with different evidence',
       )
     }
-    return Object.freeze({
-      reconciliationId,
-      projectionStatus: 'REPLAYED',
-      exchangeName,
-      status: existing.status,
-      reasons: Object.freeze(JSON.parse(existing.reasons_json) as string[]),
-      reconstructedQuantity: asDecimalString(existing.reconstructed_quantity),
-      reconstructedCostBasisQuote: asDecimalString(existing.reconstructed_cost_basis_quote),
-      reconstructedAverageEntryPrice: null,
-      reconstructedRealizedPnlQuote: asSignedDecimalString(
-        existing.reconstructed_realized_pnl_quote,
-      ),
-      ledgerBaseInventoryBalance: asSignedDecimalString(
-        existing.ledger_base_inventory_balance,
-      ),
-      exchangeBaseBalance: existing.exchange_base_balance === null
-        ? null
-        : asDecimalString(existing.exchange_base_balance),
-      currentPrice: existing.current_price === null
-        ? null
-        : asDecimalString(existing.current_price),
-      marketValueQuote: existing.market_value_quote === null
-        ? null
-        : asDecimalString(existing.market_value_quote),
-      unrealizedPnlQuote: existing.unrealized_pnl_quote === null
-        ? null
-        : asSignedDecimalString(existing.unrealized_pnl_quote),
-      reconciliationHash: existing.reconciliation_hash,
-      providerMutationAllowed: false,
-      reservationApplied: false,
-      executionAllowed: false,
-    })
+    return replayResult(reconciliationId, exchangeName, existing)
   }
 
-  const position = await loadPosition(env, { ...input, exchangeAccountId, productId })
-  const lots = await loadLots(env, { ...input, exchangeAccountId, productId })
-  const realizedPnlEvents = await loadRealizedPnl(env, {
-    ...input,
-    exchangeAccountId,
-    productId,
-  })
+  const position = await loadPosition(env, normalizedInput)
+  const lots = await loadLots(env, normalizedInput)
+  const realizedPnlEvents = await loadRealizedPnl(env, normalizedInput)
   const ledgerBaseInventoryBalance = await loadLedgerBalance(
     env,
     normalizedLedgerAccountIds,
+    baseAsset,
   )
   const result = await reconcileFillAccounting({
     reconciliationId,
@@ -384,8 +474,8 @@ export async function persistFillAccountingReconciliation(
     lots,
     realizedPnlEvents,
     ledgerBaseInventoryBalance,
-    exchangeBaseBalance: input.exchangeBaseBalance,
-    currentPrice: input.currentPrice,
+    exchangeBaseBalance,
+    currentPrice,
     observedAt,
   })
 
@@ -395,12 +485,13 @@ export async function persistFillAccountingReconciliation(
       base_asset, quote_asset, input_hash, ledger_account_ids_json,
       exchange_observation_hash, status, reasons_json, position_quantity,
       reconstructed_quantity, position_cost_basis_quote,
-      reconstructed_cost_basis_quote, position_realized_pnl_quote,
-      reconstructed_realized_pnl_quote, ledger_base_inventory_balance,
-      exchange_base_balance, current_price, market_value_quote,
-      unrealized_pnl_quote, reconciliation_hash, provider_mutation_allowed,
-      reservation_applied, execution_allowed, observed_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?)
+      reconstructed_cost_basis_quote, reconstructed_average_entry_price,
+      position_realized_pnl_quote, reconstructed_realized_pnl_quote,
+      ledger_base_inventory_balance, exchange_base_balance, current_price,
+      market_value_quote, unrealized_pnl_quote, reconciliation_hash,
+      provider_mutation_allowed, reservation_applied, execution_allowed,
+      observed_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?)
   `).bind(
     reconciliationId,
     exchangeName,
@@ -417,6 +508,7 @@ export async function persistFillAccountingReconciliation(
     result.reconstructedQuantity,
     position.totalCostBasisQuote,
     result.reconstructedCostBasisQuote,
+    result.reconstructedAverageEntryPrice,
     position.cumulativeRealizedPnlQuote,
     result.reconstructedRealizedPnlQuote,
     result.ledgerBaseInventoryBalance,
@@ -427,6 +519,33 @@ export async function persistFillAccountingReconciliation(
     result.reconciliationHash,
     observedAt,
   ).run()
+
+  const projected = await env.DB.prepare(receiptQuery())
+    .bind(reconciliationId)
+    .first<ReconciliationReceiptRow>()
+  if (!projected) {
+    throw new Error('fill-accounting reconciliation receipt is missing after insert')
+  }
+  assertReceiptLocks(projected)
+  if (
+    projected.input_hash !== inputHash
+    || projected.reconciliation_hash !== result.reconciliationHash
+    || projected.status !== result.status
+    || canonicalJson(parseReasons(projected.reasons_json)) !== canonicalJson(result.reasons)
+    || projected.reconstructed_quantity !== result.reconstructedQuantity
+    || projected.reconstructed_cost_basis_quote !== result.reconstructedCostBasisQuote
+    || projected.reconstructed_average_entry_price !== result.reconstructedAverageEntryPrice
+    || projected.reconstructed_realized_pnl_quote !== result.reconstructedRealizedPnlQuote
+    || projected.ledger_base_inventory_balance !== result.ledgerBaseInventoryBalance
+    || projected.exchange_base_balance !== result.exchangeBaseBalance
+    || projected.current_price !== result.currentPrice
+    || projected.market_value_quote !== result.marketValueQuote
+    || projected.unrealized_pnl_quote !== result.unrealizedPnlQuote
+  ) {
+    throw new FillAccountingReconciliationConflictError(
+      'fill-accounting reconciliation receipt verification failed',
+    )
+  }
 
   return Object.freeze({
     ...result,
