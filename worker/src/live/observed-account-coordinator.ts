@@ -15,6 +15,12 @@ import {
   persistSpotFillAccountingVerified,
   type VerifiedSpotFillAccountingInput,
 } from './fill-accounting-service.ts'
+import {
+  FillAccountingReconciliationConflictError,
+  FillAccountingReconciliationUnavailableError,
+  persistFillAccountingReconciliation,
+  type PersistFillAccountingReconciliationInput,
+} from './fill-accounting-reconciliation-store.ts'
 import { FillAccountingSerialQueue } from './fill-accounting-serialization.ts'
 
 interface ObservedAccountCoordinatorEnv extends AccountCoordinatorEnv {
@@ -42,6 +48,7 @@ const OBSERVABILITY_CURSOR_ID = 1
 const MAX_OBSERVABILITY_EVENTS_PER_PASS = 50
 const OBSERVABILITY_RETRY_DELAY_MS = 60_000
 const ACCOUNTING_ROUTE = '/candidate/fills/account'
+const RECONCILIATION_ROUTE = '/candidate/fills/reconcile'
 const ACCOUNTING_TOKEN_HEADER = 'X-Candidate-Accounting-Token'
 const MAX_ACCOUNTING_REQUEST_BYTES = 512 * 1024
 
@@ -87,9 +94,9 @@ function parseEnvelope(value: string): CandidateEvidenceEnvelope {
  * serialized fill accounting.
  *
  * The base coordinator remains authoritative for candidate assessment evidence.
- * The fill-accounting command is internal-only, independently authenticated,
- * and serialized per Durable Object instance so FIFO state cannot be read by
- * two accounting commands concurrently while D1 operations are awaiting.
+ * Fill posting and accounting reconciliation are internal-only, independently
+ * authenticated, and share one per-account queue so neither can read FIFO,
+ * position, P&L, or ledger state while the other is mutating its projection.
  */
 export class ExchangeAccountCoordinator {
   private readonly state: DurableObjectState
@@ -250,16 +257,16 @@ export class ExchangeAccountCoordinator {
     return null
   }
 
-  private async readAccountingRequest(request: Request): Promise<VerifiedSpotFillAccountingInput> {
+  private async readBoundedJson<T>(request: Request): Promise<T> {
     const declaredLength = Number(request.headers.get('content-length') ?? '0')
     if (Number.isFinite(declaredLength) && declaredLength > MAX_ACCOUNTING_REQUEST_BYTES) {
-      throw new RangeError('candidate fill-accounting request exceeds size limit')
+      throw new RangeError('candidate accounting request exceeds size limit')
     }
     const body = await request.text()
     if (new TextEncoder().encode(body).byteLength > MAX_ACCOUNTING_REQUEST_BYTES) {
-      throw new RangeError('candidate fill-accounting request exceeds size limit')
+      throw new RangeError('candidate accounting request exceeds size limit')
     }
-    return JSON.parse(body) as VerifiedSpotFillAccountingInput
+    return JSON.parse(body) as T
   }
 
   private async handleAccounting(request: Request): Promise<Response> {
@@ -267,7 +274,7 @@ export class ExchangeAccountCoordinator {
     if (unauthorized) return unauthorized
 
     try {
-      const input = await this.readAccountingRequest(request)
+      const input = await this.readBoundedJson<VerifiedSpotFillAccountingInput>(request)
       const result = await this.accountingQueue.run(
         () => persistSpotFillAccountingVerified(this.env, input),
       )
@@ -301,12 +308,58 @@ export class ExchangeAccountCoordinator {
     }
   }
 
+  private async handleReconciliation(request: Request): Promise<Response> {
+    const unauthorized = this.authorizeAccounting(request)
+    if (unauthorized) return unauthorized
+
+    try {
+      const input = await this.readBoundedJson<PersistFillAccountingReconciliationInput>(request)
+      const result = await this.accountingQueue.run(
+        () => persistFillAccountingReconciliation(this.env, input),
+      )
+      return json({
+        ...result,
+        serializedBy: 'EXCHANGE_ACCOUNT_COORDINATOR',
+        accountingQueuePending: this.accountingQueue.pendingCount,
+        providerMutationAllowed: false,
+        reservationApplied: false,
+        executionAllowed: false,
+      }, result.projectionStatus === 'REPLAYED' ? 200 : 201)
+    } catch (error) {
+      const conflict = error instanceof FillAccountingReconciliationConflictError
+      const unavailable = error instanceof FillAccountingReconciliationUnavailableError
+      const status = conflict
+        ? 409
+        : unavailable
+          ? 422
+          : error instanceof SyntaxError || error instanceof TypeError || error instanceof RangeError
+            ? 400
+            : 500
+      return json({
+        error: 'Candidate fill-accounting reconciliation was not persisted',
+        code: conflict || unavailable
+          ? error.code
+          : error instanceof SyntaxError
+            ? 'INVALID_JSON'
+            : error instanceof TypeError || error instanceof RangeError
+              ? 'INVALID_FILL_ACCOUNTING_RECONCILIATION_INPUT'
+              : 'FILL_ACCOUNTING_RECONCILIATION_FAILED',
+        providerMutationAllowed: false,
+        reservationApplied: false,
+        executionAllowed: false,
+      }, status)
+    }
+  }
+
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url)
     const method = request.method.toUpperCase()
 
     if (method === 'POST' && url.pathname === ACCOUNTING_ROUTE) {
       return this.handleAccounting(request)
+    }
+    if (method === 'POST' && url.pathname === RECONCILIATION_ROUTE) {
+      return this.handleReconciliation(request)
     }
 
     const response = await this.inner.fetch(request)
