@@ -5,10 +5,6 @@ import {
   type PersistSpotFillAccountingInput,
   type PersistSpotFillAccountingResult,
 } from './fill-accounting-store.ts'
-import {
-  asDecimalString,
-  asSignedDecimalString,
-} from './decimal.ts'
 
 export interface VerifiedFillAccountingResult extends PersistSpotFillAccountingResult {
   replayStateVerified: boolean
@@ -22,16 +18,25 @@ type JournalPresenceRow = {
   journal_id: string
 }
 
-type PositionReplayRow = {
-  quantity: string
+type ReceiptReplayRow = {
+  accounting_receipt_id: string
+  accounting_hash: string
+  journal_id: string
+  position_quantity: string
   cumulative_realized_pnl_quote: string
-  last_accounting_hash: string
+  provider_mutation_allowed: number
+  reservation_applied: number
+  execution_allowed: number
 }
 
 function required(value: string, field: string): string {
   const normalized = value.trim()
   if (!normalized) throw new TypeError(`${field} is required`)
   return normalized
+}
+
+function deterministicReceiptId(fillId: string): string {
+  return `fill-accounting-receipt:${required(fillId, 'fill.fillId')}`
 }
 
 function deterministicJournalId(fillId: string): string {
@@ -73,34 +78,44 @@ async function verifiedReplayState(
     return Object.freeze({ ...result, replayStateVerified: false })
   }
 
-  const position = await env.DB.prepare(`
-    SELECT quantity, cumulative_realized_pnl_quote, last_accounting_hash
-      FROM live_position_accounting
-     WHERE exchange_account_id = ? AND product_id = ?
+  const receipt = await env.DB.prepare(`
+    SELECT accounting_receipt_id, accounting_hash, journal_id,
+           position_quantity, cumulative_realized_pnl_quote,
+           provider_mutation_allowed, reservation_applied, execution_allowed
+      FROM live_fill_accounting_receipts
+     WHERE fill_id = ?
      LIMIT 1
-  `).bind(
-    input.exchangeAccountId,
-    input.fill.productId,
-  ).first<PositionReplayRow>()
+  `).bind(input.fill.fillId).first<ReceiptReplayRow>()
 
-  if (!position) {
+  if (!receipt) {
     throw new FillAccountingConflictError(
-      'fill accounting receipt exists without a position accounting projection',
+      'replayed fill accounting receipt disappeared during verification',
     )
   }
-  if (position.last_accounting_hash !== result.accountingHash) {
+  if (
+    receipt.accounting_receipt_id !== deterministicReceiptId(input.fill.fillId)
+    || receipt.accounting_receipt_id !== result.accountingReceiptId
+    || receipt.accounting_hash !== result.accountingHash
+    || receipt.journal_id !== result.journalId
+    || receipt.position_quantity !== result.positionQuantity
+    || receipt.cumulative_realized_pnl_quote !== result.cumulativeRealizedPnlQuote
+  ) {
     throw new FillAccountingConflictError(
-      'replayed position accounting hash does not match the immutable receipt',
+      'replayed accounting result does not match the immutable receipt',
+    )
+  }
+  if (
+    receipt.provider_mutation_allowed !== 0
+    || receipt.reservation_applied !== 0
+    || receipt.execution_allowed !== 0
+  ) {
+    throw new FillAccountingConflictError(
+      'replayed accounting receipt violates the permanent capability locks',
     )
   }
 
   return Object.freeze({
     ...result,
-    positionQuantity: asDecimalString(position.quantity, 'position.quantity'),
-    cumulativeRealizedPnlQuote: asSignedDecimalString(
-      position.cumulative_realized_pnl_quote,
-      'position.cumulativeRealizedPnlQuote',
-    ),
     replayStateVerified: true,
     providerMutationAllowed: false,
     reservationApplied: false,
