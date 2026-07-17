@@ -22,7 +22,6 @@ function requireToken(content, token, message) {
 for (const [token, message] of [
   ['buildBitgetRecoveryIngestionPlan', 'Bitget recovery ingestion plan is missing'],
   ['validateRecoveryLocks', 'recovery capability-lock validation is missing'],
-  ['every recovered fill must have one accounting task intent', 'fill/task cardinality guard is missing'],
   ["status: 'PENDING_ACCOUNTING'", 'pending accounting task intent is missing'],
   ['accountingApplied: false', 'ingestion accounting lock is missing'],
   ['reservationSettled: false', 'ingestion reservation lock is missing'],
@@ -35,6 +34,7 @@ for (const [token, message] of [
 
 for (const [token, message] of [
   ['persistBitgetRecoveryIngestion', 'recovery ingestion store is missing'],
+  ['every recovered fill must have one accounting task intent', 'fill/task cardinality guard is missing'],
   ['classifyFill', 'overlapping fill classification is missing'],
   ['recovered fill and accounting task are not paired', 'fill/task pairing quarantine is missing'],
   ['recovered fill hash conflicts', 'fill hash conflict quarantine is missing'],
