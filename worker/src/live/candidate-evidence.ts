@@ -214,7 +214,7 @@ export function attachCoordinatorSequence(
   })
 }
 
-interface ProjectionReceiptRow {
+type ProjectionReceiptRow = {
   assessment_id: string
   payload_hash: string
 }
