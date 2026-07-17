@@ -1,0 +1,38 @@
+name: CryptoOps Read-Only OpenAPI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'openapi/cryptoops-live-candidate-readonly.yaml'
+      - 'openapi/cryptoops-withdrawals-candidate-readonly.yaml'
+      - 'docs/CUSTOM_GPT_LIVE_CANDIDATE.md'
+      - 'worker/scripts/verify-cryptoops-readonly-openapi.mjs'
+      - '.github/workflows/cryptoops-readonly-openapi.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cryptoops-readonly-openapi-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Prove schemas are read-only and secret-free
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+
+      - name: Verify read-only schemas
+        working-directory: worker
+        run: node scripts/verify-cryptoops-readonly-openapi.mjs
