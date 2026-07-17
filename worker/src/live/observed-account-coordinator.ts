@@ -28,6 +28,7 @@ type CursorRow = {
 
 const OBSERVABILITY_CURSOR_ID = 1
 const MAX_OBSERVABILITY_EVENTS_PER_PASS = 50
+const OBSERVABILITY_RETRY_DELAY_MS = 60_000
 
 function safeErrorCode(error: unknown): string {
   if (error instanceof Error) return error.name.slice(0, 80)
@@ -147,6 +148,13 @@ export class ExchangeAccountCoordinator {
     })
   }
 
+  private async scheduleAlarmNoLaterThan(timestampMs: number): Promise<void> {
+    const current = await this.state.storage.getAlarm()
+    if (current === null || current > timestampMs) {
+      await this.state.storage.setAlarm(timestampMs)
+    }
+  }
+
   private observation(row: ProjectionEventRow): CandidateProjectionObservation {
     const envelope = parseEnvelope(row.envelope_json)
     if (envelope.projectionEventId !== row.projection_event_id) {
@@ -168,15 +176,21 @@ export class ExchangeAccountCoordinator {
 
   private async drainProjectionObservability(): Promise<void> {
     let lastSequence = this.cursor()
-    for (const row of this.readProjectionEvents(lastSequence)) {
+    const rows = this.readProjectionEvents(lastSequence)
+    for (const row of rows) {
       try {
         await persistCandidateProjectionObservability(this.env, this.observation(row))
         this.markDelivered(row.sequence_id, row.occurred_at)
         lastSequence = row.sequence_id
       } catch (error) {
         this.markDeliveryFailure(error, new Date().toISOString())
-        break
+        await this.scheduleAlarmNoLaterThan(Date.now() + OBSERVABILITY_RETRY_DELAY_MS)
+        return
       }
+    }
+
+    if (rows.length === MAX_OBSERVABILITY_EVENTS_PER_PASS) {
+      await this.scheduleAlarmNoLaterThan(Date.now() + 1_000)
     }
   }
 
