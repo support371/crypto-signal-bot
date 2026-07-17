@@ -25,10 +25,15 @@ const TRANSITIONS: Readonly<Record<OrderState, readonly OrderState[]>> = {
   SETTLED: [],
 }
 
-const TERMINAL_STATES = new Set<OrderState>([
-  'RISK_REJECTED',
-  'PREVIEW_REJECTED',
-  'SETTLED',
+const TERMINAL_STATES = new Set<OrderState>(['RISK_REJECTED', 'SETTLED'])
+const EXCHANGE_ACTIVE_STATES = new Set<OrderState>([
+  'SUBMITTING',
+  'SUBMITTED',
+  'OPEN',
+  'PARTIALLY_FILLED',
+  'CANCEL_REQUESTED',
+  'CANCEL_PENDING',
+  'RECOVERY_REQUIRED',
 ])
 
 export class InvalidOrderTransition extends Error {
@@ -62,13 +67,5 @@ export function isOrderTerminal(state: OrderState): boolean {
 }
 
 export function isOrderExchangeActive(state: OrderState): boolean {
-  return new Set<OrderState>([
-    'SUBMITTING',
-    'SUBMITTED',
-    'OPEN',
-    'PARTIALLY_FILLED',
-    'CANCEL_REQUESTED',
-    'CANCEL_PENDING',
-    'RECOVERY_REQUIRED',
-  ]).has(state)
+  return EXCHANGE_ACTIVE_STATES.has(state)
 }
