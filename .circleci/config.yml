@@ -79,6 +79,14 @@ jobs:
           name: Run transactional recovery ingestion store tests
           command: node --experimental-strip-types --test worker/tests/live-recovery-ingestion-store.test.ts
 
+  worker-recovery-accounting-approval-tests:
+    executor: node-worker
+    steps:
+      - install-worker
+      - run:
+          name: Run recovery accounting approval and store tests
+          command: node --experimental-strip-types --test worker/tests/live-recovery-accounting-approval.test.ts worker/tests/live-recovery-accounting-approval-store.test.ts
+
   worker-typecheck:
     executor: node-worker
     steps:
@@ -166,6 +174,14 @@ jobs:
       - run:
           name: Verify immutable recovery ingestion boundaries
           command: node worker/scripts/verify-recovery-ingestion-safety.mjs
+
+  worker-recovery-accounting-approval-safety:
+    executor: node-worker
+    steps:
+      - install-worker
+      - run:
+          name: Verify recovery accounting approval remains non-dispatching
+          command: node worker/scripts/verify-recovery-accounting-approval-safety.mjs
 
   worker-regulated-safety:
     executor: node-worker
@@ -273,6 +289,7 @@ workflows:
       - worker-provider-tests
       - worker-recovery-ingestion-plan-tests
       - worker-recovery-ingestion-store-tests
+      - worker-recovery-accounting-approval-tests
       - worker-typecheck
       - worker-provider-typecheck
       - worker-paper-safety
@@ -284,6 +301,7 @@ workflows:
       - worker-reservation-settlement-safety
       - worker-exchange-recovery-safety
       - worker-recovery-ingestion-safety
+      - worker-recovery-accounting-approval-safety
       - worker-regulated-safety
       - worker-certification-safety
       - worker-cryptoops-operational-safety
@@ -299,6 +317,7 @@ workflows:
             - worker-reservation-settlement-safety
             - worker-exchange-recovery-safety
             - worker-recovery-ingestion-safety
+            - worker-recovery-accounting-approval-safety
             - worker-regulated-safety
             - worker-certification-safety
             - worker-cryptoops-operational-safety
@@ -311,6 +330,7 @@ workflows:
             - worker-provider-tests
             - worker-recovery-ingestion-plan-tests
             - worker-recovery-ingestion-store-tests
+            - worker-recovery-accounting-approval-tests
             - worker-typecheck
             - worker-provider-typecheck
             - worker-safety-contracts
