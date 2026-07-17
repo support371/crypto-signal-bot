@@ -21,6 +21,8 @@ export interface ExchangeCapabilities {
   withdrawals: boolean
   clientOrderIds: boolean
   sandbox: boolean
+  candidateExecutionEnabled: false
+  candidateWithdrawalsEnabled: false
   observedAt: string
 }
 
