@@ -25,7 +25,17 @@ const TRANSITIONS: Readonly<Record<OrderState, readonly OrderState[]>> = {
   SETTLED: [],
 }
 
-const TERMINAL_STATES = new Set<OrderState>(['RISK_REJECTED', 'SETTLED'])
+const TERMINAL_STATES = new Set<OrderState>([
+  'RISK_REJECTED',
+  'PREVIEW_REJECTED',
+  'FILLED',
+  'CANCELLED',
+  'REJECTED',
+  'EXPIRED',
+  'FAILED',
+  'SETTLED',
+])
+
 const EXCHANGE_ACTIVE_STATES = new Set<OrderState>([
   'SUBMITTING',
   'SUBMITTED',
