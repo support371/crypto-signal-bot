@@ -9,6 +9,7 @@ import {
   multiplyDecimal,
   quantizeDown,
   subtractDecimal,
+  subtractNonNegativeDecimal,
 } from '../src/live/decimal.ts'
 import { mutationRequestHash } from '../src/live/idempotency.ts'
 import {
@@ -24,6 +25,11 @@ test('decimal arithmetic is exact and canonical', () => {
   assert.equal(addDecimal(oneTenth, twoTenths), '0.3')
   assert.equal(asDecimalString('1.2300'), '1.23')
   assert.equal(subtractDecimal(asDecimalString('1'), asDecimalString('1.25')), '-0.25')
+  assert.equal(subtractNonNegativeDecimal(asDecimalString('1'), asDecimalString('0.75')), '0.25')
+  assert.throws(
+    () => subtractNonNegativeDecimal(asDecimalString('0.75'), asDecimalString('1')),
+    /cannot be negative/,
+  )
   assert.equal(
     multiplyDecimal(asDecimalString('0.00000001'), asDecimalString('30000')),
     '0.0003',
