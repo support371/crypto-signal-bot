@@ -1,6 +1,7 @@
 -- Migration 014: immutable candidate assessment and reservation-draft evidence.
 -- This schema records evidence only. It cannot apply a reservation or authorize
--- exchange execution.
+-- exchange execution. Account identifiers are evidence references and do not
+-- require an account projection to exist first.
 
 CREATE TABLE IF NOT EXISTS live_candidate_assessments (
   assessment_id TEXT PRIMARY KEY,
@@ -21,7 +22,6 @@ CREATE TABLE IF NOT EXISTS live_candidate_assessments (
   coordinator_sequence INTEGER NOT NULL CHECK (coordinator_sequence > 0),
   committed_at TEXT NOT NULL,
   projected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (exchange_account_id) REFERENCES live_exchange_accounts(exchange_account_id),
   UNIQUE (exchange_account_id, internal_order_id),
   UNIQUE (coordinator_id, coordinator_sequence)
 );
@@ -40,8 +40,7 @@ CREATE TABLE IF NOT EXISTS live_candidate_reservation_drafts (
   applied INTEGER NOT NULL DEFAULT 0 CHECK (applied = 0),
   committed_at TEXT NOT NULL,
   projected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (assessment_id) REFERENCES live_candidate_assessments(assessment_id),
-  FOREIGN KEY (exchange_account_id) REFERENCES live_exchange_accounts(exchange_account_id)
+  FOREIGN KEY (assessment_id) REFERENCES live_candidate_assessments(assessment_id)
 );
 
 CREATE TABLE IF NOT EXISTS live_candidate_projection_receipts (
