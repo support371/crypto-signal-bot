@@ -7,6 +7,7 @@ on:
       - 'worker/src/live/**'
       - 'worker/src/index_live_candidate.ts'
       - 'worker/tests/live-foundation.test.ts'
+      - 'worker/tests/live-order-state.test.ts'
       - 'worker/tests/live-ledger.test.ts'
       - 'worker/tests/live-reconciliation.test.ts'
       - 'worker/tests/live-audit.test.ts'
@@ -53,7 +54,7 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
-      - name: Run exact-decimal, product-rule, risk, ledger, reconciliation, and audit tests
+      - name: Run decimal, state, product-rule, risk, ledger, reconciliation, and audit tests
         run: npm run test:live-foundation
 
       - name: Typecheck Worker
