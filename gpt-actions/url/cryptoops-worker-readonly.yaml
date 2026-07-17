@@ -1,0 +1,258 @@
+openapi: 3.1.0
+info:
+  title: CryptoOps Worker Read-Only API
+  version: 4.0.0
+  description: >-
+    Read-only operational access to the canonical Cloudflare Worker. This schema
+    deliberately exposes no financial mutation, Guardian reset, configuration
+    mutation, deployment, or transfer operation.
+servers:
+  - url: https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
+components:
+  securitySchemes:
+    operatorApiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  schemas:
+    OpenObject:
+      type: object
+      additionalProperties: true
+paths:
+  /healthz:
+    get:
+      operationId: getHealthz
+      summary: Check Worker liveness
+      responses:
+        '200':
+          description: Worker is responding
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenObject'
+  /ready:
+    get:
+      operationId: getWorkerReadiness
+      summary: Get current paper-production readiness
+      responses:
+        '200':
+          description: Current readiness evidence
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  ready:
+                    type: boolean
+                  paper_ready:
+                    type: boolean
+                  live_ready:
+                    type: boolean
+                  checks:
+                    type: object
+                    additionalProperties:
+                      type: boolean
+                  blocking_reasons:
+                    type: array
+                    items:
+                      type: string
+                additionalProperties: true
+        '503':
+          description: Required readiness evidence is blocked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenObject'
+  /trading-readiness:
+    get:
+      operationId: getTradingReadiness
+      summary: Get current trading-readiness evidence
+      responses:
+        '200':
+          description: Trading-readiness response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenObject'
+        '503':
+          description: Trading target is not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenObject'
+  /runtime/status:
+    get:
+      operationId: getRuntimeStatus
+      summary: Get runtime mode and safety flags
+      responses:
+        '200':
+          description: Runtime status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mode:
+                    type: string
+                  trading_mode:
+                    type: string
+                  exchange_mode:
+                    type: string
+                  network:
+                    type: string
+                  allow_mainnet:
+                    type: boolean
+                  live_trading_enabled:
+                    type: boolean
+                  withdrawals_enabled:
+                    type: boolean
+                additionalProperties: true
+  /guardian/status:
+    get:
+      operationId: getGuardianStatus
+      summary: Get current Guardian and halt state
+      responses:
+        '200':
+          description: Guardian state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  triggered:
+                    type: boolean
+                  halted:
+                    type: boolean
+                  reason:
+                    oneOf:
+                      - type: string
+                      - type: 'null'
+                  drawdown_pct:
+                    type: number
+                additionalProperties: true
+  /agent/context:
+    get:
+      operationId: getAgentContext
+      summary: Get consolidated operational context
+      responses:
+        '200':
+          description: Consolidated context
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenObject'
+        '207':
+          description: Context contains degraded or unavailable checks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenObject'
+  /market/feed/status:
+    get:
+      operationId: getMarketFeedStatus
+      summary: Get market-data source and circuit-breaker status
+      responses:
+        '200':
+          description: Market-feed status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenObject'
+  /exchange/status:
+    get:
+      operationId: getExchangeStatus
+      summary: Get exchange integration mode without credentials
+      responses:
+        '200':
+          description: Exchange status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenObject'
+  /exchange/circuit-breakers:
+    get:
+      operationId: getExchangeCircuitBreakers
+      summary: Get exchange circuit-breaker state
+      responses:
+        '200':
+          description: Circuit-breaker state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenObject'
+  /portfolio:
+    get:
+      operationId: getPortfolio
+      summary: Get the simulated paper portfolio
+      responses:
+        '200':
+          description: Paper portfolio
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenObject'
+  /portfolio/positions:
+    get:
+      operationId: getPaperPositions
+      summary: Get simulated paper positions
+      responses:
+        '200':
+          description: Paper positions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenObject'
+  /orders:
+    get:
+      operationId: listPaperOrders
+      summary: List simulated paper orders
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+      security:
+        - operatorApiKey: []
+      responses:
+        '200':
+          description: Simulated orders
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenObject'
+        '401':
+          description: Operator authentication failed
+        '503':
+          description: Operator authentication is not configured
+  /audit:
+    get:
+      operationId: listOperationalAudit
+      summary: Read operational audit events
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      security:
+        - operatorApiKey: []
+      responses:
+        '200':
+          description: Audit events
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenObject'
+        '401':
+          description: Operator authentication failed
+        '503':
+          description: Operator authentication is not configured
