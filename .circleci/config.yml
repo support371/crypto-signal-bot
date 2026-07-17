@@ -63,6 +63,22 @@ jobs:
           name: Run BTCC and Bitget provider contract tests
           command: npm --prefix worker run test:provider-contracts
 
+  worker-recovery-ingestion-plan-tests:
+    executor: node-worker
+    steps:
+      - install-worker
+      - run:
+          name: Run immutable recovery ingestion plan tests
+          command: node --experimental-strip-types --test worker/tests/live-recovery-ingestion.test.ts
+
+  worker-recovery-ingestion-store-tests:
+    executor: node-worker
+    steps:
+      - install-worker
+      - run:
+          name: Run transactional recovery ingestion store tests
+          command: node --experimental-strip-types --test worker/tests/live-recovery-ingestion-store.test.ts
+
   worker-typecheck:
     executor: node-worker
     steps:
@@ -142,6 +158,14 @@ jobs:
       - run:
           name: Verify BTCC and Bitget recovery boundaries
           command: node worker/scripts/verify-exchange-recovery-safety.mjs
+
+  worker-recovery-ingestion-safety:
+    executor: node-worker
+    steps:
+      - install-worker
+      - run:
+          name: Verify immutable recovery ingestion boundaries
+          command: node worker/scripts/verify-recovery-ingestion-safety.mjs
 
   worker-regulated-safety:
     executor: node-worker
@@ -247,6 +271,8 @@ workflows:
       - worker-root-contracts
       - worker-live-foundation-tests
       - worker-provider-tests
+      - worker-recovery-ingestion-plan-tests
+      - worker-recovery-ingestion-store-tests
       - worker-typecheck
       - worker-provider-typecheck
       - worker-paper-safety
@@ -257,6 +283,7 @@ workflows:
       - worker-fill-accounting-safety
       - worker-reservation-settlement-safety
       - worker-exchange-recovery-safety
+      - worker-recovery-ingestion-safety
       - worker-regulated-safety
       - worker-certification-safety
       - worker-cryptoops-operational-safety
@@ -271,6 +298,7 @@ workflows:
             - worker-fill-accounting-safety
             - worker-reservation-settlement-safety
             - worker-exchange-recovery-safety
+            - worker-recovery-ingestion-safety
             - worker-regulated-safety
             - worker-certification-safety
             - worker-cryptoops-operational-safety
@@ -281,6 +309,8 @@ workflows:
             - worker-root-contracts
             - worker-live-foundation-tests
             - worker-provider-tests
+            - worker-recovery-ingestion-plan-tests
+            - worker-recovery-ingestion-store-tests
             - worker-typecheck
             - worker-provider-typecheck
             - worker-safety-contracts
