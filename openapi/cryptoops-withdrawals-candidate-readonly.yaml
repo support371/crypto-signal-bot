@@ -1,0 +1,159 @@
+openapi: 3.1.0
+info:
+  title: CryptoOps Withdrawal Candidate Read-Only API
+  version: 0.1.0
+  description: |
+    Read-only certification surface for the provider-disconnected withdrawal
+    candidate. This schema exposes no transfer request, destination management,
+    approval, deposit credit, or withdrawal submission operation.
+servers:
+  - url: https://{candidateHost}
+    variables:
+      candidateHost:
+        default: crypto-signal-bot-withdrawals-candidate.example.invalid
+        description: Replace only after a separately reviewed candidate deployment exists.
+security:
+  - OperatorApiKey: []
+paths:
+  /v1/transfers/readiness:
+    get:
+      operationId: getWithdrawalCandidateReadiness
+      summary: Read transfer-candidate readiness evidence
+      description: Returns HTTP 503 and withdrawalsReady=false by design.
+      responses:
+        '503':
+          description: Candidate remains provider-disconnected and execution-locked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferCandidateReadiness'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /v1/transfers/capabilities:
+    get:
+      operationId: getWithdrawalCandidateCapabilities
+      summary: Read disabled transfer capability status
+      responses:
+        '200':
+          description: Provider-disconnected transfer capability report.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferCandidateCapabilities'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+components:
+  securitySchemes:
+    OperatorApiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Configure server-side in Custom GPT Action settings. Never commit the value.
+  responses:
+    Unauthorized:
+      description: Operator authentication is invalid or absent.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: The requested operation is forbidden.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    TransferCandidateReadiness:
+      type: object
+      additionalProperties: false
+      required:
+        - ready
+        - withdrawalsReady
+        - depositsObservationReady
+        - environment
+        - checks
+        - reasons
+        - buildGitSha
+        - evaluatedAt
+      properties:
+        ready:
+          type: boolean
+          const: false
+        withdrawalsReady:
+          type: boolean
+          const: false
+        depositsObservationReady:
+          type: boolean
+          const: false
+        environment:
+          type: string
+          const: withdrawals-candidate
+        checks:
+          type: object
+          additionalProperties:
+            type: boolean
+        reasons:
+          type: array
+          items:
+            type: string
+        buildGitSha:
+          type: string
+        evaluatedAt:
+          type: string
+          format: date-time
+    TransferCandidateCapabilities:
+      type: object
+      additionalProperties: false
+      required:
+        - environment
+        - deposit_observation
+        - withdrawal_preview
+        - withdrawal_submission
+        - destination_management
+        - provider_configured
+        - credentials_present
+        - separate_runtime
+        - reason
+      properties:
+        environment:
+          type: string
+          const: withdrawals-candidate
+        deposit_observation:
+          type: boolean
+          const: false
+        withdrawal_preview:
+          type: boolean
+          const: false
+        withdrawal_submission:
+          type: boolean
+          const: false
+        destination_management:
+          type: boolean
+          const: false
+        provider_configured:
+          type: boolean
+          const: false
+        credentials_present:
+          type: boolean
+          const: false
+        separate_runtime:
+          type: boolean
+          const: true
+        reason:
+          type: string
+    Error:
+      type: object
+      additionalProperties: true
+      required:
+        - error
+      properties:
+        error:
+          type: string
+        code:
+          oneOf:
+            - type: string
+            - type: integer
