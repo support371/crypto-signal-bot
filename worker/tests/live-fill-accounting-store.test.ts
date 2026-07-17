@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   FillAccountingConflictError,
   persistSpotFillAccountingFifo,
+  type FillAccountingStoreEnv,
   type PersistSpotFillAccountingInput,
 } from '../src/live/fill-accounting-store.ts'
 import { asDecimalString } from '../src/live/decimal.ts'
@@ -111,6 +112,10 @@ class FakeD1 {
   }
 }
 
+function storeEnv(fake: FakeD1): FillAccountingStoreEnv {
+  return { DB: fake.asDatabase() }
+}
+
 function input(overrides: Partial<PersistSpotFillAccountingInput> = {}): PersistSpotFillAccountingInput {
   return {
     exchangeAccountId: 'bitget-account-ref',
@@ -170,7 +175,7 @@ function lotRow(
 
 test('buy accounting uses one D1 batch with receipt last', async () => {
   const fake = new FakeD1()
-  const result = await persistSpotFillAccountingFifo(fake.asDatabase() as never, input())
+  const result = await persistSpotFillAccountingFifo(storeEnv(fake), input())
 
   assert.equal(result.status, 'PROJECTED')
   assert.equal(result.positionQuantity, '0.01')
@@ -194,8 +199,8 @@ test('buy accounting uses one D1 batch with receipt last', async () => {
 
 test('same fill and request replays exact immutable receipt without a second batch', async () => {
   const fake = new FakeD1()
-  const first = await persistSpotFillAccountingFifo(fake.asDatabase() as never, input())
-  const replay = await persistSpotFillAccountingFifo(fake.asDatabase() as never, input())
+  const first = await persistSpotFillAccountingFifo(storeEnv(fake), input())
+  const replay = await persistSpotFillAccountingFifo(storeEnv(fake), input())
 
   assert.equal(replay.status, 'REPLAYED')
   assert.equal(replay.accountingHash, first.accountingHash)
@@ -206,10 +211,10 @@ test('same fill and request replays exact immutable receipt without a second bat
 
 test('same fill ID with changed financial input is rejected as conflict', async () => {
   const fake = new FakeD1()
-  await persistSpotFillAccountingFifo(fake.asDatabase() as never, input())
+  await persistSpotFillAccountingFifo(storeEnv(fake), input())
 
   await assert.rejects(
-    persistSpotFillAccountingFifo(fake.asDatabase() as never, input({
+    persistSpotFillAccountingFifo(storeEnv(fake), input({
       fill: {
         ...input().fill,
         price: asDecimalString('51000'),
@@ -237,7 +242,7 @@ test('sell accounting persists FIFO consumptions, realized PnL, position, and re
     },
   })
 
-  const result = await persistSpotFillAccountingFifo(fake.asDatabase() as never, sellInput)
+  const result = await persistSpotFillAccountingFifo(storeEnv(fake), sellInput)
 
   assert.equal(result.positionQuantity, '0.015')
   assert.equal(result.cumulativeRealizedPnlQuote, '250')
@@ -272,7 +277,7 @@ test('incompatible pre-existing fill blocks accounting before batch', async () =
   }
 
   await assert.rejects(
-    persistSpotFillAccountingFifo(fake.asDatabase() as never, input()),
+    persistSpotFillAccountingFifo(storeEnv(fake), input()),
     FillAccountingConflictError,
   )
   assert.equal(fake.batches.length, 0)
@@ -283,7 +288,7 @@ test('orphaned ledger journal blocks accounting rather than being reused', async
   fake.existingJournal = { journal_id: 'fill-accounting-journal:fill-1' }
 
   await assert.rejects(
-    persistSpotFillAccountingFifo(fake.asDatabase() as never, input()),
+    persistSpotFillAccountingFifo(storeEnv(fake), input()),
     /ledger journal exists without an immutable fill-accounting receipt/,
   )
   assert.equal(fake.batches.length, 0)
@@ -299,7 +304,7 @@ test('over-consumed persisted lot is rejected before accounting batch', async ()
   }]
 
   await assert.rejects(
-    persistSpotFillAccountingFifo(fake.asDatabase() as never, input({
+    persistSpotFillAccountingFifo(storeEnv(fake), input({
       fill: {
         ...input().fill,
         fillId: 'fill-sell-overconsumed',
