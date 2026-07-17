@@ -35,8 +35,9 @@ Bitget currently has strict spot response normalizers, an authenticated read-onl
 - Public Worker routes cannot reach the account coordinator or candidate evidence endpoints.
 - The account Durable Object remains halted for orders, cancellation, replacement, transfers, and withdrawals.
 - Its only mutation is an internally authenticated commit of non-executable assessment evidence, reservation drafts, and projection-outbox records.
+- Durable Object alarms retry D1 reporting projections only; they cannot submit, cancel, replace, transfer, or withdraw.
 - Reservation drafts are constrained to `applied=0` in both authoritative and reporting stores.
-- No timeout, ambiguous response, or repeated request authorizes another order submission.
+- No timeout, ambiguous response, alarm retry, or repeated request authorizes another order submission.
 - Preview, assessment, persisted evidence, and projection records always report `executionAllowed=false`.
 - Certification evidence can never activate the candidate; `certifiedForLive` is permanently false in this branch.
 
@@ -85,11 +86,25 @@ The Durable Object is the authoritative single-writer boundary. In one synchrono
 - the immutable assessment envelope;
 - the optional balanced reservation draft;
 - the monotonically increasing coordinator sequence;
-- an idempotent D1 projection-outbox record.
+- an idempotent D1 projection-outbox record;
+- the initial append-only projection lifecycle event.
 
 The commit is unique by idempotency key, request hash, evidence hash, payload hash, and coordinator sequence. A replay with the same key and request hash returns the stored envelope. Reuse of the key with different evidence is rejected as a conflict.
 
-D1 is a reporting projection, not a second authoritative transaction participant. The projector writes the assessment, reservation draft, and projection receipt in one D1 batch and verifies the receipt hash. Projection failure leaves the authoritative Durable Object commit intact and the outbox pending for a later idempotent retry. The architecture does not claim a distributed transaction between Durable Object SQLite and D1.
+D1 is a reporting projection, not a second authoritative transaction participant. The projector writes the assessment, reservation draft, and projection receipt in one D1 batch and verifies the receipt hash. Projection failure leaves the authoritative Durable Object commit intact.
+
+`worker/src/live/candidate-projection-retry.ts` and the Durable Object alarm handler provide deterministic, bounded redelivery:
+
+- 30-second initial delay;
+- exponential backoff capped at one hour;
+- at most eight projection attempts;
+- at most 20 due records processed per alarm invocation;
+- immediate terminal quarantine for evidence conflicts;
+- terminal `DEAD_LETTER` status after the retry budget is exhausted;
+- append-only projection events for pending, projected, conflict, and dead-letter transitions;
+- stored-envelope ID and payload-hash validation before each alarm retry.
+
+The architecture does not claim a distributed transaction between Durable Object SQLite and D1. Alarm retries affect reporting evidence only and never call an exchange adapter or apply a reservation.
 
 The internal coordinator route requires `CANDIDATE_EVIDENCE_TOKEN`, uses a constant-time comparison, enforces a bounded request body, and is not reachable through the public Worker. The candidate configuration does not provision that secret.
 
@@ -105,7 +120,7 @@ Migration `004_live_idempotency_records.sql` and `worker/src/live/idempotency.ts
 
 ### Serialized account boundary
 
-`ExchangeAccountCoordinator` establishes one SQLite-backed Durable Object per future exchange account. It serializes assessment-evidence commits but remains permanently halted for all exchange and fund mutations.
+`ExchangeAccountCoordinator` establishes one SQLite-backed Durable Object per future exchange account. It serializes assessment-evidence commits and reporting projection retries but remains permanently halted for all exchange and fund mutations.
 
 ### Order lifecycle
 
@@ -154,14 +169,14 @@ The branch defines separate CircleCI gates for:
 - complete Worker type checking;
 - provider-only type checking;
 - paper safety;
-- live-candidate, command-lock, and evidence-persistence safety;
+- live-candidate, command-lock, evidence-persistence, alarm-retry, and dead-letter safety;
 - regulated-foundation safety;
 - certification safety;
 - operational and candidate CryptoOps read-only schemas;
 - both candidate dry-run bundles;
 - frontend build and backend audit tests.
 
-The evidence tests verify deterministic envelopes, execution-lock preservation, reservation-draft extraction, a single D1 transactional batch, replay without duplicate projection, and conflict rejection.
+The evidence tests verify deterministic envelopes, execution-lock preservation, reservation-draft extraction, a single D1 transactional batch, replay without duplicate projection, and conflict rejection. Retry tests verify exponential delays, the one-hour cap, immediate conflict quarantine, and terminal dead-letter escalation on attempt eight.
 
 The live tests use Node's `node:test` runner and are excluded from the legacy Vitest contract runner to prevent cross-runner collection.
 
@@ -171,10 +186,10 @@ Local migration commands exist for migrations 003 through 014. The branch must r
 
 1. Import and review BTCC's official endpoint and signing manifest; then build its bounded read-only client.
 2. Execute Bitget read-only contract tests in an isolated non-live environment using a server-side key that has no write, transfer, or withdrawal authority.
-3. Add autonomous bounded outbox redelivery, dead-letter escalation, and projection-lag alerts without exposing a public mutation route.
+3. Connect projection lag, conflict, and dead-letter states to the existing alert store and an authorized operator acknowledgment workflow.
 4. Complete provider fill-to-ledger processing, positions, fees, cost basis, tax lots, and P&L reconciliation.
 5. Add BTCC and Bitget user-event or polling recovery with sequence, freshness, and REST snapshot rules.
-6. Bind queues, schedules, retry budgets, dead-letter operations, and production alert delivery.
+6. Bind queues, reconciliation schedules, retry budgets, dead-letter operations, and production alert delivery for the wider event pipeline.
 7. Build role-scoped frontend account, order-preview, risk, Guardian, reconciliation, audit, deposit, and withdrawal controls.
 8. Rehearse rollback, disaster recovery, key rotation, incident response, and provider outage handling.
 9. Complete independent security, eligibility, legal, jurisdiction, compliance, and tax review before any separate activation release.
