@@ -2,14 +2,13 @@
 """
 Exchange adapter registry and factory.
 
-Usage:
-    from backend.adapters.exchanges import get_adapter, get_market_data_adapter
-    from backend.config.loader import get_exchange_config
+Canonical execution priority:
+    1. BTCC
+    2. Bitget
 
-    cfg     = get_exchange_config()
-    adapter = get_adapter(cfg)          # execution adapter (BTCC primary)
-    mda     = get_market_data_adapter(cfg)  # market data adapter (Binance primary in paper)
-    ticker  = await mda.fetch_ticker("BTCUSDT")
+Coinbase remains optional public/read-only market data. Binance and CoinGecko
+may remain available as explicitly selected legacy data sources, but they are
+not default execution venues.
 """
 
 from __future__ import annotations
@@ -37,24 +36,13 @@ if TYPE_CHECKING:
 
 
 def get_adapter(cfg: "ExchangeConfig") -> BaseExchangeAdapter:
-    """
-    Execution adapter factory.
-
-    Selection priority (live and paper):
-      1. BTCC (primary scaffold per CLAUDE.md)
-      2. Binance
-      3. Bitget
-
-    In paper mode all three can run without live credentials.
-    In live mode the adapter with valid credentials is used.
-    """
-    from backend.adapters.exchanges.btcc    import BtccAdapter
-    from backend.adapters.exchanges.binance import BinanceAdapter
-    from backend.adapters.exchanges.bitget  import BitgetAdapter
+    """Return the canonical execution adapter: BTCC first, Bitget second."""
+    from backend.adapters.exchanges.btcc import BtccAdapter
+    from backend.adapters.exchanges.bitget import BitgetAdapter
 
     paper = cfg.mode == "paper"
 
-    # BTCC — primary execution venue
+    # BTCC is the primary execution venue. Paper mode remains non-mutating.
     if cfg.btcc_api_key or paper:
         return BtccAdapter(
             api_key=cfg.btcc_api_key,
@@ -63,17 +51,7 @@ def get_adapter(cfg: "ExchangeConfig") -> BaseExchangeAdapter:
             base_url=cfg.btcc_base_url,
         )
 
-    # Binance — live fallback
-    if cfg.binance_api_key:
-        return BinanceAdapter(
-            api_key=cfg.binance_api_key,
-            api_secret=cfg.binance_api_secret,
-            paper=False,
-            base_url=cfg.binance_base_url,
-            testnet=cfg.binance_testnet,
-        )
-
-    # Bitget — live fallback
+    # Bitget is the only default execution fallback.
     if cfg.bitget_api_key:
         return BitgetAdapter(
             api_key=cfg.bitget_api_key,
@@ -84,36 +62,47 @@ def get_adapter(cfg: "ExchangeConfig") -> BaseExchangeAdapter:
         )
 
     raise AdapterError(
-        "No exchange adapter could be configured. "
-        "Provide credentials for BTCC, Binance, or Bitget in settings."
+        "No canonical exchange adapter could be configured. "
+        "BTCC is primary and Bitget is secondary."
     )
 
 
 def get_market_data_adapter(cfg: "ExchangeConfig") -> BaseExchangeAdapter:
     """
-    Market data adapter factory.
+    Return the selected public market-data adapter.
 
-    In paper mode, CoinGecko is used as the public market data source.
-    Binance returns HTTP 451 (geo-blocked) from Render server regions.
-    CoinGecko is globally accessible, no auth required, 50 req/min free.
-
-    Override via MARKET_DATA_PUBLIC_EXCHANGE env var:
-      - "binance"    — use Binance (may be geo-blocked on some hosts)
-      - "coingecko"  — use CoinGecko (default, globally accessible)
-
-    In live mode, the execution adapter is also the market data source.
+    Bitget is the default public source. BTCC may be selected explicitly.
+    Coinbase remains optional public/read-only data. CoinGecko and Binance are
+    retained only as explicit legacy data-source selections.
     """
     import os
 
-    paper = cfg.mode == "paper"
+    exchange_override = os.getenv("MARKET_DATA_PUBLIC_EXCHANGE", "bitget").strip().lower()
 
-    # Always use CoinGecko for public market data (both paper and live modes)
-    # CoinGecko is globally accessible, no auth required, and provides reliable OHLCV
-    # The execution adapter (Bitget CCXTSpotAdapter) is used separately for order placement only
-    # Paper mode: resolve from env, default to coingecko
-    exchange_override = os.getenv("MARKET_DATA_PUBLIC_EXCHANGE", "coingecko").strip().lower()
+    if exchange_override in ("bitget", "bitgate", ""):
+        from backend.adapters.exchanges.bitget import BitgetAdapter
+        return BitgetAdapter(
+            api_key=None,
+            api_secret=None,
+            passphrase=None,
+            paper=True,
+            base_url=cfg.bitget_base_url,
+        )
 
-    if exchange_override in ("coingecko", ""):
+    if exchange_override == "btcc":
+        from backend.adapters.exchanges.btcc import BtccAdapter
+        return BtccAdapter(
+            api_key=None,
+            api_secret=None,
+            paper=True,
+            base_url=cfg.btcc_base_url,
+        )
+
+    if exchange_override == "coinbase":
+        from backend.adapters.exchanges.coinbase import CoinbaseAdapter
+        return CoinbaseAdapter()
+
+    if exchange_override == "coingecko":
         from backend.adapters.exchanges.coingecko import CoinGeckoAdapter
         return CoinGeckoAdapter(paper=True)
 
@@ -127,20 +116,10 @@ def get_market_data_adapter(cfg: "ExchangeConfig") -> BaseExchangeAdapter:
             testnet=False,
         )
 
-    if exchange_override == "bitget":
-        from backend.adapters.exchanges.bitget import BitgetAdapter
-        return BitgetAdapter(
-            api_key=None, api_secret=None, passphrase=None,
-            paper=True, base_url=cfg.bitget_base_url
-        )
-
-    if exchange_override == "coinbase":
-        from backend.adapters.exchanges.coinbase import CoinbaseAdapter
-        return CoinbaseAdapter()
-
-    # Fallback: coingecko
-    from backend.adapters.exchanges.coingecko import CoinGeckoAdapter
-    return CoinGeckoAdapter(paper=True)
+    raise AdapterError(
+        "Unsupported MARKET_DATA_PUBLIC_EXCHANGE. "
+        "Use bitget, btcc, coinbase, coingecko, or binance."
+    )
 
 
 __all__ = [
@@ -159,6 +138,4 @@ __all__ = [
     "Order",
     "OhlcvCandle",
     "ExchangeStatus",
-    "CoinGeckoAdapter",
-    "CoinbaseAdapter",
 ]
