@@ -9,7 +9,7 @@
     "build": "tsc",
     "build:live-candidate": "tsc --project tsconfig.json",
     "bundle:live-candidate": "wrangler deploy --dry-run --config ../wrangler.live-candidate.toml --outdir .wrangler/live-candidate",
-    "test:live-foundation": "node --experimental-strip-types --test tests/live-foundation.test.ts tests/live-ledger.test.ts",
+    "test:live-foundation": "node --experimental-strip-types --test tests/live-foundation.test.ts tests/live-ledger.test.ts tests/live-reconciliation.test.ts",
     "deploy": "wrangler deploy --config ../wrangler.toml",
     "cf:whoami": "wrangler whoami --config ../wrangler.toml",
     "migrate": "wrangler d1 execute crypto-signal-bot-db --config ../wrangler.toml --file=migrations/001_init.sql",
