@@ -5,7 +5,7 @@ import {
   type LiveGateEnv,
 } from './live/release-gate'
 
-export { ExchangeAccountCoordinator } from './live/account-coordinator'
+export { ExchangeAccountCoordinator } from './live/observed-account-coordinator'
 
 type Env = AgentContextEnv & LiveGateEnv & {
   EXCHANGE_ACCOUNT_COORDINATOR: DurableObjectNamespace
@@ -123,7 +123,7 @@ export default {
         order_cancellation: false,
         withdrawals: false,
         deposits: false,
-        account_coordinator: 'execution-locked-and-internal-only',
+        account_coordinator: 'execution-locked-internal-with-reporting-observability',
         durable_idempotency: 'schema-and-service-only',
         exact_decimal_arithmetic: true,
         readiness_endpoint: '/v1/live/readiness',
