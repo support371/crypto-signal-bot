@@ -5,8 +5,17 @@ import {
   type PersistSpotFillAccountingInput,
   type PersistSpotFillAccountingResult,
 } from './fill-accounting-store.ts'
+import {
+  normalizeExecutionExchange,
+  type CanonicalExecutionExchange,
+} from './exchange-registry.ts'
+
+export interface VerifiedSpotFillAccountingInput extends PersistSpotFillAccountingInput {
+  exchangeName: CanonicalExecutionExchange | string
+}
 
 export interface VerifiedFillAccountingResult extends PersistSpotFillAccountingResult {
+  exchangeName: CanonicalExecutionExchange
   replayStateVerified: boolean
 }
 
@@ -71,11 +80,16 @@ async function assertNoOrphanedJournal(
 
 async function verifiedReplayState(
   env: FillAccountingStoreEnv,
-  input: PersistSpotFillAccountingInput,
+  input: VerifiedSpotFillAccountingInput,
   result: PersistSpotFillAccountingResult,
+  exchangeName: CanonicalExecutionExchange,
 ): Promise<VerifiedFillAccountingResult> {
   if (result.status !== 'REPLAYED') {
-    return Object.freeze({ ...result, replayStateVerified: false })
+    return Object.freeze({
+      ...result,
+      exchangeName,
+      replayStateVerified: false,
+    })
   }
 
   const receipt = await env.DB.prepare(`
@@ -116,6 +130,7 @@ async function verifiedReplayState(
 
   return Object.freeze({
     ...result,
+    exchangeName,
     replayStateVerified: true,
     providerMutationAllowed: false,
     reservationApplied: false,
@@ -125,10 +140,11 @@ async function verifiedReplayState(
 
 export async function persistSpotFillAccountingVerified(
   env: FillAccountingStoreEnv,
-  input: PersistSpotFillAccountingInput,
+  input: VerifiedSpotFillAccountingInput,
 ): Promise<VerifiedFillAccountingResult> {
+  const exchangeName = normalizeExecutionExchange(input.exchangeName)
   const fillId = required(input.fill.fillId, 'fill.fillId')
   await assertNoOrphanedJournal(env, fillId)
   const result = await persistSpotFillAccountingFifo(env, input)
-  return verifiedReplayState(env, input, result)
+  return verifiedReplayState(env, input, result, exchangeName)
 }
