@@ -193,7 +193,8 @@ export class BitgetReadOnlyAdapter implements ReadOnlyExchangeAdapter {
     const quoteIncrement = precisionIncrement(data.quotePrecision, 'quotePrecision')
     const priceIncrement = precisionIncrement(data.pricePrecision, 'pricePrecision')
     const minimumBaseCandidate = optionalDecimal(data.minTradeAmount, 'minTradeAmount')
-    const minimumBaseSize = minimumBaseCandidate && compareDecimal(minimumBaseCandidate, decimal('0')) > 0
+    const zero = decimal('0', 'zero')
+    const minimumBaseSize = minimumBaseCandidate && compareDecimal(minimumBaseCandidate, zero) > 0
       ? minimumBaseCandidate
       : baseIncrement
     const maximumBaseCandidate = optionalDecimal(data.maxTradeAmount, 'maxTradeAmount')
