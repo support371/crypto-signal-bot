@@ -1,0 +1,77 @@
+name: Live Certification Safety
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'worker/src/live/observability.ts'
+      - 'worker/src/live/observability-store.ts'
+      - 'worker/src/live/certification.ts'
+      - 'worker/tests/live-observability.test.ts'
+      - 'worker/tests/live-certification.test.ts'
+      - 'worker/migrations/003_live_release_authorizations.sql'
+      - 'worker/migrations/007_live_exchange_projections.sql'
+      - 'worker/migrations/012_live_observability.sql'
+      - 'worker/migrations/013_live_certification.sql'
+      - 'worker/scripts/verify-certification-safety.mjs'
+      - 'worker/package.json'
+      - 'worker/package-lock.json'
+      - 'worker/tsconfig.json'
+      - 'wrangler.live-candidate.toml'
+      - '.github/workflows/live-certification-safety.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-certification-safety-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Test, typecheck, migrate, and prove certification cannot activate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    defaults:
+      run:
+        working-directory: worker
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run all regulated foundation tests
+        run: npm run test:live-foundation
+
+      - name: Typecheck Worker package
+        run: npm run build:live-candidate
+
+      - name: Verify certification safety invariants
+        run: node scripts/verify-certification-safety.mjs
+
+      - name: Create release authorization dependency locally
+        run: npx wrangler d1 execute crypto-signal-bot-live-candidate-db --config ../wrangler.live-candidate.toml --local --file=migrations/003_live_release_authorizations.sql
+
+      - name: Create exchange account dependency locally
+        run: npx wrangler d1 execute crypto-signal-bot-live-candidate-db --config ../wrangler.live-candidate.toml --local --file=migrations/007_live_exchange_projections.sql
+
+      - name: Apply observability migration locally
+        run: npx wrangler d1 execute crypto-signal-bot-live-candidate-db --config ../wrangler.live-candidate.toml --local --file=migrations/012_live_observability.sql
+
+      - name: Apply certification migration locally
+        run: npx wrangler d1 execute crypto-signal-bot-live-candidate-db --config ../wrangler.live-candidate.toml --local --file=migrations/013_live_certification.sql
+
+      - name: Build disabled live candidate dry-run bundle
+        run: npm run bundle:live-candidate
