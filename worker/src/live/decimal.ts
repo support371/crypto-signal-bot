@@ -3,6 +3,7 @@ export type SignedDecimalString = string & { readonly __signedDecimalString: uni
 
 const UNSIGNED_PATTERN = /^(0|[1-9]\d*)(\.\d+)?$/
 const SIGNED_PATTERN = /^-?(0|[1-9]\d*)(\.\d+)?$/
+const MAX_DIVISION_SCALE = 36
 
 interface ParsedDecimal {
   coefficient: bigint
@@ -41,6 +42,13 @@ function powerOfTen(scale: number): bigint {
     throw new RangeError('scale must be a non-negative integer')
   }
   return 10n ** BigInt(scale)
+}
+
+function validateDivisionScale(scale: number): number {
+  if (!Number.isInteger(scale) || scale < 0 || scale > MAX_DIVISION_SCALE) {
+    throw new RangeError(`division scale must be an integer from 0 to ${MAX_DIVISION_SCALE}`)
+  }
+  return scale
 }
 
 function align(left: ParsedDecimal, right: ParsedDecimal): [bigint, bigint, number] {
@@ -115,6 +123,27 @@ export function multiplyDecimal(left: DecimalString, right: DecimalString): Deci
   }) as DecimalString
 }
 
+/**
+ * Divide non-negative decimals and round toward zero at the explicit result scale.
+ * Financial callers must choose the scale and perform exchange-increment
+ * quantization separately; this function never rounds up.
+ */
+export function divideDecimalDown(
+  dividend: DecimalString,
+  divisor: DecimalString,
+  resultScale: number,
+): DecimalString {
+  const left = parse(dividend, false, 'dividend')
+  const right = parse(divisor, false, 'divisor')
+  const scale = validateDivisionScale(resultScale)
+  if (right.coefficient <= 0n) throw new RangeError('divisor must be greater than zero')
+
+  const numerator = left.coefficient * powerOfTen(right.scale + scale)
+  const denominator = right.coefficient * powerOfTen(left.scale)
+  const coefficient = numerator / denominator
+  return formatParsed({ coefficient, scale }) as DecimalString
+}
+
 export function isPositiveDecimal(value: DecimalString): boolean {
   return parse(value, false, 'value').coefficient > 0n
 }
@@ -145,6 +174,10 @@ export function quantizeDown(value: DecimalString, increment: DecimalString): De
   const [amount, step, scale] = align(parse(value, false, 'value'), parsedIncrement)
   const quantized = (amount / step) * step
   return formatParsed({ coefficient: quantized, scale }) as DecimalString
+}
+
+export function decimalScale(value: DecimalString): number {
+  return parse(value, false, 'value').scale
 }
 
 export function sumDecimals(values: readonly DecimalString[]): DecimalString {
