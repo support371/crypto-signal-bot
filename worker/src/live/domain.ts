@@ -11,6 +11,7 @@ export {
   multiplyDecimal,
   quantizeDown,
   subtractDecimal,
+  subtractNonNegativeDecimal,
   sumDecimals,
 } from './decimal'
 export type { DecimalString, SignedDecimalString } from './decimal'
