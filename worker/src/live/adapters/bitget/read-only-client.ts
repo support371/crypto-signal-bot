@@ -225,7 +225,6 @@ export class BitgetReadOnlyClient {
         method: 'GET',
         headers,
         redirect: 'error',
-        cache: 'no-store',
         signal: controller.signal,
       })
       if (!response.ok) {
