@@ -2,7 +2,6 @@ import { canonicalJson } from './canonical-json.ts'
 import {
   addDecimal,
   multiplyDecimal,
-  type DecimalString,
 } from './decimal.ts'
 import type {
   ExchangeAccountBalance,
@@ -147,8 +146,13 @@ export async function upsertProductProjection(
 
 function orderStatement(env: ProjectionEnv, input: OrderProjectionInput): D1PreparedStatement {
   const snapshot = input.snapshot
-  if ((snapshot.requestedBaseQuantity === null) === (snapshot.requestedQuoteNotional === null)) {
-    throw new TypeError('exactly one requested order sizing basis is required')
+  const hasBase = snapshot.requestedBaseQuantity !== null
+  const hasQuote = snapshot.requestedQuoteNotional !== null
+  const unknownRecoveryOrder = input.state === 'RECOVERY_REQUIRED' && !hasBase && !hasQuote
+  if (hasBase === hasQuote && !unknownRecoveryOrder) {
+    throw new TypeError(
+      'exactly one requested order sizing basis is required unless the order is an unknown recovery record',
+    )
   }
 
   return env.DB.prepare(
@@ -162,6 +166,7 @@ function orderStatement(env: ProjectionEnv, input: OrderProjectionInput): D1Prep
      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(internal_order_id) DO UPDATE SET
        exchange_order_id = excluded.exchange_order_id,
+       client_order_id = excluded.client_order_id,
        state = excluded.state,
        filled_base_quantity = excluded.filled_base_quantity,
        filled_quote_value = excluded.filled_quote_value,
@@ -181,7 +186,7 @@ function orderStatement(env: ProjectionEnv, input: OrderProjectionInput): D1Prep
     required(input.internalOrderId, 'internalOrderId'),
     required(input.exchangeAccountId, 'exchangeAccountId'),
     snapshot.exchangeOrderId,
-    required(snapshot.clientOrderId ?? input.internalOrderId, 'clientOrderId'),
+    snapshot.clientOrderId,
     snapshot.productId,
     snapshot.side,
     snapshot.orderType,
