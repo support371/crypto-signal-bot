@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS live_fill_accounting_receipts (
   input_hash TEXT NOT NULL CHECK (length(input_hash) = 64),
   accounting_hash TEXT NOT NULL UNIQUE CHECK (length(accounting_hash) = 64),
   journal_id TEXT NOT NULL UNIQUE,
+  position_quantity TEXT NOT NULL,
+  cumulative_realized_pnl_quote TEXT NOT NULL,
   provider_mutation_allowed INTEGER NOT NULL DEFAULT 0
     CHECK (provider_mutation_allowed = 0),
   reservation_applied INTEGER NOT NULL DEFAULT 0
