@@ -96,6 +96,16 @@ export function subtractDecimal(
   return formatParsed({ coefficient: a - b, scale }) as SignedDecimalString
 }
 
+export function subtractNonNegativeDecimal(
+  left: DecimalString,
+  right: DecimalString,
+  field = 'result',
+): DecimalString {
+  const [a, b, scale] = align(parse(left, false, 'left'), parse(right, false, 'right'))
+  if (a < b) throw new RangeError(`${field} cannot be negative`)
+  return formatParsed({ coefficient: a - b, scale }) as DecimalString
+}
+
 export function multiplyDecimal(left: DecimalString, right: DecimalString): DecimalString {
   const a = parse(left, false, 'left')
   const b = parse(right, false, 'right')
