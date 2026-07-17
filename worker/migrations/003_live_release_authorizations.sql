@@ -11,10 +11,20 @@ CREATE TABLE IF NOT EXISTS release_authorizations (
   account_ref_hash TEXT NOT NULL,
   allowed_products_json TEXT NOT NULL DEFAULT '[]',
   max_order_notional TEXT NOT NULL CHECK (
-    max_order_notional GLOB '[0-9]*' AND max_order_notional NOT GLOB '*[^0-9.]*'
+    length(max_order_notional) > 0
+    AND max_order_notional GLOB '[0-9]*'
+    AND max_order_notional NOT GLOB '*[^0-9.]*'
+    AND max_order_notional NOT LIKE '%.%.%'
+    AND max_order_notional NOT LIKE '.%'
+    AND max_order_notional NOT LIKE '%.'
   ),
   max_daily_notional TEXT NOT NULL CHECK (
-    max_daily_notional GLOB '[0-9]*' AND max_daily_notional NOT GLOB '*[^0-9.]*'
+    length(max_daily_notional) > 0
+    AND max_daily_notional GLOB '[0-9]*'
+    AND max_daily_notional NOT GLOB '*[^0-9.]*'
+    AND max_daily_notional NOT LIKE '%.%.%'
+    AND max_daily_notional NOT LIKE '.%'
+    AND max_daily_notional NOT LIKE '%.'
   ),
   starts_at TEXT NOT NULL,
   expires_at TEXT NOT NULL,
@@ -31,12 +41,3 @@ CREATE TABLE IF NOT EXISTS release_authorizations (
 
 CREATE INDEX IF NOT EXISTS idx_release_authorizations_status_expiry
   ON release_authorizations(status, expires_at);
-
-CREATE TRIGGER IF NOT EXISTS release_authorizations_updated_at
-AFTER UPDATE ON release_authorizations
-FOR EACH ROW
-BEGIN
-  UPDATE release_authorizations
-     SET updated_at = CURRENT_TIMESTAMP
-   WHERE release_id = OLD.release_id;
-END;
