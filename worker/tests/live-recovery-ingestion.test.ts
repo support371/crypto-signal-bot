@@ -139,7 +139,7 @@ test('recovery cursor or capability lock violations fail closed', async () => {
     buildBitgetRecoveryIngestionPlan(input({
       recovery: {
         ...input().recovery,
-        executionAllowed: true,
+        executionAllowed: true as false,
       },
     })),
     /violates read-only capability locks/,
