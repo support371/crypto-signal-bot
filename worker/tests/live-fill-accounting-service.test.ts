@@ -10,11 +10,15 @@ import { persistSpotFillAccountingVerified } from '../src/live/fill-accounting-s
 import { asDecimalString } from '../src/live/decimal.ts'
 
 class FakeStatement {
-  constructor(
-    private readonly database: FakeDatabase,
-    readonly sql: string,
-    readonly params: unknown[] = [],
-  ) {}
+  private readonly database: FakeDatabase
+  readonly sql: string
+  readonly params: unknown[]
+
+  constructor(database: FakeDatabase, sql: string, params: unknown[] = []) {
+    this.database = database
+    this.sql = sql
+    this.params = params
+  }
 
   bind(...params: unknown[]): D1PreparedStatement {
     return new FakeStatement(this.database, this.sql, params) as unknown as D1PreparedStatement
