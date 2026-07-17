@@ -7,6 +7,7 @@
     "dev:local": "wrangler dev --config ../wrangler.toml --local",
     "build": "tsc",
     "build:live-candidate": "tsc --project tsconfig.json",
+    "bundle:live-candidate": "wrangler deploy --dry-run --config ../wrangler.live-candidate.toml --outdir .wrangler/live-candidate",
     "deploy": "wrangler deploy --config ../wrangler.toml",
     "cf:whoami": "wrangler whoami --config ../wrangler.toml",
     "migrate": "wrangler d1 execute crypto-signal-bot-db --config ../wrangler.toml --file=migrations/001_init.sql",
@@ -14,7 +15,8 @@
     "migrate:remote": "wrangler d1 execute crypto-signal-bot-db --config ../wrangler.toml --remote --file=migrations/001_init.sql",
     "migrate:002": "wrangler d1 execute crypto-signal-bot-db --config ../wrangler.toml --remote --file=migrations/002_hardened.sql",
     "migrate:002:local": "wrangler d1 execute crypto-signal-bot-db --config ../wrangler.toml --local --file=migrations/002_hardened.sql",
-    "migrate:003:local": "wrangler d1 execute crypto-signal-bot-db --config ../wrangler.live-candidate.toml --local --file=migrations/003_live_release_authorizations.sql",
+    "migrate:003:local": "wrangler d1 execute crypto-signal-bot-live-candidate-db --config ../wrangler.live-candidate.toml --local --file=migrations/003_live_release_authorizations.sql",
+    "migrate:004:local": "wrangler d1 execute crypto-signal-bot-live-candidate-db --config ../wrangler.live-candidate.toml --local --file=migrations/004_live_idempotency_records.sql",
     "verify:paper-safety": "node scripts/verify-paper-safety.mjs",
     "verify:live-candidate-safety": "node scripts/verify-live-candidate-safety.mjs",
     "smoke": "node scripts/smoke-check.mjs"
