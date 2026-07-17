@@ -12,7 +12,7 @@
     "bundle:live-candidate": "wrangler deploy --dry-run --config ../wrangler.live-candidate.toml --outdir .wrangler/live-candidate",
     "bundle:withdrawals-candidate": "wrangler deploy --dry-run --config ../wrangler.withdrawals-candidate.toml --outdir .wrangler/withdrawals-candidate",
     "test:live-foundation": "node --experimental-strip-types --test tests/live-*.test.ts",
-    "test:provider-contracts": "node --experimental-strip-types --test tests/live-default-exchanges.test.ts tests/live-bitget-read-only-client.test.ts",
+    "test:provider-contracts": "node --experimental-strip-types --test tests/live-default-exchanges.test.ts tests/live-bitget-read-only-client.test.ts tests/live-bitget-preview.test.ts",
     "verify:paper-safety": "node scripts/verify-paper-safety.mjs",
     "verify:live-candidate-safety": "node scripts/verify-live-candidate-safety.mjs",
     "verify:regulated-foundation-safety": "node scripts/verify-regulated-foundation-safety.mjs",
