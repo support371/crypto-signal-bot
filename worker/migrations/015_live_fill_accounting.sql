@@ -105,12 +105,18 @@ CREATE TABLE IF NOT EXISTS live_fill_accounting_reconciliations (
   product_id TEXT NOT NULL,
   base_asset TEXT NOT NULL,
   quote_asset TEXT NOT NULL,
+  input_hash TEXT NOT NULL CHECK (length(input_hash) = 64),
+  ledger_account_ids_json TEXT NOT NULL,
+  exchange_observation_hash TEXT CHECK (
+    exchange_observation_hash IS NULL OR length(exchange_observation_hash) = 64
+  ),
   status TEXT NOT NULL CHECK (status IN ('CLEAR', 'HALT_FOR_REVIEW')),
   reasons_json TEXT NOT NULL,
   position_quantity TEXT NOT NULL,
   reconstructed_quantity TEXT NOT NULL,
   position_cost_basis_quote TEXT NOT NULL,
   reconstructed_cost_basis_quote TEXT NOT NULL,
+  reconstructed_average_entry_price TEXT,
   position_realized_pnl_quote TEXT NOT NULL,
   reconstructed_realized_pnl_quote TEXT NOT NULL,
   ledger_base_inventory_balance TEXT NOT NULL,
