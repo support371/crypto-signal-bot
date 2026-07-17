@@ -44,11 +44,20 @@ jobs:
           name: Install Worker dependencies
           command: npm --prefix worker ci
       - run:
+          name: Run disabled live-candidate foundation tests
+          command: npm --prefix worker run test:live-foundation
+      - run:
           name: Type-check Cloudflare Worker
           command: npm --prefix worker run build
       - run:
           name: Verify paper-safety contract
           command: npm --prefix worker run verify:paper-safety
+      - run:
+          name: Verify disabled live-candidate safety contract
+          command: npm --prefix worker run verify:live-candidate-safety
+      - run:
+          name: Build disabled live-candidate dry-run bundle
+          command: npm --prefix worker run bundle:live-candidate
 
   backend-test-audit:
     docker:
