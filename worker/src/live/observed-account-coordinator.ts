@@ -8,6 +8,18 @@ import {
 } from './candidate-projection-observability.ts'
 import type { CandidateEvidenceEnvelope } from './candidate-evidence.ts'
 import type { CandidateProjectionStatus } from './candidate-projection-retry.ts'
+import {
+  FillAccountingConflictError,
+} from './fill-accounting-store.ts'
+import {
+  persistSpotFillAccountingVerified,
+  type VerifiedSpotFillAccountingInput,
+} from './fill-accounting-service.ts'
+import { FillAccountingSerialQueue } from './fill-accounting-serialization.ts'
+
+interface ObservedAccountCoordinatorEnv extends AccountCoordinatorEnv {
+  CANDIDATE_ACCOUNTING_TOKEN?: string
+}
 
 type ProjectionEventRow = {
   sequence_id: number
@@ -29,8 +41,35 @@ type CursorRow = {
 const OBSERVABILITY_CURSOR_ID = 1
 const MAX_OBSERVABILITY_EVENTS_PER_PASS = 50
 const OBSERVABILITY_RETRY_DELAY_MS = 60_000
+const ACCOUNTING_ROUTE = '/candidate/fills/account'
+const ACCOUNTING_TOKEN_HEADER = 'X-Candidate-Accounting-Token'
+const MAX_ACCOUNTING_REQUEST_BYTES = 512 * 1024
+
+function json(payload: unknown, status = 200): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: {
+      'Cache-Control': 'no-store',
+      'Content-Type': 'application/json; charset=utf-8',
+      'X-Content-Type-Options': 'nosniff',
+      'X-Live-Candidate': 'read-only',
+    },
+  })
+}
+
+function constantTimeEqual(left: string, right: string): boolean {
+  const leftBytes = new TextEncoder().encode(left)
+  const rightBytes = new TextEncoder().encode(right)
+  let difference = leftBytes.length ^ rightBytes.length
+  const length = Math.max(leftBytes.length, rightBytes.length)
+  for (let index = 0; index < length; index += 1) {
+    difference |= (leftBytes[index] ?? 0) ^ (rightBytes[index] ?? 0)
+  }
+  return difference === 0
+}
 
 function safeErrorCode(error: unknown): string {
+  if (error instanceof FillAccountingConflictError) return error.code
   if (error instanceof Error) return error.name.slice(0, 80)
   return 'UNKNOWN_OBSERVABILITY_ERROR'
 }
@@ -44,19 +83,21 @@ function parseEnvelope(value: string): CandidateEvidenceEnvelope {
 }
 
 /**
- * Decorates the execution-locked coordinator with reporting observability.
+ * Decorates the execution-locked coordinator with reporting observability and
+ * serialized fill accounting.
  *
- * The base coordinator remains authoritative. This wrapper reads append-only
- * projection events, writes metrics and alert history to D1, and advances a
- * Durable Object cursor only after successful delivery. It cannot retry an
- * exchange request, apply a reservation, or change execution state.
+ * The base coordinator remains authoritative for candidate assessment evidence.
+ * The fill-accounting command is internal-only, independently authenticated,
+ * and serialized per Durable Object instance so FIFO state cannot be read by
+ * two accounting commands concurrently while D1 operations are awaiting.
  */
 export class ExchangeAccountCoordinator {
   private readonly state: DurableObjectState
-  private readonly env: AccountCoordinatorEnv
+  private readonly env: ObservedAccountCoordinatorEnv
   private readonly inner: BaseExchangeAccountCoordinator
+  private readonly accountingQueue = new FillAccountingSerialQueue()
 
-  constructor(state: DurableObjectState, env: AccountCoordinatorEnv) {
+  constructor(state: DurableObjectState, env: ObservedAccountCoordinatorEnv) {
     this.state = state
     this.env = env
     this.initializeObservabilityCursor()
@@ -194,7 +235,80 @@ export class ExchangeAccountCoordinator {
     }
   }
 
+  private authorizeAccounting(request: Request): Response | null {
+    const configuredToken = String(this.env.CANDIDATE_ACCOUNTING_TOKEN ?? '').trim()
+    if (!configuredToken) {
+      return json({
+        error: 'Candidate fill accounting is not configured',
+        code: 'CANDIDATE_ACCOUNTING_AUTH_NOT_CONFIGURED',
+      }, 503)
+    }
+    const suppliedToken = String(request.headers.get(ACCOUNTING_TOKEN_HEADER) ?? '')
+    if (!constantTimeEqual(configuredToken, suppliedToken)) {
+      return json({ error: 'Unauthorized', code: 'CANDIDATE_ACCOUNTING_UNAUTHORIZED' }, 401)
+    }
+    return null
+  }
+
+  private async readAccountingRequest(request: Request): Promise<VerifiedSpotFillAccountingInput> {
+    const declaredLength = Number(request.headers.get('content-length') ?? '0')
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_ACCOUNTING_REQUEST_BYTES) {
+      throw new RangeError('candidate fill-accounting request exceeds size limit')
+    }
+    const body = await request.text()
+    if (new TextEncoder().encode(body).byteLength > MAX_ACCOUNTING_REQUEST_BYTES) {
+      throw new RangeError('candidate fill-accounting request exceeds size limit')
+    }
+    return JSON.parse(body) as VerifiedSpotFillAccountingInput
+  }
+
+  private async handleAccounting(request: Request): Promise<Response> {
+    const unauthorized = this.authorizeAccounting(request)
+    if (unauthorized) return unauthorized
+
+    try {
+      const input = await this.readAccountingRequest(request)
+      const result = await this.accountingQueue.run(
+        () => persistSpotFillAccountingVerified(this.env, input),
+      )
+      return json({
+        ...result,
+        serializedBy: 'EXCHANGE_ACCOUNT_COORDINATOR',
+        accountingQueuePending: this.accountingQueue.pendingCount,
+        providerMutationAllowed: false,
+        reservationApplied: false,
+        executionAllowed: false,
+      }, result.status === 'REPLAYED' ? 200 : 201)
+    } catch (error) {
+      const status = error instanceof FillAccountingConflictError
+        ? 409
+        : error instanceof SyntaxError || error instanceof TypeError || error instanceof RangeError
+          ? 400
+          : 500
+      return json({
+        error: 'Candidate fill accounting was not persisted',
+        code: error instanceof FillAccountingConflictError
+          ? error.code
+          : error instanceof SyntaxError
+            ? 'INVALID_JSON'
+            : error instanceof TypeError || error instanceof RangeError
+              ? 'INVALID_FILL_ACCOUNTING_INPUT'
+              : 'FILL_ACCOUNTING_PERSISTENCE_FAILED',
+        providerMutationAllowed: false,
+        reservationApplied: false,
+        executionAllowed: false,
+      }, status)
+    }
+  }
+
   async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url)
+    const method = request.method.toUpperCase()
+
+    if (method === 'POST' && url.pathname === ACCOUNTING_ROUTE) {
+      return this.handleAccounting(request)
+    }
+
     const response = await this.inner.fetch(request)
     try {
       await this.drainProjectionObservability()
