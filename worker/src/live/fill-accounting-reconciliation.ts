@@ -1,6 +1,5 @@
 import { canonicalHash } from './canonical-json.ts'
 import {
-  addDecimal,
   addSignedDecimal,
   asDecimalString,
   asSignedDecimalString,
