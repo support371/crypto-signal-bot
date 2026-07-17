@@ -116,7 +116,10 @@ export async function loadReleaseAuthorization(
 export async function evaluateLiveCandidateReadiness(
   env: LiveGateEnv,
   now = new Date(),
-): Promise<LiveReadinessReport & { authorizationEvidenceSatisfied: boolean }> {
+): Promise<LiveReadinessReport & {
+  authorizationEvidenceSatisfied: boolean
+  activationPrerequisitesSatisfied: boolean
+}> {
   const configuredReleaseId = String(env.LIVE_RELEASE_ID ?? '').trim()
   const gitSha = String(env.BUILD_GIT_SHA ?? '').trim()
   const release = await loadReleaseAuthorization(env, configuredReleaseId)
@@ -172,5 +175,6 @@ export async function evaluateLiveCandidateReadiness(
     gitSha,
     evaluatedAt: now.toISOString(),
     authorizationEvidenceSatisfied,
+    activationPrerequisitesSatisfied: authorizationEvidenceSatisfied,
   }
 }
