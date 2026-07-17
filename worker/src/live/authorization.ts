@@ -16,6 +16,7 @@ export type AuthorizationAction =
   | 'CREATE_ORDER'
   | 'CANCEL_ORDER'
   | 'RUN_RECONCILIATION'
+  | 'ACKNOWLEDGE_ALERT'
   | 'GUARDIAN_HALT'
   | 'GUARDIAN_RESET_REQUEST'
   | 'GUARDIAN_RESET_APPROVE'
@@ -103,6 +104,12 @@ const POLICIES: Readonly<Record<AuthorizationAction, ActionPolicy>> = {
   },
   RUN_RECONCILIATION: {
     anyRole: ['RISK_OPERATOR', 'RISK_ADMIN', 'AUDITOR'],
+    stepUpRequired: true,
+    separationRequired: false,
+    stepUpAudience: 'operations',
+  },
+  ACKNOWLEDGE_ALERT: {
+    anyRole: ['RISK_OPERATOR', 'RISK_ADMIN'],
     stepUpRequired: true,
     separationRequired: false,
     stepUpAudience: 'operations',
