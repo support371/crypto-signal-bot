@@ -91,9 +91,25 @@ export function compareDecimal(left: DecimalString, right: DecimalString): -1 | 
   return a < b ? -1 : a > b ? 1 : 0
 }
 
+export function compareSignedDecimal(
+  left: SignedDecimalString,
+  right: SignedDecimalString,
+): -1 | 0 | 1 {
+  const [a, b] = align(parse(left, true, 'left'), parse(right, true, 'right'))
+  return a < b ? -1 : a > b ? 1 : 0
+}
+
 export function addDecimal(left: DecimalString, right: DecimalString): DecimalString {
   const [a, b, scale] = align(parse(left, false, 'left'), parse(right, false, 'right'))
   return formatParsed({ coefficient: a + b, scale }) as DecimalString
+}
+
+export function addSignedDecimal(
+  left: SignedDecimalString,
+  right: SignedDecimalString,
+): SignedDecimalString {
+  const [a, b, scale] = align(parse(left, true, 'left'), parse(right, true, 'right'))
+  return formatParsed({ coefficient: a + b, scale }) as SignedDecimalString
 }
 
 export function subtractDecimal(
@@ -102,6 +118,25 @@ export function subtractDecimal(
 ): SignedDecimalString {
   const [a, b, scale] = align(parse(left, false, 'left'), parse(right, false, 'right'))
   return formatParsed({ coefficient: a - b, scale }) as SignedDecimalString
+}
+
+export function subtractSignedDecimal(
+  left: SignedDecimalString,
+  right: SignedDecimalString,
+): SignedDecimalString {
+  const [a, b, scale] = align(parse(left, true, 'left'), parse(right, true, 'right'))
+  return formatParsed({ coefficient: a - b, scale }) as SignedDecimalString
+}
+
+export function negateSignedDecimal(value: SignedDecimalString): SignedDecimalString {
+  const parsed = parse(value, true, 'value')
+  return formatParsed({ coefficient: -parsed.coefficient, scale: parsed.scale }) as SignedDecimalString
+}
+
+export function absoluteSignedDecimal(value: SignedDecimalString): DecimalString {
+  const parsed = parse(value, true, 'value')
+  const coefficient = parsed.coefficient < 0n ? -parsed.coefficient : parsed.coefficient
+  return formatParsed({ coefficient, scale: parsed.scale }) as DecimalString
 }
 
 export function subtractNonNegativeDecimal(
@@ -148,6 +183,10 @@ export function isPositiveDecimal(value: DecimalString): boolean {
   return parse(value, false, 'value').coefficient > 0n
 }
 
+export function isNegativeSignedDecimal(value: SignedDecimalString): boolean {
+  return parse(value, true, 'value').coefficient < 0n
+}
+
 export function assertPositiveDecimal(value: DecimalString, field = 'value'): DecimalString {
   if (!isPositiveDecimal(value)) {
     throw new RangeError(`${field} must be greater than zero`)
@@ -184,5 +223,12 @@ export function sumDecimals(values: readonly DecimalString[]): DecimalString {
   return values.reduce<DecimalString>(
     (total, value) => addDecimal(total, value),
     asDecimalString('0'),
+  )
+}
+
+export function sumSignedDecimals(values: readonly SignedDecimalString[]): SignedDecimalString {
+  return values.reduce<SignedDecimalString>(
+    (total, value) => addSignedDecimal(total, value),
+    asSignedDecimalString('0'),
   )
 }
