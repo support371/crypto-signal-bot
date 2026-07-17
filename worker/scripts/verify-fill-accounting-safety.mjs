@@ -13,8 +13,11 @@ const failures = []
 const engine = read('worker/src/live/fill-accounting.ts')
 const store = read('worker/src/live/fill-accounting-store.ts')
 const service = read('worker/src/live/fill-accounting-service.ts')
+const serialization = read('worker/src/live/fill-accounting-serialization.ts')
+const coordinator = read('worker/src/live/observed-account-coordinator.ts')
 const migration = read('worker/migrations/015_live_fill_accounting.sql')
 const entrypoint = read('worker/src/index_live_candidate.ts')
+const config = read('wrangler.live-candidate.toml')
 
 function requireToken(content, token, message) {
   if (!content.includes(token)) failures.push(message)
@@ -63,6 +66,8 @@ for (const [token, message] of [
 
 for (const [token, message] of [
   ['persistSpotFillAccountingVerified', 'verified accounting service boundary is missing'],
+  ['normalizeExecutionExchange', 'canonical BTCC and Bitget provider validation is missing'],
+  ['exchangeName: CanonicalExecutionExchange', 'verified result provider identity is missing'],
   ['assertNoOrphanedJournal', 'orphaned journal quarantine is missing'],
   ['orphaned fill-accounting journal exists without an immutable receipt', 'orphaned journal failure reason is missing'],
   ['verifiedReplayState', 'replay-state verification is missing'],
@@ -76,6 +81,32 @@ for (const [token, message] of [
   ['executionAllowed: false', 'verified service execution lock is missing'],
 ]) {
   requireToken(service, token, message)
+}
+
+for (const [token, message] of [
+  ['export class FillAccountingSerialQueue', 'per-account accounting queue is missing'],
+  ['private tail: Promise<void>', 'accounting queue tail is missing'],
+  ['await previous', 'accounting operations are not serialized'],
+  ['release()', 'accounting queue release is missing'],
+]) {
+  requireToken(serialization, token, message)
+}
+
+for (const [token, message] of [
+  ["ACCOUNTING_ROUTE = '/candidate/fills/account'", 'internal accounting route is missing'],
+  ['CANDIDATE_ACCOUNTING_TOKEN', 'separate accounting authentication secret is missing'],
+  ["ACCOUNTING_TOKEN_HEADER = 'X-Candidate-Accounting-Token'", 'accounting token header is missing'],
+  ['constantTimeEqual', 'constant-time accounting token comparison is missing'],
+  ['MAX_ACCOUNTING_REQUEST_BYTES = 512 * 1024', 'bounded accounting request size is missing'],
+  ['FillAccountingSerialQueue', 'coordinator accounting queue integration is missing'],
+  ['this.accountingQueue.run', 'accounting service is not serialized'],
+  ['persistSpotFillAccountingVerified', 'verified accounting service is not used by coordinator'],
+  ["serializedBy: 'EXCHANGE_ACCOUNT_COORDINATOR'", 'serialized accounting response marker is missing'],
+  ['providerMutationAllowed: false', 'coordinator provider mutation lock is missing'],
+  ['reservationApplied: false', 'coordinator reservation lock is missing'],
+  ['executionAllowed: false', 'coordinator execution lock is missing'],
+]) {
+  requireToken(coordinator, token, message)
 }
 
 for (const [token, message] of [
@@ -103,7 +134,13 @@ for (const forbidden of [
   'reservationApplied: true',
   'executionAllowed: true',
 ]) {
-  if (engine.includes(forbidden) || store.includes(forbidden) || service.includes(forbidden)) {
+  if (
+    engine.includes(forbidden)
+    || store.includes(forbidden)
+    || service.includes(forbidden)
+    || serialization.includes(forbidden)
+    || coordinator.includes(forbidden)
+  ) {
     failures.push(`forbidden fill-accounting capability detected: ${forbidden}`)
   }
 }
@@ -112,8 +149,13 @@ if (
   entrypoint.includes('/fill-accounting')
   || entrypoint.includes('/tax-lots')
   || entrypoint.includes('/realized-pnl')
+  || entrypoint.includes('/candidate/fills/account')
 ) {
   failures.push('fill accounting must not be publicly exposed by the live candidate Worker')
+}
+
+if (/CANDIDATE_ACCOUNTING_TOKEN\s*=/.test(config)) {
+  failures.push('candidate accounting secret must not be provisioned in source configuration')
 }
 
 if (failures.length > 0) {
