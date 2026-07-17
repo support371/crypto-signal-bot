@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS live_reservation_settlement_receipts (
   settlement_receipt_id TEXT PRIMARY KEY,
   fill_id TEXT NOT NULL UNIQUE,
   accounting_hash TEXT NOT NULL CHECK (length(accounting_hash) = 64),
+  request_hash TEXT NOT NULL CHECK (length(request_hash) = 64),
   reservation_id TEXT NOT NULL,
   asset TEXT NOT NULL,
   previous_version INTEGER NOT NULL CHECK (previous_version >= 0),
