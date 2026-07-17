@@ -101,12 +101,6 @@ function sha256(value: string, field: string): string {
   return normalized
 }
 
-function iso(value: string, field: string): string {
-  const parsed = Date.parse(value)
-  if (!Number.isFinite(parsed)) throw new TypeError(`${field} must be ISO-8601`)
-  return new Date(parsed).toISOString()
-}
-
 function assertZeroCapabilities(
   row: {
     automatically_dispatched: number
@@ -181,7 +175,7 @@ function assertApprovalCompatible(
     || row.reasons_json !== canonicalJson(decision.reasons)
     || row.authorization_allowed !== (decision.authorizationDecision.allowed ? 1 : 0)
     || row.matched_roles_json !== canonicalJson(decision.authorizationDecision.matchedRoles)
-    || row.step_up_session_id !== input.stepUpSession?.stepUpSessionId
+    || row.step_up_session_id !== (input.stepUpSession?.stepUpSessionId ?? null)
     || row.approval_hash !== decision.approvalHash
     || row.occurred_at !== decision.authorizationRequest.evaluatedAt
   ) {
@@ -207,7 +201,7 @@ function assertAuthorizationCompatible(
     || row.required_roles_json !== canonicalJson(authorization.requiredRoles)
     || row.actor_roles_json !== canonicalJson(authorization.matchedRoles)
     || row.step_up_required !== (authorization.stepUpRequired ? 1 : 0)
-    || row.step_up_session_id !== request.stepUpSession?.stepUpSessionId
+    || row.step_up_session_id !== (request.stepUpSession?.stepUpSessionId ?? null)
     || row.decision !== expectedAuthorizationDecision(authorization)
     || row.reason !== expectedAuthorizationReason(authorization)
     || row.correlation_id !== input.correlationId
