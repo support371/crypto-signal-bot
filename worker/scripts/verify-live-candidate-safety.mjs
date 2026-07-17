@@ -56,6 +56,9 @@ for (const pathName of [
 
 requirePattern(entrypoint, /pathname\.startsWith\('\/v1\/orders'\)/, 'versioned order mutations are not blocked', failures)
 requirePattern(entrypoint, /pathname\.startsWith\('\/v1\/withdrawals'\)/, 'versioned withdrawal mutations are not blocked', failures)
+requirePattern(entrypoint, /pathname\.startsWith\('\/internal\/'\)/, 'internal routes are not explicitly hidden', failures)
+requirePattern(entrypoint, /pathname\.startsWith\('\/v1\/live\/coordinator'\)/, 'coordinator routes are not explicitly hidden', failures)
+requirePattern(entrypoint, /INTERNAL_ROUTE_NOT_EXPOSED/, 'internal route rejection code is missing', failures)
 requirePattern(entrypoint, /if \(!SAFE_METHODS\.has\(method\)\)/, 'candidate does not block general mutations', failures)
 requirePattern(entrypoint, /export \{ ExchangeAccountCoordinator \}/, 'candidate does not export the Durable Object coordinator', failures)
 requirePattern(releaseGate, /liveReady:\s*false/, 'candidate readiness must never report live-ready', failures)
