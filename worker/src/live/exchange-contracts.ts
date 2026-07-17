@@ -54,9 +54,11 @@ export interface ExchangeOrderSnapshot {
   side: OrderSide
   orderType: OrderType
   rawStatus: string
-  requestedQuantity: DecimalString
-  filledQuantity: DecimalString
-  remainingQuantity: DecimalString
+  requestedBaseQuantity: DecimalString | null
+  requestedQuoteNotional: DecimalString | null
+  filledBaseQuantity: DecimalString
+  filledQuoteValue: DecimalString | null
+  remainingBaseQuantity: DecimalString | null
   averageFillPrice: DecimalString | null
   totalFees: DecimalString | null
   pendingCancel: boolean
