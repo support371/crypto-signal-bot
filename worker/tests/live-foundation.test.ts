@@ -11,6 +11,10 @@ import {
   subtractDecimal,
 } from '../src/live/decimal.ts'
 import { mutationRequestHash } from '../src/live/idempotency.ts'
+import {
+  normalizeProductRules,
+  validateOrderAgainstProductRules,
+} from '../src/live/product-rules.ts'
 
 test('decimal arithmetic is exact and canonical', () => {
   const oneTenth = asDecimalString('0.1')
@@ -67,4 +71,102 @@ test('idempotency request hashes are canonical and identity-bound', async () => 
   assert.equal(first, reordered)
   assert.notEqual(first, otherActor)
   assert.match(first, /^[a-f0-9]{64}$/)
+})
+
+test('product rules accept only fresh, aligned, supported orders', () => {
+  const now = new Date('2026-07-17T10:00:00.000Z')
+  const rules = normalizeProductRules({
+    productId: 'btc-usd',
+    baseAsset: 'btc',
+    quoteAsset: 'usd',
+    baseIncrement: '0.00000001',
+    quoteIncrement: '0.01',
+    priceIncrement: '0.01',
+    minimumBaseSize: '0.0001',
+    maximumBaseSize: '10',
+    minimumQuoteSize: '5',
+    tradingEnabled: true,
+    supportedOrderTypes: ['market', 'limit'],
+    observedAt: '2026-07-17T09:59:00.000Z',
+    expiresAt: '2026-07-17T10:05:00.000Z',
+  })
+
+  const accepted = validateOrderAgainstProductRules({
+    intentId: 'intent-1',
+    idempotencyKey: 'order:2026:0002',
+    correlationId: 'correlation-1',
+    exchangeAccountId: 'account-ref-hash',
+    productId: 'BTC-USD',
+    side: 'BUY',
+    orderType: 'MARKET',
+    baseQuantity: null,
+    quoteNotional: asDecimalString('25.00'),
+    limitPrice: null,
+    stopPrice: null,
+    strategyId: null,
+    requestedBy: 'operator-123',
+    requestedAt: now.toISOString(),
+  }, rules, now)
+
+  assert.equal(accepted.accepted, true)
+  assert.deepEqual(accepted.reasons, [])
+
+  const rejected = validateOrderAgainstProductRules({
+    intentId: 'intent-2',
+    idempotencyKey: 'order:2026:0003',
+    correlationId: 'correlation-2',
+    exchangeAccountId: 'account-ref-hash',
+    productId: 'BTC-USD',
+    side: 'BUY',
+    orderType: 'LIMIT',
+    baseQuantity: asDecimalString('0.000100005'),
+    quoteNotional: null,
+    limitPrice: asDecimalString('100000.001'),
+    stopPrice: null,
+    strategyId: null,
+    requestedBy: 'operator-123',
+    requestedAt: now.toISOString(),
+  }, rules, now)
+
+  assert.equal(rejected.accepted, false)
+  assert.ok(rejected.reasons.includes('base_quantity_increment_mismatch'))
+  assert.ok(rejected.reasons.includes('limit_price_increment_mismatch'))
+})
+
+test('stale product rules block an otherwise valid order', () => {
+  const rules = normalizeProductRules({
+    productId: 'BTC-USD',
+    baseAsset: 'BTC',
+    quoteAsset: 'USD',
+    baseIncrement: '0.00000001',
+    quoteIncrement: '0.01',
+    priceIncrement: '0.01',
+    minimumBaseSize: '0.0001',
+    maximumBaseSize: '10',
+    minimumQuoteSize: '5',
+    tradingEnabled: true,
+    supportedOrderTypes: ['MARKET'],
+    observedAt: '2026-07-17T09:00:00.000Z',
+    expiresAt: '2026-07-17T09:05:00.000Z',
+  })
+
+  const result = validateOrderAgainstProductRules({
+    intentId: 'intent-3',
+    idempotencyKey: 'order:2026:0004',
+    correlationId: 'correlation-3',
+    exchangeAccountId: 'account-ref-hash',
+    productId: 'BTC-USD',
+    side: 'BUY',
+    orderType: 'MARKET',
+    baseQuantity: null,
+    quoteNotional: asDecimalString('25'),
+    limitPrice: null,
+    stopPrice: null,
+    strategyId: null,
+    requestedBy: 'operator-123',
+    requestedAt: '2026-07-17T10:00:00.000Z',
+  }, rules, new Date('2026-07-17T10:00:00.000Z'))
+
+  assert.equal(result.accepted, false)
+  assert.ok(result.reasons.includes('product_rules_stale'))
 })
