@@ -1,9 +1,13 @@
 version: 2.1
 
-jobs:
-  frontend-build:
+executors:
+  node-worker:
     docker:
       - image: cimg/node:22.12.0
+
+jobs:
+  frontend-build:
+    executor: node-worker
     steps:
       - checkout
       - run:
@@ -24,9 +28,8 @@ jobs:
             VITE_API_BASE_URL: /api
           command: npm run build
 
-  worker-fast-path:
-    docker:
-      - image: cimg/node:22.12.0
+  worker-root-contracts:
+    executor: node-worker
     steps:
       - checkout
       - run:
@@ -40,15 +43,36 @@ jobs:
       - run:
           name: Run fast-path and v2 contract tests
           command: npm run test:worker
+
+  worker-live-foundation-tests:
+    executor: node-worker
+    steps:
+      - checkout
       - run:
           name: Install Worker dependencies
           command: npm --prefix worker ci
       - run:
-          name: Run disabled live-candidate foundation tests
+          name: Run disabled live, transfer, and certification foundation tests
           command: npm --prefix worker run test:live-foundation
+
+  worker-typecheck:
+    executor: node-worker
+    steps:
+      - checkout
+      - run:
+          name: Install Worker dependencies
+          command: npm --prefix worker ci
       - run:
           name: Type-check Cloudflare Worker
           command: npm --prefix worker run build
+
+  worker-safety-contracts:
+    executor: node-worker
+    steps:
+      - checkout
+      - run:
+          name: Install Worker dependencies
+          command: npm --prefix worker ci
       - run:
           name: Verify paper-safety contract
           command: npm --prefix worker run verify:paper-safety
@@ -56,8 +80,38 @@ jobs:
           name: Verify disabled live-candidate safety contract
           command: npm --prefix worker run verify:live-candidate-safety
       - run:
+          name: Verify regulated foundation safety contract
+          command: node worker/scripts/verify-regulated-foundation-safety.mjs
+      - run:
+          name: Verify certification safety contract
+          command: node worker/scripts/verify-certification-safety.mjs
+      - run:
+          name: Verify operational CryptoOps Actions remain read-only
+          command: node scripts/verify-cryptoops-readonly-openapi.mjs
+      - run:
+          name: Verify candidate CryptoOps schemas remain read-only
+          command: node worker/scripts/verify-cryptoops-readonly-openapi.mjs
+
+  worker-dry-run-bundles:
+    executor: node-worker
+    steps:
+      - checkout
+      - run:
+          name: Install Worker dependencies
+          command: npm --prefix worker ci
+      - run:
           name: Build disabled live-candidate dry-run bundle
           command: npm --prefix worker run bundle:live-candidate
+      - run:
+          name: Build disabled withdrawal-candidate dry-run bundle
+          command: npm --prefix worker run bundle:withdrawals-candidate
+
+  worker-fast-path:
+    executor: node-worker
+    steps:
+      - run:
+          name: Confirm all Worker gates passed
+          command: echo "All Worker fast-path gates passed."
 
   backend-test-audit:
     docker:
@@ -103,5 +157,16 @@ workflows:
   stabilize-production-runtime:
     jobs:
       - frontend-build
-      - worker-fast-path
+      - worker-root-contracts
+      - worker-live-foundation-tests
+      - worker-typecheck
+      - worker-safety-contracts
+      - worker-dry-run-bundles
+      - worker-fast-path:
+          requires:
+            - worker-root-contracts
+            - worker-live-foundation-tests
+            - worker-typecheck
+            - worker-safety-contracts
+            - worker-dry-run-bundles
       - backend-test-audit
