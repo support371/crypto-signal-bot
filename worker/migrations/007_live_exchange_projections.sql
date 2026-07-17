@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS live_orders (
   internal_order_id TEXT PRIMARY KEY,
   exchange_account_id TEXT NOT NULL,
   exchange_order_id TEXT,
-  client_order_id TEXT NOT NULL,
+  client_order_id TEXT,
   product_id TEXT NOT NULL,
   side TEXT NOT NULL CHECK (side IN ('BUY', 'SELL')),
   order_type TEXT NOT NULL CHECK (order_type IN ('MARKET', 'LIMIT', 'STOP', 'STOP_LIMIT')),
@@ -74,6 +74,11 @@ CREATE TABLE IF NOT EXISTS live_orders (
   CHECK (
     (requested_base_quantity IS NOT NULL AND requested_quote_notional IS NULL)
     OR (requested_base_quantity IS NULL AND requested_quote_notional IS NOT NULL)
+    OR (
+      state = 'RECOVERY_REQUIRED'
+      AND requested_base_quantity IS NULL
+      AND requested_quote_notional IS NULL
+    )
   )
 );
 
