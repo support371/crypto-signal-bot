@@ -10,6 +10,10 @@ import {
   type CandidateEvidenceBase,
   type CandidateEvidenceEnvelope,
 } from './candidate-evidence.ts'
+import {
+  decideCandidateProjectionRetry,
+  type CandidateProjectionStatus,
+} from './candidate-projection-retry.ts'
 
 export interface AccountCoordinatorEnv {
   DB: D1Database
@@ -20,7 +24,7 @@ export interface AccountCoordinatorEnv {
 }
 
 interface CoordinatorMetadata {
-  schemaVersion: 2
+  schemaVersion: 3
   createdAt: string
   halted: true
   haltReason: 'LIVE_CANDIDATE_EXECUTION_LOCKED'
@@ -36,7 +40,17 @@ type LocalAssessmentRow = {
 }
 
 type OutboxRow = {
-  projection_status: 'PENDING' | 'PROJECTED' | 'CONFLICT'
+  projection_status: CandidateProjectionStatus
+  attempt_count: number
+  next_attempt_at: string | null
+  last_error_code: string | null
+}
+
+type PendingProjectionRow = OutboxRow & {
+  projection_event_id: string
+  assessment_id: string
+  payload_hash: string
+  envelope_json: string
 }
 
 type CountRow = {
@@ -51,14 +65,19 @@ type EnvelopeRow = {
   envelope_json: string
 }
 
+type NextAlarmRow = {
+  next_attempt_at: string | null
+}
+
 interface CommitResult {
   envelope: CandidateEvidenceEnvelope
   replayed: boolean
-  outboxStatus: OutboxRow['projection_status']
+  outbox: OutboxRow
 }
 
 const METADATA_KEY = 'coordinator:metadata'
 const MAX_REQUEST_BYTES = 256 * 1024
+const MAX_ALARM_PROJECTIONS = 20
 const INTERNAL_TOKEN_HEADER = 'X-Candidate-Evidence-Token'
 
 function json(payload: unknown, status = 200): Response {
@@ -105,6 +124,14 @@ function parseEnvelope(value: string): CandidateEvidenceEnvelope {
   return parsed
 }
 
+function projectionEventId(
+  projectionId: string,
+  attemptCount: number,
+  status: CandidateProjectionStatus,
+): string {
+  return `${projectionId}:${attemptCount}:${status}`
+}
+
 /**
  * Serializes candidate evidence for one exchange account.
  *
@@ -124,19 +151,19 @@ export class ExchangeAccountCoordinator {
     this.state.blockConcurrencyWhile(async () => {
       this.initializeSqlSchema()
       const existing = await this.state.storage.get<CoordinatorMetadata>(METADATA_KEY)
-      if (existing?.schemaVersion === 2) {
+      if (existing?.schemaVersion === 3) {
         this.metadata = existing
-        return
+      } else {
+        const created: CoordinatorMetadata = {
+          schemaVersion: 3,
+          createdAt: existing?.createdAt ?? new Date().toISOString(),
+          halted: true,
+          haltReason: 'LIVE_CANDIDATE_EXECUTION_LOCKED',
+        }
+        await this.state.storage.put(METADATA_KEY, created)
+        this.metadata = created
       }
-
-      const created: CoordinatorMetadata = {
-        schemaVersion: 2,
-        createdAt: existing?.createdAt ?? new Date().toISOString(),
-        halted: true,
-        haltReason: 'LIVE_CANDIDATE_EXECUTION_LOCKED',
-      }
-      await this.state.storage.put(METADATA_KEY, created)
-      this.metadata = created
+      await this.scheduleNextAlarm()
     })
   }
 
@@ -175,13 +202,35 @@ export class ExchangeAccountCoordinator {
         assessment_id TEXT NOT NULL UNIQUE,
         payload_hash TEXT NOT NULL UNIQUE CHECK (length(payload_hash) = 64),
         projection_status TEXT NOT NULL DEFAULT 'PENDING'
-          CHECK (projection_status IN ('PENDING', 'PROJECTED', 'CONFLICT')),
+          CHECK (projection_status IN ('PENDING', 'PROJECTED', 'CONFLICT', 'DEAD_LETTER')),
         attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
         last_error_code TEXT,
+        next_attempt_at TEXT,
+        first_failed_at TEXT,
         projected_at TEXT,
+        dead_lettered_at TEXT,
         updated_at TEXT NOT NULL,
         FOREIGN KEY (assessment_id) REFERENCES candidate_assessment_commits(assessment_id)
       );
+
+      CREATE TABLE IF NOT EXISTS candidate_projection_events (
+        sequence_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id TEXT NOT NULL UNIQUE,
+        projection_event_id TEXT NOT NULL,
+        previous_status TEXT,
+        next_status TEXT NOT NULL
+          CHECK (next_status IN ('PENDING', 'PROJECTED', 'CONFLICT', 'DEAD_LETTER')),
+        attempt_count INTEGER NOT NULL CHECK (attempt_count >= 0),
+        error_code TEXT,
+        occurred_at TEXT NOT NULL,
+        FOREIGN KEY (projection_event_id) REFERENCES candidate_projection_outbox(projection_event_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_candidate_projection_outbox_due
+        ON candidate_projection_outbox(projection_status, next_attempt_at);
+
+      CREATE INDEX IF NOT EXISTS idx_candidate_projection_events_projection
+        ON candidate_projection_events(projection_event_id, sequence_id);
 
       CREATE TRIGGER IF NOT EXISTS candidate_assessment_commits_no_update
       BEFORE UPDATE ON candidate_assessment_commits
@@ -212,6 +261,18 @@ export class ExchangeAccountCoordinator {
       FOR EACH ROW BEGIN
         SELECT RAISE(ABORT, 'candidate_projection_outbox cannot be deleted');
       END;
+
+      CREATE TRIGGER IF NOT EXISTS candidate_projection_events_no_update
+      BEFORE UPDATE ON candidate_projection_events
+      FOR EACH ROW BEGIN
+        SELECT RAISE(ABORT, 'candidate_projection_events cannot be updated');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS candidate_projection_events_no_delete
+      BEFORE DELETE ON candidate_projection_events
+      FOR EACH ROW BEGIN
+        SELECT RAISE(ABORT, 'candidate_projection_events cannot be deleted');
+      END;
     `)
   }
 
@@ -230,17 +291,22 @@ export class ExchangeAccountCoordinator {
     return null
   }
 
+  private countOutbox(status: CandidateProjectionStatus): number {
+    return this.state.storage.sql.exec<CountRow>(`
+      SELECT COUNT(*) AS count
+        FROM candidate_projection_outbox
+       WHERE projection_status = ?
+    `, status).one().count
+  }
+
   private snapshot(): Record<string, unknown> {
     const assessmentCount = this.state.storage.sql.exec<CountRow>(
       'SELECT COUNT(*) AS count FROM candidate_assessment_commits',
     ).one().count
-    const pendingProjectionCount = this.state.storage.sql.exec<CountRow>(
-      "SELECT COUNT(*) AS count FROM candidate_projection_outbox WHERE projection_status = 'PENDING'",
-    ).one().count
 
     return {
       coordinatorId: this.state.id.toString(),
-      schemaVersion: this.metadata?.schemaVersion ?? 2,
+      schemaVersion: this.metadata?.schemaVersion ?? 3,
       createdAt: this.metadata?.createdAt ?? null,
       halted: true,
       haltReason: 'LIVE_CANDIDATE_EXECUTION_LOCKED',
@@ -249,11 +315,30 @@ export class ExchangeAccountCoordinator {
       withdrawalsEnabled: false,
       candidateEvidencePersistenceEnabled: Boolean(String(this.env.CANDIDATE_EVIDENCE_TOKEN ?? '').trim()),
       assessmentCount,
-      pendingProjectionCount,
+      pendingProjectionCount: this.countOutbox('PENDING'),
+      projectedCount: this.countOutbox('PROJECTED'),
+      projectionConflictCount: this.countOutbox('CONFLICT'),
+      projectionDeadLetterCount: this.countOutbox('DEAD_LETTER'),
       configuredLiveFlag: String(this.env.LIVE_EXECUTION_ENABLED ?? '').toLowerCase() === 'true',
       configuredWithdrawalsFlag: String(this.env.WITHDRAWALS_ENABLED ?? '').toLowerCase() === 'true',
       buildGitSha: String(this.env.BUILD_GIT_SHA ?? ''),
     }
+  }
+
+  private readOutboxByAssessment(assessmentId: string): OutboxRow {
+    return this.state.storage.sql.exec<OutboxRow>(`
+      SELECT projection_status, attempt_count, next_attempt_at, last_error_code
+        FROM candidate_projection_outbox
+       WHERE assessment_id = ?
+    `, assessmentId).one()
+  }
+
+  private readOutboxByProjection(projectionId: string): OutboxRow {
+    return this.state.storage.sql.exec<OutboxRow>(`
+      SELECT projection_status, attempt_count, next_attempt_at, last_error_code
+        FROM candidate_projection_outbox
+       WHERE projection_event_id = ?
+    `, projectionId).one()
   }
 
   private commitEvidence(base: CandidateEvidenceBase): CommitResult {
@@ -269,12 +354,11 @@ export class ExchangeAccountCoordinator {
           throw new CandidateEvidenceConflictError('idempotency key was already used with different evidence')
         }
         const envelope = parseEnvelope(existing.envelope_json)
-        const outbox = this.state.storage.sql.exec<OutboxRow>(`
-          SELECT projection_status
-            FROM candidate_projection_outbox
-           WHERE assessment_id = ?
-        `, envelope.assessmentId).one()
-        return { envelope, replayed: true, outboxStatus: outbox.projection_status }
+        return {
+          envelope,
+          replayed: true,
+          outbox: this.readOutboxByAssessment(envelope.assessmentId),
+        }
       }
 
       this.state.storage.sql.exec(`
@@ -329,42 +413,231 @@ export class ExchangeAccountCoordinator {
       this.state.storage.sql.exec(`
         INSERT INTO candidate_projection_outbox (
           projection_event_id, assessment_id, payload_hash,
-          projection_status, attempt_count, updated_at
-        ) VALUES (?, ?, ?, 'PENDING', 0, ?)
+          projection_status, attempt_count, next_attempt_at, updated_at
+        ) VALUES (?, ?, ?, 'PENDING', 0, ?, ?)
       `,
       envelope.projectionEventId,
       envelope.assessmentId,
       envelope.payloadHash,
+      envelope.committedAt,
       envelope.committedAt)
 
-      return { envelope, replayed: false, outboxStatus: 'PENDING' }
+      this.state.storage.sql.exec(`
+        INSERT INTO candidate_projection_events (
+          event_id, projection_event_id, previous_status, next_status,
+          attempt_count, error_code, occurred_at
+        ) VALUES (?, ?, NULL, 'PENDING', 0, NULL, ?)
+      `,
+      projectionEventId(envelope.projectionEventId, 0, 'PENDING'),
+      envelope.projectionEventId,
+      envelope.committedAt)
+
+      return {
+        envelope,
+        replayed: false,
+        outbox: {
+          projection_status: 'PENDING',
+          attempt_count: 0,
+          next_attempt_at: envelope.committedAt,
+          last_error_code: null,
+        },
+      }
     })
   }
 
-  private updateOutbox(
+  private recordProjectionSuccess(
     envelope: CandidateEvidenceEnvelope,
-    status: OutboxRow['projection_status'],
-    errorCode: string | null,
-  ): void {
-    this.state.storage.transactionSync(() => {
+    previous: OutboxRow,
+    occurredAt: string,
+  ): OutboxRow {
+    const attemptCount = previous.attempt_count + 1
+    return this.state.storage.transactionSync(() => {
       this.state.storage.sql.exec(`
         UPDATE candidate_projection_outbox
-           SET projection_status = ?,
-               attempt_count = attempt_count + 1,
-               last_error_code = ?,
-               projected_at = CASE WHEN ? = 'PROJECTED' THEN ? ELSE projected_at END,
+           SET projection_status = 'PROJECTED',
+               attempt_count = ?,
+               last_error_code = NULL,
+               next_attempt_at = NULL,
+               projected_at = ?,
                updated_at = ?
          WHERE projection_event_id = ?
            AND payload_hash = ?
+           AND projection_status = 'PENDING'
       `,
-      status,
-      errorCode,
-      status,
-      new Date().toISOString(),
-      new Date().toISOString(),
+      attemptCount,
+      occurredAt,
+      occurredAt,
       envelope.projectionEventId,
       envelope.payloadHash)
+
+      this.state.storage.sql.exec(`
+        INSERT OR IGNORE INTO candidate_projection_events (
+          event_id, projection_event_id, previous_status, next_status,
+          attempt_count, error_code, occurred_at
+        ) VALUES (?, ?, ?, 'PROJECTED', ?, NULL, ?)
+      `,
+      projectionEventId(envelope.projectionEventId, attemptCount, 'PROJECTED'),
+      envelope.projectionEventId,
+      previous.projection_status,
+      attemptCount,
+      occurredAt)
+
+      return {
+        projection_status: 'PROJECTED',
+        attempt_count: attemptCount,
+        next_attempt_at: null,
+        last_error_code: null,
+      }
     })
+  }
+
+  private async recordProjectionFailure(
+    envelope: CandidateEvidenceEnvelope,
+    previous: OutboxRow,
+    error: unknown,
+    now: Date,
+  ): Promise<OutboxRow> {
+    const conflict = error instanceof CandidateEvidenceConflictError
+    const decision = decideCandidateProjectionRetry(previous.attempt_count, conflict, now)
+    const errorCode = sanitizeProjectionError(error)
+    const occurredAt = now.toISOString()
+
+    const next = this.state.storage.transactionSync(() => {
+      this.state.storage.sql.exec(`
+        UPDATE candidate_projection_outbox
+           SET projection_status = ?,
+               attempt_count = ?,
+               last_error_code = ?,
+               next_attempt_at = ?,
+               first_failed_at = COALESCE(first_failed_at, ?),
+               dead_lettered_at = CASE WHEN ? = 'DEAD_LETTER' THEN ? ELSE dead_lettered_at END,
+               updated_at = ?
+         WHERE projection_event_id = ?
+           AND payload_hash = ?
+           AND projection_status = 'PENDING'
+      `,
+      decision.nextStatus,
+      decision.attemptCount,
+      errorCode,
+      decision.nextAttemptAt,
+      occurredAt,
+      decision.nextStatus,
+      occurredAt,
+      occurredAt,
+      envelope.projectionEventId,
+      envelope.payloadHash)
+
+      this.state.storage.sql.exec(`
+        INSERT OR IGNORE INTO candidate_projection_events (
+          event_id, projection_event_id, previous_status, next_status,
+          attempt_count, error_code, occurred_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+      projectionEventId(envelope.projectionEventId, decision.attemptCount, decision.nextStatus),
+      envelope.projectionEventId,
+      previous.projection_status,
+      decision.nextStatus,
+      decision.attemptCount,
+      errorCode,
+      occurredAt)
+
+      return {
+        projection_status: decision.nextStatus,
+        attempt_count: decision.attemptCount,
+        next_attempt_at: decision.nextAttemptAt,
+        last_error_code: errorCode,
+      }
+    })
+
+    await this.scheduleNextAlarm()
+    return next
+  }
+
+  private async markStoredEnvelopeConflict(row: PendingProjectionRow, errorCode: string): Promise<void> {
+    const occurredAt = new Date().toISOString()
+    const decision = decideCandidateProjectionRetry(row.attempt_count, true, new Date(occurredAt))
+    this.state.storage.transactionSync(() => {
+      this.state.storage.sql.exec(`
+        UPDATE candidate_projection_outbox
+           SET projection_status = 'CONFLICT',
+               attempt_count = ?,
+               last_error_code = ?,
+               next_attempt_at = NULL,
+               first_failed_at = COALESCE(first_failed_at, ?),
+               updated_at = ?
+         WHERE projection_event_id = ?
+           AND payload_hash = ?
+           AND projection_status = 'PENDING'
+      `,
+      decision.attemptCount,
+      errorCode,
+      occurredAt,
+      occurredAt,
+      row.projection_event_id,
+      row.payload_hash)
+
+      this.state.storage.sql.exec(`
+        INSERT OR IGNORE INTO candidate_projection_events (
+          event_id, projection_event_id, previous_status, next_status,
+          attempt_count, error_code, occurred_at
+        ) VALUES (?, ?, ?, 'CONFLICT', ?, ?, ?)
+      `,
+      projectionEventId(row.projection_event_id, decision.attemptCount, 'CONFLICT'),
+      row.projection_event_id,
+      row.projection_status,
+      decision.attemptCount,
+      errorCode,
+      occurredAt)
+    })
+    await this.scheduleNextAlarm()
+  }
+
+  private async attemptProjection(envelope: CandidateEvidenceEnvelope): Promise<OutboxRow> {
+    const current = this.readOutboxByProjection(envelope.projectionEventId)
+    if (current.projection_status !== 'PENDING') return current
+
+    try {
+      await projectCandidateEvidenceToD1(this.env.DB, envelope)
+      const projected = this.recordProjectionSuccess(envelope, current, new Date().toISOString())
+      await this.scheduleNextAlarm()
+      return projected
+    } catch (error) {
+      return this.recordProjectionFailure(envelope, current, error, new Date())
+    }
+  }
+
+  private async scheduleNextAlarm(): Promise<void> {
+    const row = this.state.storage.sql.exec<NextAlarmRow>(`
+      SELECT MIN(next_attempt_at) AS next_attempt_at
+        FROM candidate_projection_outbox
+       WHERE projection_status = 'PENDING'
+         AND next_attempt_at IS NOT NULL
+    `).one()
+    if (!row.next_attempt_at) return
+    const parsed = Date.parse(row.next_attempt_at)
+    if (!Number.isFinite(parsed)) return
+    await this.state.storage.setAlarm(Math.max(Date.now() + 1_000, parsed))
+  }
+
+  private readDueProjections(now: string): PendingProjectionRow[] {
+    return this.state.storage.sql.exec<PendingProjectionRow>(`
+      SELECT o.projection_event_id,
+             o.assessment_id,
+             o.payload_hash,
+             o.projection_status,
+             o.attempt_count,
+             o.next_attempt_at,
+             o.last_error_code,
+             a.envelope_json
+        FROM candidate_projection_outbox o
+        JOIN candidate_assessment_commits a
+          ON a.assessment_id = o.assessment_id
+       WHERE o.projection_status = 'PENDING'
+         AND o.next_attempt_at IS NOT NULL
+         AND o.next_attempt_at <= ?
+       ORDER BY o.next_attempt_at ASC, o.projection_event_id ASC
+       LIMIT ?
+    `, now, MAX_ALARM_PROJECTIONS).toArray()
   }
 
   private async readCandidateRequest(request: Request): Promise<CandidateAssessmentRequest> {
@@ -399,18 +672,9 @@ export class ExchangeAccountCoordinator {
         new Date().toISOString(),
       )
       const committed = this.commitEvidence(base)
-
-      let projectionStatus: OutboxRow['projection_status'] = committed.outboxStatus
-      if (projectionStatus !== 'PROJECTED' && projectionStatus !== 'CONFLICT') {
-        try {
-          await projectCandidateEvidenceToD1(this.env.DB, committed.envelope)
-          projectionStatus = 'PROJECTED'
-          this.updateOutbox(committed.envelope, 'PROJECTED', null)
-        } catch (error) {
-          projectionStatus = error instanceof CandidateEvidenceConflictError ? 'CONFLICT' : 'PENDING'
-          this.updateOutbox(committed.envelope, projectionStatus, sanitizeProjectionError(error))
-        }
-      }
+      const outbox = committed.outbox.projection_status === 'PENDING'
+        ? await this.attemptProjection(committed.envelope)
+        : committed.outbox
 
       return json({
         status: committed.envelope.status,
@@ -418,14 +682,17 @@ export class ExchangeAccountCoordinator {
         replayed: committed.replayed,
         authoritativeStore: 'DURABLE_OBJECT_SQLITE',
         projectionStore: 'D1',
-        projectionStatus,
+        projectionStatus: outbox.projection_status,
+        projectionAttemptCount: outbox.attempt_count,
+        nextProjectionAttemptAt: outbox.next_attempt_at,
+        projectionErrorCode: outbox.last_error_code,
         assessmentId: committed.envelope.assessmentId,
         projectionEventId: committed.envelope.projectionEventId,
         coordinatorSequence: committed.envelope.coordinatorSequence,
         evidenceHash: committed.envelope.evidenceHash,
         payloadHash: committed.envelope.payloadHash,
         reservationDraftPersisted: committed.envelope.reservation !== null,
-      }, projectionStatus === 'PROJECTED' ? (committed.replayed ? 200 : 201) : 202)
+      }, outbox.projection_status === 'PROJECTED' ? (committed.replayed ? 200 : 201) : 202)
     } catch (error) {
       const code = safeErrorCode(error)
       const status = error instanceof CandidateEvidenceConflictError
@@ -449,12 +716,36 @@ export class ExchangeAccountCoordinator {
     if (!row) return json({ error: 'Assessment not found', code: 'CANDIDATE_ASSESSMENT_NOT_FOUND' }, 404)
 
     const envelope = parseEnvelope(row.envelope_json)
-    const outbox = this.state.storage.sql.exec<OutboxRow>(`
-      SELECT projection_status
-        FROM candidate_projection_outbox
-       WHERE assessment_id = ?
-    `, assessmentId).one()
-    return json({ envelope, projectionStatus: outbox.projection_status, executionAllowed: false })
+    const outbox = this.readOutboxByAssessment(assessmentId)
+    return json({
+      envelope,
+      projectionStatus: outbox.projection_status,
+      projectionAttemptCount: outbox.attempt_count,
+      nextProjectionAttemptAt: outbox.next_attempt_at,
+      projectionErrorCode: outbox.last_error_code,
+      executionAllowed: false,
+    })
+  }
+
+  async alarm(): Promise<void> {
+    const now = new Date().toISOString()
+    for (const row of this.readDueProjections(now)) {
+      try {
+        const envelope = parseEnvelope(row.envelope_json)
+        if (
+          envelope.projectionEventId !== row.projection_event_id
+          || envelope.assessmentId !== row.assessment_id
+          || envelope.payloadHash !== row.payload_hash
+        ) {
+          await this.markStoredEnvelopeConflict(row, 'STORED_ENVELOPE_HASH_MISMATCH')
+          continue
+        }
+        await this.attemptProjection(envelope)
+      } catch {
+        await this.markStoredEnvelopeConflict(row, 'STORED_ENVELOPE_INVALID')
+      }
+    }
+    await this.scheduleNextAlarm()
   }
 
   async fetch(request: Request): Promise<Response> {
