@@ -1,3 +1,9 @@
+import {
+  CanonicalizationError,
+  canonicalJson,
+  sha256Hex,
+} from './canonical-json.ts'
+
 export type MutationStatus =
   | 'CLAIMED'
   | 'IN_PROGRESS'
@@ -92,38 +98,20 @@ function validateInput(input: MutationClaimInput): void {
   }
 }
 
-function canonicalJson(value: unknown): string {
-  if (value === null) return 'null'
-  if (typeof value === 'string' || typeof value === 'boolean') {
-    return JSON.stringify(value)
-  }
-  if (typeof value === 'number') {
-    if (!Number.isFinite(value)) {
-      throw new InvalidIdempotencyInput('payload contains a non-finite number')
+function serializeCanonical(value: unknown): string {
+  try {
+    return canonicalJson(value)
+  } catch (error) {
+    if (error instanceof CanonicalizationError) {
+      throw new InvalidIdempotencyInput(error.message)
     }
-    return JSON.stringify(value)
+    throw error
   }
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => canonicalJson(item)).join(',')}]`
-  }
-  if (typeof value === 'object') {
-    const record = value as Record<string, unknown>
-    const keys = Object.keys(record).sort()
-    return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`).join(',')}}`
-  }
-  throw new InvalidIdempotencyInput(
-    `payload contains unsupported value type: ${typeof value}`,
-  )
-}
-
-async function sha256Hex(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
 export async function mutationRequestHash(input: MutationClaimInput): Promise<string> {
   validateInput(input)
-  return sha256Hex(canonicalJson({
+  return sha256Hex(serializeCanonical({
     operationScope: input.operationScope,
     exchangeAccountId: input.exchangeAccountId,
     actorId: input.actorId,
@@ -241,7 +229,7 @@ async function updateStatus(
   const placeholders = input.expectedStatuses.map(() => '?').join(', ')
   const responseJson = input.response === undefined
     ? null
-    : canonicalJson(input.response)
+    : serializeCanonical(input.response)
 
   const result = await env.DB.prepare(
     `UPDATE idempotency_records
