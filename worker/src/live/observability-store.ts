@@ -37,7 +37,7 @@ export async function recordMetricSample(
   },
 ): Promise<void> {
   await env.DB.prepare(
-    `INSERT INTO live_metric_samples (
+    `INSERT OR IGNORE INTO live_metric_samples (
        metric_sample_id, exchange_account_id, metric_name, metric_value,
        metric_unit, labels_json, observed_at
      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -64,6 +64,12 @@ export async function openOrRefreshAlert(
     observedAt: string
   },
 ): Promise<void> {
+  const alertEventId = required(input.alertEventId, 'alertEventId')
+  const replay = await env.DB.prepare(
+    'SELECT alert_event_id FROM live_alert_events WHERE alert_event_id = ? LIMIT 1',
+  ).bind(alertEventId).first<{ alert_event_id: string }>()
+  if (replay) return
+
   const observedAt = timestamp(input.observedAt, 'observedAt')
   const existing = await env.DB.prepare(
     `SELECT alert_id, status
@@ -115,7 +121,7 @@ export async function openOrRefreshAlert(
          occurred_at
        ) VALUES (?, ?, ?, 'OPEN', NULL, ?, ?, ?, ?, ?)`,
     ).bind(
-      required(input.alertEventId, 'alertEventId'),
+      alertEventId,
       alertId,
       previousStatus,
       input.alert.reasonCode,
