@@ -19,7 +19,7 @@ Coinbase is optional public/read-only data support. It is not a default executio
 
 BTCC remains fail-closed until an official endpoint manifest is imported, hashed, reviewed, and restricted to verified read-only operations. No BTCC endpoint path or signing rule may be guessed from incomplete documentation.
 
-Bitget currently has strict spot response normalizers and an authenticated read-only REST transport. The transport accepts only allowlisted `GET` requests, checks response and query limits, rejects redirects, and rejects API-key authorities that include trading, transfer, or withdrawal permissions.
+Bitget currently has strict spot response normalizers, an authenticated read-only REST transport, and a local locked preview. The transport accepts only allowlisted `GET` requests, checks response and query limits, rejects redirects, and rejects API-key authorities that include trading, transfer, or withdrawal permissions.
 
 ## Safety invariants
 
@@ -35,6 +35,7 @@ Bitget currently has strict spot response normalizers and an authenticated read-
 - The account Durable Object accepts health reads only and rejects financial commands with HTTP 423.
 - Internal and coordinator route prefixes are unavailable through the public Worker.
 - No timeout, ambiguous response, or repeated request authorizes another order submission.
+- Preview and assessment evidence always reports `executionAllowed=false`.
 - Certification evidence can never activate the candidate; `certifiedForLive` is permanently false in this branch.
 
 ## Implemented layers
@@ -51,17 +52,33 @@ Bitget currently has strict spot response normalizers and an authenticated read-
 
 ### Exact financial representation
 
-`worker/src/live/decimal.ts` uses BigInt-backed decimal coefficients and explicit scale. It provides canonical parsing, comparison, addition, multiplication, signed and non-negative subtraction, increment alignment, and downward quantization.
+`worker/src/live/decimal.ts` uses BigInt-backed decimal coefficients and explicit scale. It provides canonical parsing, comparison, addition, multiplication, exact downward-rounded division at an explicit scale, signed and non-negative subtraction, increment alignment, and downward quantization.
 
-JavaScript floating-point values are not used for order quantities, notionals, increments, ledger amounts, fees, or reconciliation quantities.
+JavaScript floating-point values are not used for order quantities, notionals, increments, ledger amounts, fees, previews, or reconciliation quantities.
 
 ### Product-rule enforcement
 
 `worker/src/live/product-rules.ts` rejects stale or future-dated metadata, disabled products, unsupported order types, ambiguous size bases, increment mismatches, limit violations, and missing or prohibited price fields. It never silently rounds an invalid order into validity.
 
+### Locked Bitget preview
+
+`worker/src/live/adapters/bitget/preview.ts` provides a deterministic local estimate using fresh product rules, a fresh reference price, an explicit fee rate, and bounded slippage assumptions.
+
+The preview calculates exact estimated fill price, base quantity, quote value, fees, total debit, and net credit. It rejects stale prices, product mismatches, invalid provider sizing, excessive fee rates, and excessive slippage assumptions.
+
+Every preview is hash-bound, carries `LOCAL_LOCKED_ESTIMATE`, warns that it is not an exchange guarantee, and reports `executionAllowed=false`. The adapter's create, cancel, replace, and withdrawal methods permanently throw execution-lock errors.
+
+### Candidate assessment pipeline
+
+`worker/src/live/candidate-command-plan.ts` is a pure, non-mutating assessment pipeline. It combines locked preview evidence, deterministic risk evaluation, and a balanced reservation-journal draft.
+
+The pipeline forces `executionUnlocked=false`, imports no provider submission client, performs no fetch or D1 mutation, and ends only as `REJECTED` or `READY_BUT_EXECUTION_LOCKED`. A separate static verifier proves those invariants.
+
 ### Pre-trade risk
 
 `worker/src/live/risk-engine.ts` requires account eligibility, release authorization, Guardian health, execution unlock, fresh market and product data, clear reconciliation, durable idempotency, sufficient balances, and configured order, daily, position, and open-order limits.
+
+The candidate assessment may demonstrate that every non-execution rule passes, but the forced execution-lock rule keeps the full risk decision unapproved.
 
 ### Durable idempotency
 
@@ -79,7 +96,7 @@ Migration `004_live_idempotency_records.sql` and `worker/src/live/idempotency.ts
 
 Migration `005_live_ledger_and_reservations.sql` creates ledger accounts, journals, entries, and reservations. `worker/src/live/ledger.ts` validates balanced journals independently for every asset and builds exact reservation, release, buy-fill, sell-fill, and fee entries.
 
-Financial balances must not change without a balanced journal.
+Financial balances must not change without a balanced journal. The candidate assessment creates a draft only; it does not persist or apply that draft.
 
 ### Reconciliation and projections
 
@@ -114,11 +131,11 @@ The branch defines separate CircleCI gates for:
 
 - legacy Worker contracts;
 - the full disabled live-foundation test suite;
-- BTCC and Bitget provider tests;
+- BTCC and Bitget provider and preview tests;
 - complete Worker type checking;
 - provider-only type checking;
 - paper safety;
-- live-candidate safety;
+- live-candidate and command-lock safety;
 - regulated-foundation safety;
 - certification safety;
 - operational and candidate CryptoOps read-only schemas;
@@ -133,14 +150,13 @@ Local migration commands exist for migrations 003 through 013. The branch must r
 
 1. Import and review BTCC's official endpoint and signing manifest; then build its bounded read-only client.
 2. Execute Bitget read-only contract tests in an isolated non-live environment using a server-side key that has no write, transfer, or withdrawal authority.
-3. Add provider-specific preview contracts without exposing submission capability.
-4. Connect authorization, idempotency, validation, risk, reservation, preview, and coordinator commands while retaining a separately reviewed hard execution lock.
-5. Complete provider fill-to-ledger processing, positions, fees, cost basis, tax lots, and P&L reconciliation.
-6. Add BTCC and Bitget user-event or polling recovery with sequence, freshness, and REST snapshot rules.
-7. Bind queues, schedules, retry budgets, dead-letter operations, and production alert delivery.
-8. Build role-scoped frontend account, order-preview, risk, Guardian, reconciliation, audit, deposit, and withdrawal controls.
-9. Rehearse rollback, disaster recovery, key rotation, incident response, and provider outage handling.
-10. Complete independent security, eligibility, legal, jurisdiction, compliance, and tax review before any separate activation release.
+3. Persist candidate assessment and reservation evidence atomically while retaining the hard Durable Object execution lock.
+4. Complete provider fill-to-ledger processing, positions, fees, cost basis, tax lots, and P&L reconciliation.
+5. Add BTCC and Bitget user-event or polling recovery with sequence, freshness, and REST snapshot rules.
+6. Bind queues, schedules, retry budgets, dead-letter operations, and production alert delivery.
+7. Build role-scoped frontend account, order-preview, risk, Guardian, reconciliation, audit, deposit, and withdrawal controls.
+8. Rehearse rollback, disaster recovery, key rotation, incident response, and provider outage handling.
+9. Complete independent security, eligibility, legal, jurisdiction, compliance, and tax review before any separate activation release.
 
 ## Activation boundary
 
