@@ -64,6 +64,9 @@ CREATE TABLE IF NOT EXISTS live_reservation_settlement_events (
   FOREIGN KEY (fill_id) REFERENCES live_fills(fill_id)
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_live_reservation_settlement_version_claim
+  ON live_reservation_settlement_receipts(reservation_id, next_version);
+
 CREATE INDEX IF NOT EXISTS idx_live_reservation_settlement_reservation_time
   ON live_reservation_settlement_receipts(reservation_id, settled_at);
 
