@@ -6,7 +6,10 @@ import {
   FillAccountingConflictError,
   type PersistSpotFillAccountingInput,
 } from '../src/live/fill-accounting-store.ts'
-import { persistSpotFillAccountingVerified } from '../src/live/fill-accounting-service.ts'
+import {
+  persistSpotFillAccountingVerified,
+  type VerifiedSpotFillAccountingInput,
+} from '../src/live/fill-accounting-service.ts'
 import { asDecimalString } from '../src/live/decimal.ts'
 
 type Receipt = {
@@ -46,8 +49,10 @@ class FakeDatabase {
   storeReceipt: Receipt | null = null
   verificationReceipt: Receipt | null = null
   journal: { journal_id: string } | null = null
+  queryCount = 0
 
   prepare(sql: string): D1PreparedStatement {
+    this.queryCount += 1
     return new FakeStatement(this, sql) as unknown as D1PreparedStatement
   }
 
@@ -70,8 +75,11 @@ class FakeDatabase {
   }
 }
 
-function input(): PersistSpotFillAccountingInput {
+function input(
+  overrides: Partial<VerifiedSpotFillAccountingInput> = {},
+): VerifiedSpotFillAccountingInput {
   return {
+    exchangeName: 'BITGET',
     exchangeAccountId: 'bitget-account-ref',
     internalOrderId: 'order-replay-1',
     correlationId: 'correlation-replay-1',
@@ -102,6 +110,7 @@ function input(): PersistSpotFillAccountingInput {
       feeSourceAccountId: null,
     },
     rawResponseHash: 'a'.repeat(64),
+    ...overrides,
   }
 }
 
@@ -153,6 +162,7 @@ test('replay returns position quantity and cumulative realized PnL from immutabl
 
   const result = await persistSpotFillAccountingVerified({ DB: database.asD1() }, input())
 
+  assert.equal(result.exchangeName, 'BITGET')
   assert.equal(result.status, 'REPLAYED')
   assert.equal(result.positionQuantity, '0.025')
   assert.equal(result.cumulativeRealizedPnlQuote, '-12.5')
@@ -160,6 +170,35 @@ test('replay returns position quantity and cumulative realized PnL from immutabl
   assert.equal(result.providerMutationAllowed, false)
   assert.equal(result.reservationApplied, false)
   assert.equal(result.executionAllowed, false)
+})
+
+test('BTCC is accepted as the primary accounting provider', async () => {
+  const database = new FakeDatabase()
+  database.receiptPresence = { accounting_receipt_id: 'fill-accounting-receipt:fill-replay-1' }
+  database.storeReceipt = await receipt()
+  database.verificationReceipt = await receipt()
+
+  const result = await persistSpotFillAccountingVerified(
+    { DB: database.asD1() },
+    input({ exchangeName: 'BTCC' }),
+  )
+
+  assert.equal(result.exchangeName, 'BTCC')
+  assert.equal(result.replayStateVerified, true)
+})
+
+test('Coinbase and unknown venues fail before any accounting query', async () => {
+  for (const exchangeName of ['COINBASE', 'UNKNOWN']) {
+    const database = new FakeDatabase()
+    await assert.rejects(
+      persistSpotFillAccountingVerified(
+        { DB: database.asD1() },
+        input({ exchangeName }),
+      ),
+      /Unsupported execution exchange/,
+    )
+    assert.equal(database.queryCount, 0)
+  }
 })
 
 test('replay rejects immutable receipt evidence that changes during verification', async () => {
