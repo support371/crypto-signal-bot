@@ -1,14 +1,19 @@
-export type DecimalString = string & { readonly __decimalString: unique symbol }
+import type { DecimalString } from './decimal'
 
-const DECIMAL_PATTERN = /^(0|[1-9]\d*)(\.\d+)?$/
-
-export function asDecimalString(value: unknown, field = 'value'): DecimalString {
-  const normalized = String(value ?? '').trim()
-  if (!DECIMAL_PATTERN.test(normalized)) {
-    throw new TypeError(`${field} must be a non-negative base-10 decimal string`)
-  }
-  return normalized as DecimalString
-}
+export {
+  addDecimal,
+  asDecimalString,
+  asSignedDecimalString,
+  assertPositiveDecimal,
+  compareDecimal,
+  isIncrementAligned,
+  isPositiveDecimal,
+  multiplyDecimal,
+  quantizeDown,
+  subtractDecimal,
+  sumDecimals,
+} from './decimal'
+export type { DecimalString, SignedDecimalString } from './decimal'
 
 export type TradingEnvironment = 'paper' | 'shadow' | 'testnet' | 'live-candidate' | 'live'
 export type OrderSide = 'BUY' | 'SELL'
