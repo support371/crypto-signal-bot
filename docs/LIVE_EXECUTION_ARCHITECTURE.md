@@ -2,55 +2,70 @@
 
 ## Status
 
-This branch contains a production-oriented foundation for a future real-money-capable execution system. It does not enable live trading, deposits, or withdrawals.
+This branch contains the disabled foundation of a future real-money-capable execution system. It does not enable live trading, deposits, or withdrawals.
 
-The live-candidate Worker is intentionally read-only and always reports `liveReady: false`.
+The live-candidate Worker is read-only, has no public route or cron trigger, and always reports `liveReady: false`.
+
+## Canonical exchange policy
+
+The execution-provider order is fixed in code and configuration:
+
+1. **BTCC** — primary execution target.
+2. **Bitget** — secondary execution target and current default public market-data source.
+
+`bitgate` is treated only as a legacy spelling of `Bitget`.
+
+Coinbase is optional public/read-only data support. It is not a default execution exchange and cannot be certified as the execution provider for this candidate.
+
+BTCC remains fail-closed until an official endpoint manifest is imported, hashed, reviewed, and restricted to verified read-only operations. No BTCC endpoint path or signing rule may be guessed from incomplete documentation.
+
+Bitget currently has strict spot response normalizers and an authenticated read-only REST transport. The transport accepts only allowlisted `GET` requests, checks response and query limits, rejects redirects, and rejects API-key authorities that include trading, transfer, or withdrawal permissions.
 
 ## Safety invariants
 
+- `NETWORK=testnet` by default.
 - `ALLOW_MAINNET=false` by default.
 - `LIVE_EXECUTION_ENABLED=false` by default.
 - `WITHDRAWALS_ENABLED=false` by default.
-- No exchange credential exists in source, configuration, D1, KV, R2, browser storage, or tests.
-- Legacy live, order, and withdrawal routes return HTTP 403.
+- No exchange credential exists in source, TOML variables, D1, KV, R2, browser storage, tests, logs, or documentation.
+- Candidate resources use isolated names and placeholder IDs.
+- Legacy live, order, transfer, and withdrawal routes return HTTP 403.
 - Every non-safe HTTP method returns HTTP 403.
 - Sensitive reads fail closed when operator authentication is absent.
-- Candidate resources use isolated names and placeholder IDs, preventing accidental production deployment.
-- No routes or cron triggers are attached to the candidate configuration.
-- The account Durable Object accepts health reads only and rejects commands with HTTP 423.
-- Internal and coordinator route prefixes are deliberately unavailable through the public Worker.
+- The account Durable Object accepts health reads only and rejects financial commands with HTTP 423.
+- Internal and coordinator route prefixes are unavailable through the public Worker.
+- No timeout, ambiguous response, or repeated request authorizes another order submission.
+- Certification evidence can never activate the candidate; `certifiedForLive` is permanently false in this branch.
 
 ## Implemented layers
 
+### Provider registry and contracts
+
+`worker/src/live/exchange-registry.ts` enforces BTCC first and Bitget second. Coinbase is marked `marketDataOnly` and `executionDefault=false`.
+
+`worker/src/live/adapters/btcc/contract.ts` requires a dated, SHA-256-bound, HTTPS, GET-only endpoint manifest before a BTCC read client can be implemented. Mutating-looking endpoint names or paths are rejected.
+
+`worker/src/live/adapters/bitget/endpoints.ts` contains the verified read-only spot endpoint allowlist. `worker/src/live/adapters/bitget/read-only-client.ts` implements bounded HMAC-authenticated reads through an injected server-side secret provider. It does not implement order placement, cancellation, replacement, deposit, transfer, or withdrawal requests.
+
+`worker/src/live/adapters/bitget/normalizer.ts` normalizes product rules, balances, orders, and fills using exact decimal strings. Market buys remain quote-sized; the adapter never invents a requested base quantity.
+
 ### Exact financial representation
 
-`worker/src/live/decimal.ts` uses BigInt-backed decimal coefficients and explicit scale. It provides canonical parsing, comparison, addition, multiplication, signed subtraction, non-negative subtraction, increment alignment, and downward quantization.
+`worker/src/live/decimal.ts` uses BigInt-backed decimal coefficients and explicit scale. It provides canonical parsing, comparison, addition, multiplication, signed and non-negative subtraction, increment alignment, and downward quantization.
 
-JavaScript floating-point values are not used for order quantities, notionals, product increments, ledger amounts, or reconciliation quantities in this foundation.
+JavaScript floating-point values are not used for order quantities, notionals, increments, ledger amounts, fees, or reconciliation quantities.
 
 ### Product-rule enforcement
 
-`worker/src/live/product-rules.ts` normalizes exchange product metadata and rejects:
+`worker/src/live/product-rules.ts` rejects stale or future-dated metadata, disabled products, unsupported order types, ambiguous size bases, increment mismatches, limit violations, and missing or prohibited price fields. It never silently rounds an invalid order into validity.
 
-- stale or future-dated product rules;
-- disabled products;
-- unsupported order types;
-- ambiguous order-size bases;
-- values not exactly aligned to exchange increments;
-- values below minimum or above maximum sizes;
-- missing or prohibited limit and stop prices.
+### Pre-trade risk
 
-The validator never silently rounds an order into validity.
-
-### Deterministic pre-trade risk
-
-`worker/src/live/risk-engine.ts` requires all mandatory gates to pass, including account eligibility, release authorization, Guardian health, execution unlock, fresh feeds and product rules, clear reconciliation, durable idempotency, available balances, and configured order, daily, position, and open-order limits.
+`worker/src/live/risk-engine.ts` requires account eligibility, release authorization, Guardian health, execution unlock, fresh market and product data, clear reconciliation, durable idempotency, sufficient balances, and configured order, daily, position, and open-order limits.
 
 ### Durable idempotency
 
-Migration `004_live_idempotency_records.sql` and `worker/src/live/idempotency.ts` implement request hashing, uniqueness by operation scope and idempotency key, conflict detection, in-progress responses, terminal replay, and recovery-required handling.
-
-No timeout or repeated request is interpreted as permission to submit another exchange order.
+Migration `004_live_idempotency_records.sql` and `worker/src/live/idempotency.ts` implement canonical request hashing, uniqueness by operation scope and idempotency key, conflict detection, in-progress responses, terminal replay, and recovery-required handling.
 
 ### Serialized account boundary
 
@@ -58,70 +73,75 @@ No timeout or repeated request is interpreted as permission to submit another ex
 
 ### Order lifecycle
 
-`worker/src/live/order-state-machine.ts` defines explicit legal transitions for validation, risk, reservation, preview, submission, open orders, partial fills, cancellation, terminal outcomes, recovery, and settlement.
+`worker/src/live/order-state-machine.ts` defines explicit legal transitions for validation, risk, reservation, preview, submission, open orders, partial fills, cancellation, terminal outcomes, recovery, and settlement. Illegal transitions throw.
 
-Illegal transitions throw and must never be silently accepted. Final fill, cancellation, rejection, expiration, failure, and settlement states are classified as terminal; unresolved exchange states remain explicitly active.
+### Reservations and accounting
 
-### Reservations and double-entry accounting
+Migration `005_live_ledger_and_reservations.sql` creates ledger accounts, journals, entries, and reservations. `worker/src/live/ledger.ts` validates balanced journals independently for every asset and builds exact reservation, release, buy-fill, sell-fill, and fee entries.
 
-Migration `005_live_ledger_and_reservations.sql` creates ledger accounts, journals, entries, and reservations.
+Financial balances must not change without a balanced journal.
 
-`worker/src/live/ledger.ts` validates balanced journals independently for every asset and builds exact reservation, release, buy-fill, sell-fill, and fee entries.
+### Reconciliation and projections
 
-Financial balances must not be changed without a balanced journal.
+`worker/src/live/reconciliation.ts` converts exchange observations into deterministic decisions for fills, partial fills, cancellation, rejection, expiration, stale state, missing identifiers, excessive fills, and inconsistent quantities. Ambiguity results in `RECOVERY_REQUIRED` and `HALT_FOR_REVIEW`, never automatic resubmission.
 
-### Reconciliation
+Migration `007_live_exchange_projections.sql` creates isolated live account, product, order, fill, balance, position, and order-event read models.
 
-`worker/src/live/reconciliation.ts` converts exchange observations into deterministic decisions. It handles full fills, active and terminal partial fills, cancellation, rejection, expiration, stale orders, missing IDs, inconsistent remaining quantities, excessive fills, and unknown statuses.
+### Guardian, authorization, queues, transfers, and observability
 
-Ambiguity results in `RECOVERY_REQUIRED` and `HALT_FOR_REVIEW`; it never results in automatic resubmission.
+Migrations 008 through 012 and their TypeScript services provide:
 
-### Immutable audit chain
+- hierarchical Guardian state and dual-approved reset evidence;
+- role authorization, step-up sessions, revocation, and separation of duties;
+- at-least-once queue deduplication and immutable dead-letter records;
+- isolated deposit and withdrawal state machines;
+- destination screening, time locks, limits, and dual approval;
+- operational metrics, deduplicated alerts, acknowledgement, resolution, and immutable alert events.
 
-Migration `006_live_immutable_audit.sql` creates an append-only audit table with update and delete prevention. A unique predecessor constraint prevents a chain fork.
+The withdrawal candidate is a separate Worker with separate placeholder resources and no transfer-provider client.
 
-`worker/src/live/audit-chain.ts` canonicalizes event payloads, creates SHA-256 event chains, appends events, and verifies chain integrity.
+### Immutable evidence and certification
 
-### Release authorization
+Migration `006_live_immutable_audit.sql` and `worker/src/live/audit-chain.ts` create a SHA-256 event chain with update, delete, and fork prevention.
 
-Migration `003_live_release_authorizations.sql` and `worker/src/live/release-gate.ts` bind authorization to an exact Git SHA, Worker deployment, frontend deployment, schema version, exchange account reference, product allowlist, limits, expiration, and security and compliance review references.
+Migration `003_live_release_authorizations.sql` binds release authorization to the exact Git SHA, Worker and frontend deployments, schema version, exchange account, product allowlist, limits, expiry, and review references.
 
-Activation prerequisites additionally require explicitly provisioned, isolated candidate resources. A live-candidate build remains unable to execute even when every prerequisite record is present.
+Migration `013_live_certification.sql` and `worker/src/live/certification.ts` evaluate mandatory build, security, authorization, exchange, lifecycle, ledger, reconciliation, Guardian, queue, transfer, observability, rollback, and disaster-recovery evidence. Only BTCC or Bitget evidence is accepted, and a passing evidence set still returns `certifiedForLive: false`.
 
-## Verification
+## Validation
 
-The branch includes:
+The branch defines separate CircleCI gates for:
 
-- Node runtime tests for exact decimals, idempotency hashing, order-state transitions, product rules, risk, ledger balancing, reconciliation, and audit chains;
-- full Worker TypeScript type checking;
-- local migration application for migrations 003 through 006;
-- a static live-candidate safety verifier;
-- a Wrangler dry-run bundle;
-- a dedicated GitHub Actions safety workflow;
-- CircleCI enforcement of live-foundation tests, type checking, both safety verifiers, and the dry-run bundle;
-- continued CircleCI paper-path validation.
+- legacy Worker contracts;
+- the full disabled live-foundation test suite;
+- BTCC and Bitget provider tests;
+- complete Worker type checking;
+- provider-only type checking;
+- paper safety;
+- live-candidate safety;
+- regulated-foundation safety;
+- certification safety;
+- operational and candidate CryptoOps read-only schemas;
+- both candidate dry-run bundles;
+- frontend build and backend audit tests.
 
-The branch must remain a draft and must not merge while any required automated check is failing, unavailable, or pending.
+The live tests use Node's `node:test` runner and are excluded from the legacy Vitest contract runner to prevent cross-runner collection.
 
-## Remaining engineering before any live-capable certification
+Local migration commands exist for migrations 003 through 013. The branch must remain draft and must not merge while any required check is failed, pending, blocked, skipped, or unavailable.
 
-The following remain unimplemented or uncertified:
+## Remaining engineering before certification
 
-1. Native authenticated exchange adapter contracts and provider-specific schemas.
-2. Exchange order preview integration.
-3. User-order WebSocket and REST snapshot recovery.
-4. Durable order, fill, balance, position, and product projections.
-5. Coordinator command processing while maintaining the execution lock.
-6. Hierarchical Guardian persistence and dual-approved reset.
-7. Deposit observation lifecycle.
-8. Separately deployed withdrawal service with isolated credentials and dual approval.
-9. User roles, step-up authentication, session revocation, and approval separation.
-10. Queues, dead-letter handling, alert delivery, and reconciliation scheduling.
-11. Frontend live-candidate account, order, risk, reconciliation, and audit interfaces.
-12. Disaster-recovery rehearsal, key-rotation rehearsal, and rollback certification.
-13. Independent security, legal, eligibility, compliance, and tax review.
-14. Provider credentials provisioned outside the repository by an eligible authorized account owner.
+1. Import and review BTCC's official endpoint and signing manifest; then build its bounded read-only client.
+2. Execute Bitget read-only contract tests in an isolated non-live environment using a server-side key that has no write, transfer, or withdrawal authority.
+3. Add provider-specific preview contracts without exposing submission capability.
+4. Connect authorization, idempotency, validation, risk, reservation, preview, and coordinator commands while retaining a separately reviewed hard execution lock.
+5. Complete provider fill-to-ledger processing, positions, fees, cost basis, tax lots, and P&L reconciliation.
+6. Add BTCC and Bitget user-event or polling recovery with sequence, freshness, and REST snapshot rules.
+7. Bind queues, schedules, retry budgets, dead-letter operations, and production alert delivery.
+8. Build role-scoped frontend account, order-preview, risk, Guardian, reconciliation, audit, deposit, and withdrawal controls.
+9. Rehearse rollback, disaster recovery, key rotation, incident response, and provider outage handling.
+10. Complete independent security, eligibility, legal, jurisdiction, compliance, and tax review before any separate activation release.
 
 ## Activation boundary
 
-No code in this branch authorizes mainnet trading or withdrawals. No real funds have moved. A future activation must be a separate reviewed release and must not bypass exchange identity, age, jurisdiction, or account-eligibility requirements.
+No code in this branch authorizes mainnet trading or withdrawals. No real order, deposit, transfer, or withdrawal has been submitted. No exchange credential has been provisioned. Any future activation must be a separate independently reviewed release tied to an exact deployment and must not bypass exchange identity, eligibility, jurisdiction, or account controls.
