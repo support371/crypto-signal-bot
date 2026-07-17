@@ -8,9 +8,12 @@ on:
       - 'worker/src/index_live_candidate.ts'
       - 'worker/tests/live-foundation.test.ts'
       - 'worker/tests/live-ledger.test.ts'
+      - 'worker/tests/live-reconciliation.test.ts'
+      - 'worker/tests/live-audit.test.ts'
       - 'worker/migrations/003_live_release_authorizations.sql'
       - 'worker/migrations/004_live_idempotency_records.sql'
       - 'worker/migrations/005_live_ledger_and_reservations.sql'
+      - 'worker/migrations/006_live_immutable_audit.sql'
       - 'worker/scripts/verify-live-candidate-safety.mjs'
       - 'worker/package.json'
       - 'worker/package-lock.json'
@@ -50,7 +53,7 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
-      - name: Run exact-decimal, product-rule, risk, and ledger tests
+      - name: Run exact-decimal, product-rule, risk, ledger, reconciliation, and audit tests
         run: npm run test:live-foundation
 
       - name: Typecheck Worker
@@ -67,6 +70,9 @@ jobs:
 
       - name: Apply ledger and reservation migration locally
         run: npm run migrate:005:local
+
+      - name: Apply immutable audit migration locally
+        run: npm run migrate:006:local
 
       - name: Build a dry-run Cloudflare bundle
         run: npm run bundle:live-candidate
