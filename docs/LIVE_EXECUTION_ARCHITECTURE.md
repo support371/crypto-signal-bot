@@ -4,7 +4,7 @@
 
 This branch contains the disabled foundation of a future real-money-capable execution system. It does not enable live trading, deposits, or withdrawals.
 
-The live-candidate Worker is read-only, has no public route or cron trigger, and always reports `liveReady: false`.
+The live-candidate Worker is read-only, has no public financial route or cron trigger, and always reports `liveReady: false`.
 
 ## Canonical exchange policy
 
@@ -30,12 +30,14 @@ Bitget currently has strict spot response normalizers, an authenticated read-onl
 - No exchange credential exists in source, TOML variables, D1, KV, R2, browser storage, tests, logs, or documentation.
 - Candidate resources use isolated names and placeholder IDs.
 - Legacy live, order, transfer, and withdrawal routes return HTTP 403.
-- Every non-safe HTTP method returns HTTP 403.
+- Every public non-safe HTTP method returns HTTP 403.
 - Sensitive reads fail closed when operator authentication is absent.
-- The account Durable Object accepts health reads only and rejects financial commands with HTTP 423.
-- Internal and coordinator route prefixes are unavailable through the public Worker.
+- Public Worker routes cannot reach the account coordinator or candidate evidence endpoints.
+- The account Durable Object remains halted for orders, cancellation, replacement, transfers, and withdrawals.
+- Its only mutation is an internally authenticated commit of non-executable assessment evidence, reservation drafts, and projection-outbox records.
+- Reservation drafts are constrained to `applied=0` in both authoritative and reporting stores.
 - No timeout, ambiguous response, or repeated request authorizes another order submission.
-- Preview and assessment evidence always reports `executionAllowed=false`.
+- Preview, assessment, persisted evidence, and projection records always report `executionAllowed=false`.
 - Certification evidence can never activate the candidate; `certifiedForLive` is permanently false in this branch.
 
 ## Implemented layers
@@ -74,6 +76,23 @@ Every preview is hash-bound, carries `LOCAL_LOCKED_ESTIMATE`, warns that it is n
 
 The pipeline forces `executionUnlocked=false`, imports no provider submission client, performs no fetch or D1 mutation, and ends only as `REJECTED` or `READY_BUT_EXECUTION_LOCKED`. A separate static verifier proves those invariants.
 
+### Atomic evidence commit and projection outbox
+
+`worker/src/live/candidate-evidence.ts`, the SQLite-backed `ExchangeAccountCoordinator`, and migration `014_live_candidate_assessment_evidence.sql` persist the candidate assessment without creating an execution path.
+
+The Durable Object is the authoritative single-writer boundary. In one synchronous SQLite transaction it commits:
+
+- the immutable assessment envelope;
+- the optional balanced reservation draft;
+- the monotonically increasing coordinator sequence;
+- an idempotent D1 projection-outbox record.
+
+The commit is unique by idempotency key, request hash, evidence hash, payload hash, and coordinator sequence. A replay with the same key and request hash returns the stored envelope. Reuse of the key with different evidence is rejected as a conflict.
+
+D1 is a reporting projection, not a second authoritative transaction participant. The projector writes the assessment, reservation draft, and projection receipt in one D1 batch and verifies the receipt hash. Projection failure leaves the authoritative Durable Object commit intact and the outbox pending for a later idempotent retry. The architecture does not claim a distributed transaction between Durable Object SQLite and D1.
+
+The internal coordinator route requires `CANDIDATE_EVIDENCE_TOKEN`, uses a constant-time comparison, enforces a bounded request body, and is not reachable through the public Worker. The candidate configuration does not provision that secret.
+
 ### Pre-trade risk
 
 `worker/src/live/risk-engine.ts` requires account eligibility, release authorization, Guardian health, execution unlock, fresh market and product data, clear reconciliation, durable idempotency, sufficient balances, and configured order, daily, position, and open-order limits.
@@ -86,7 +105,7 @@ Migration `004_live_idempotency_records.sql` and `worker/src/live/idempotency.ts
 
 ### Serialized account boundary
 
-`ExchangeAccountCoordinator` establishes one SQLite-backed Durable Object per future exchange account. In this candidate it is permanently halted and accepts no financial command.
+`ExchangeAccountCoordinator` establishes one SQLite-backed Durable Object per future exchange account. It serializes assessment-evidence commits but remains permanently halted for all exchange and fund mutations.
 
 ### Order lifecycle
 
@@ -96,7 +115,7 @@ Migration `004_live_idempotency_records.sql` and `worker/src/live/idempotency.ts
 
 Migration `005_live_ledger_and_reservations.sql` creates ledger accounts, journals, entries, and reservations. `worker/src/live/ledger.ts` validates balanced journals independently for every asset and builds exact reservation, release, buy-fill, sell-fill, and fee entries.
 
-Financial balances must not change without a balanced journal. The candidate assessment creates a draft only; it does not persist or apply that draft.
+The candidate assessment persists a reservation **draft** only. It does not apply the draft, modify an available balance, create an active reservation, or authorize a provider request.
 
 ### Reconciliation and projections
 
@@ -135,22 +154,24 @@ The branch defines separate CircleCI gates for:
 - complete Worker type checking;
 - provider-only type checking;
 - paper safety;
-- live-candidate and command-lock safety;
+- live-candidate, command-lock, and evidence-persistence safety;
 - regulated-foundation safety;
 - certification safety;
 - operational and candidate CryptoOps read-only schemas;
 - both candidate dry-run bundles;
 - frontend build and backend audit tests.
 
+The evidence tests verify deterministic envelopes, execution-lock preservation, reservation-draft extraction, a single D1 transactional batch, replay without duplicate projection, and conflict rejection.
+
 The live tests use Node's `node:test` runner and are excluded from the legacy Vitest contract runner to prevent cross-runner collection.
 
-Local migration commands exist for migrations 003 through 013. The branch must remain draft and must not merge while any required check is failed, pending, blocked, skipped, or unavailable.
+Local migration commands exist for migrations 003 through 014. The branch must remain draft and must not merge while any required check is failed, pending, blocked, skipped, or unavailable.
 
 ## Remaining engineering before certification
 
 1. Import and review BTCC's official endpoint and signing manifest; then build its bounded read-only client.
 2. Execute Bitget read-only contract tests in an isolated non-live environment using a server-side key that has no write, transfer, or withdrawal authority.
-3. Persist candidate assessment and reservation evidence atomically while retaining the hard Durable Object execution lock.
+3. Add autonomous bounded outbox redelivery, dead-letter escalation, and projection-lag alerts without exposing a public mutation route.
 4. Complete provider fill-to-ledger processing, positions, fees, cost basis, tax lots, and P&L reconciliation.
 5. Add BTCC and Bitget user-event or polling recovery with sequence, freshness, and REST snapshot rules.
 6. Bind queues, schedules, retry budgets, dead-letter operations, and production alert delivery.
@@ -160,4 +181,4 @@ Local migration commands exist for migrations 003 through 013. The branch must r
 
 ## Activation boundary
 
-No code in this branch authorizes mainnet trading or withdrawals. No real order, deposit, transfer, or withdrawal has been submitted. No exchange credential has been provisioned. Any future activation must be a separate independently reviewed release tied to an exact deployment and must not bypass exchange identity, eligibility, jurisdiction, or account controls.
+No code in this branch authorizes mainnet trading or withdrawals. No real order, deposit, transfer, or withdrawal has been submitted. No exchange credential or candidate evidence secret has been provisioned. Any future activation must be a separate independently reviewed release tied to an exact deployment and must not bypass exchange identity, eligibility, jurisdiction, or account controls.
