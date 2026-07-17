@@ -14,7 +14,7 @@
     "test:live-foundation": "node --experimental-strip-types --test tests/live-*.test.ts",
     "test:provider-contracts": "node --experimental-strip-types --test tests/live-default-exchanges.test.ts tests/live-bitget-read-only-client.test.ts tests/live-bitget-preview.test.ts tests/live-bitget-user-stream.test.ts tests/live-bitget-recovery.test.ts tests/live-btcc-recovery.test.ts",
     "verify:paper-safety": "node scripts/verify-paper-safety.mjs",
-    "verify:live-candidate-safety": "node scripts/verify-live-candidate-safety.mjs && node scripts/verify-candidate-command-lock.mjs && node scripts/verify-candidate-evidence-persistence.mjs && node scripts/verify-candidate-projection-observability.mjs && node scripts/verify-fill-accounting-safety.mjs && node scripts/verify-reservation-settlement-safety.mjs && node scripts/verify-exchange-recovery-safety.mjs",
+    "verify:live-candidate-safety": "node scripts/verify-live-candidate-safety.mjs && node scripts/verify-candidate-command-lock.mjs && node scripts/verify-candidate-evidence-persistence.mjs && node scripts/verify-candidate-projection-observability.mjs && node scripts/verify-fill-accounting-safety.mjs && node scripts/verify-reservation-settlement-safety.mjs && node scripts/verify-exchange-recovery-safety.mjs && node scripts/verify-recovery-ingestion-safety.mjs",
     "verify:regulated-foundation-safety": "node scripts/verify-regulated-foundation-safety.mjs",
     "verify:certification-safety": "node scripts/verify-certification-safety.mjs",
     "verify:cryptoops-readonly-openapi": "node scripts/verify-cryptoops-readonly-openapi.mjs",
@@ -39,6 +39,7 @@
     "migrate:014:local": "wrangler d1 execute crypto-signal-bot-live-candidate-db --config ../wrangler.live-candidate.toml --local --file=migrations/014_live_candidate_assessment_evidence.sql",
     "migrate:015:local": "wrangler d1 execute crypto-signal-bot-live-candidate-db --config ../wrangler.live-candidate.toml --local --file=migrations/015_live_fill_accounting.sql",
     "migrate:016:local": "wrangler d1 execute crypto-signal-bot-live-candidate-db --config ../wrangler.live-candidate.toml --local --file=migrations/016_live_reservation_settlement.sql",
+    "migrate:017:local": "wrangler d1 execute crypto-signal-bot-live-candidate-db --config ../wrangler.live-candidate.toml --local --file=migrations/017_live_recovery_ingestion.sql",
     "smoke": "node scripts/smoke-check.mjs"
   },
   "dependencies": {
