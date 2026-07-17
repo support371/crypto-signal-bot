@@ -1,0 +1,94 @@
+name: Withdrawal Candidate Safety
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'worker/src/live/authorization.ts'
+      - 'worker/src/live/guardian.ts'
+      - 'worker/src/live/queue-contracts.ts'
+      - 'worker/src/live/transfer-state.ts'
+      - 'worker/src/live/withdrawal-policy.ts'
+      - 'worker/src/live/adapters/coinbase/**'
+      - 'worker/src/index_withdrawals_candidate.ts'
+      - 'worker/tests/live-*.test.ts'
+      - 'worker/migrations/007_live_exchange_projections.sql'
+      - 'worker/migrations/009_live_queue_delivery.sql'
+      - 'worker/migrations/010_live_authorization.sql'
+      - 'worker/migrations/011_live_transfer_lifecycle.sql'
+      - 'worker/scripts/verify-regulated-foundation-safety.mjs'
+      - 'worker/package.json'
+      - 'worker/package-lock.json'
+      - 'worker/tsconfig.json'
+      - 'wrangler.withdrawals-candidate.toml'
+      - '.github/workflows/withdrawals-candidate-safety.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: withdrawals-candidate-safety-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Test, typecheck, migrate, bundle, and prove transfer lock
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    defaults:
+      run:
+        working-directory: worker
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run regulated foundation tests
+        run: npm run test:live-foundation
+
+      - name: Typecheck Worker package
+        run: npm run build:live-candidate
+
+      - name: Verify regulated transfer safety invariants
+        run: node scripts/verify-regulated-foundation-safety.mjs
+
+      - name: Apply queue migration to live candidate locally
+        run: npm run migrate:009:local
+
+      - name: Apply authorization migration to live candidate locally
+        run: npm run migrate:010:local
+
+      - name: Create withdrawal account projection dependency locally
+        run: npm run migrate:withdrawals:007:local
+
+      - name: Create withdrawal authorization dependency locally
+        run: npm run migrate:withdrawals:010:local
+
+      - name: Apply transfer lifecycle migration locally
+        run: npm run migrate:withdrawals:011:local
+
+      - name: Build disabled withdrawal candidate dry-run bundle
+        run: npm run bundle:withdrawals-candidate
+
+      - name: Reject committed transfer secret material
+        run: |
+          set -euo pipefail
+          forbidden=$(find .. \
+            -path ../.git -prune -o \
+            -path ../node_modules -prune -o \
+            -path ../worker/.wrangler -prune -o \
+            \( -name '.env' -o -name '.env.production' -o -name '.env.staging' -o -name '.env.preview' -o -name '.dev.vars' -o -name '*.pem' -o -name '*.key' -o -name '*.p12' -o -name '*.pfx' -o -name '*seed*phrase*' \) \
+            -type f -print)
+          test -z "$forbidden" || { echo "$forbidden"; exit 1; }
