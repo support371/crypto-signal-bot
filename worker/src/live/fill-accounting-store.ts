@@ -11,6 +11,7 @@ import {
   asDecimalString,
   asSignedDecimalString,
   compareDecimal,
+  multiplyDecimal,
   subtractNonNegativeDecimal,
   type DecimalString,
   type SignedDecimalString,
@@ -55,9 +56,12 @@ export class FillAccountingConflictError extends Error {
 }
 
 type AccountingReceiptRow = {
+  accounting_receipt_id: string
   input_hash: string
   accounting_hash: string
   journal_id: string
+  position_quantity: string
+  cumulative_realized_pnl_quote: string
 }
 
 type ExistingFillRow = {
@@ -77,12 +81,7 @@ type ExistingFillRow = {
 }
 
 type ExistingJournalRow = {
-  exchange_account_id: string
-  event_type: string
-  reference_type: string
-  reference_id: string
-  correlation_id: string
-  idempotency_key: string
+  journal_id: string
 }
 
 type LotRow = {
@@ -212,30 +211,21 @@ async function assertExistingFillCompatible(
   }
 }
 
-async function assertExistingJournalCompatible(
+async function assertNoOrphanedJournal(
   env: FillAccountingStoreEnv,
-  input: PersistSpotFillAccountingInput,
   journalId: string,
-  idempotencyKey: string,
 ): Promise<void> {
   const row = await env.DB.prepare(`
-    SELECT exchange_account_id, event_type, reference_type, reference_id,
-           correlation_id, idempotency_key
+    SELECT journal_id
       FROM ledger_journals
      WHERE journal_id = ?
      LIMIT 1
   `).bind(journalId).first<ExistingJournalRow>()
 
-  if (!row) return
-  if (
-    row.exchange_account_id !== input.exchangeAccountId
-    || row.event_type !== 'SPOT_FILL_POSTED'
-    || row.reference_type !== 'FILL'
-    || row.reference_id !== input.fill.fillId
-    || row.correlation_id !== input.correlationId
-    || row.idempotency_key !== idempotencyKey
-  ) {
-    throw new FillAccountingConflictError('existing ledger journal conflicts with accounting input')
+  if (row) {
+    throw new FillAccountingConflictError(
+      'ledger journal exists without an immutable fill-accounting receipt',
+    )
   }
 }
 
@@ -505,9 +495,10 @@ function accountingStatements(
     INSERT INTO live_fill_accounting_receipts (
       accounting_receipt_id, fill_id, exchange_account_id,
       internal_order_id, product_id, method, input_hash, accounting_hash,
-      journal_id, provider_mutation_allowed, reservation_applied,
-      execution_allowed, accounted_at
-    ) VALUES (?, ?, ?, ?, ?, 'FIFO', ?, ?, ?, 0, 0, 0, ?)
+      journal_id, position_quantity, cumulative_realized_pnl_quote,
+      provider_mutation_allowed, reservation_applied, execution_allowed,
+      accounted_at
+    ) VALUES (?, ?, ?, ?, ?, 'FIFO', ?, ?, ?, ?, ?, 0, 0, 0, ?)
   `).bind(
     receiptId,
     input.fill.fillId,
@@ -517,6 +508,8 @@ function accountingStatements(
     requestHash,
     result.accountingHash,
     result.journal.journalId,
+    result.position.quantity,
+    result.position.cumulativeRealizedPnlQuote,
     iso(input.fill.sequenceTimestamp, 'fill.sequenceTimestamp'),
   ))
 
@@ -536,79 +529,97 @@ export async function persistSpotFillAccountingFifo(
   if (input.fill.productId.trim() === '') throw new TypeError('fill.productId is required')
   const rawResponseHash = hash(input.rawResponseHash, 'rawResponseHash')
   const ids = deterministicIds(input.fill.fillId)
-  const requestHash = await inputHash({ ...input, baseAsset, quoteAsset, rawResponseHash })
+  const normalizedInput: PersistSpotFillAccountingInput = {
+    ...input,
+    baseAsset,
+    quoteAsset,
+    rawResponseHash,
+  }
+  const requestHash = await inputHash(normalizedInput)
 
   const existing = await env.DB.prepare(`
-    SELECT input_hash, accounting_hash, journal_id
+    SELECT accounting_receipt_id, input_hash, accounting_hash, journal_id,
+           position_quantity, cumulative_realized_pnl_quote
       FROM live_fill_accounting_receipts
      WHERE fill_id = ?
      LIMIT 1
   `).bind(input.fill.fillId).first<AccountingReceiptRow>()
 
   if (existing) {
-    if (existing.input_hash !== requestHash || existing.journal_id !== ids.journalId) {
+    if (
+      existing.accounting_receipt_id !== ids.receiptId
+      || existing.input_hash !== requestHash
+      || existing.journal_id !== ids.journalId
+    ) {
       throw new FillAccountingConflictError('fill accounting receipt conflicts with request')
     }
     return Object.freeze({
       status: 'REPLAYED',
-      accountingReceiptId: ids.receiptId,
+      accountingReceiptId: existing.accounting_receipt_id,
       fillId: input.fill.fillId,
       journalId: existing.journal_id,
       accountingHash: existing.accounting_hash,
-      positionQuantity: ZERO,
-      cumulativeRealizedPnlQuote: asSignedDecimalString('0'),
+      positionQuantity: asDecimalString(existing.position_quantity, 'receipt.positionQuantity'),
+      cumulativeRealizedPnlQuote: asSignedDecimalString(
+        existing.cumulative_realized_pnl_quote,
+        'receipt.cumulativeRealizedPnlQuote',
+      ),
       providerMutationAllowed: false,
       reservationApplied: false,
       executionAllowed: false,
     })
   }
 
-  await assertExistingFillCompatible(env, input, rawResponseHash)
-  await assertExistingJournalCompatible(env, input, ids.journalId, ids.idempotencyKey)
+  await assertExistingFillCompatible(env, normalizedInput, rawResponseHash)
+  await assertNoOrphanedJournal(env, ids.journalId)
 
-  const existingLots = await loadOpenLots(env, input)
-  const cumulativeRealizedPnlQuote = await loadCumulativeRealizedPnl(env, input)
+  const existingLots = await loadOpenLots(env, normalizedInput)
+  const cumulativeRealizedPnlQuote = await loadCumulativeRealizedPnl(env, normalizedInput)
   const result = await accountSpotFillFifo({
     journalId: ids.journalId,
-    exchangeAccountId: input.exchangeAccountId,
-    internalOrderId: input.internalOrderId,
-    correlationId: input.correlationId,
+    exchangeAccountId: normalizedInput.exchangeAccountId,
+    internalOrderId: normalizedInput.internalOrderId,
+    correlationId: normalizedInput.correlationId,
     idempotencyKey: ids.idempotencyKey,
     baseAsset,
     quoteAsset,
-    fill: input.fill,
+    fill: normalizedInput.fill,
     existingLots,
     cumulativeRealizedPnlQuote,
-    feeQuoteValue: input.feeQuoteValue,
+    feeQuoteValue: normalizedInput.feeQuoteValue,
     acquisitionLotId: ids.acquisitionLotId,
-    accounts: input.accounts,
+    accounts: normalizedInput.accounts,
   })
 
   const statements = [
-    fillStatement(env, input, rawResponseHash),
+    fillStatement(env, normalizedInput, rawResponseHash),
     ...journalStatements(env, result),
-    ...accountingStatements(env, input, result, ids.receiptId, requestHash),
+    ...accountingStatements(env, normalizedInput, result, ids.receiptId, requestHash),
   ]
   await env.DB.batch(statements)
 
   const projected = await env.DB.prepare(`
-    SELECT input_hash, accounting_hash, journal_id
+    SELECT accounting_receipt_id, input_hash, accounting_hash, journal_id,
+           position_quantity, cumulative_realized_pnl_quote
       FROM live_fill_accounting_receipts
      WHERE fill_id = ?
      LIMIT 1
   `).bind(input.fill.fillId).first<AccountingReceiptRow>()
   if (!projected) throw new Error('fill accounting receipt is missing after D1 batch')
   if (
-    projected.input_hash !== requestHash
+    projected.accounting_receipt_id !== ids.receiptId
+    || projected.input_hash !== requestHash
     || projected.accounting_hash !== result.accountingHash
     || projected.journal_id !== result.journal.journalId
+    || projected.position_quantity !== result.position.quantity
+    || projected.cumulative_realized_pnl_quote !== result.position.cumulativeRealizedPnlQuote
   ) {
     throw new FillAccountingConflictError('fill accounting receipt verification failed')
   }
 
   return Object.freeze({
     status: 'PROJECTED',
-    accountingReceiptId: ids.receiptId,
+    accountingReceiptId: projected.accounting_receipt_id,
     fillId: input.fill.fillId,
     journalId: result.journal.journalId,
     accountingHash: result.accountingHash,
