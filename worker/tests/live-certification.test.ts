@@ -15,7 +15,7 @@ function passedRun(): CertificationRunEvidence {
     workerDeploymentId: 'worker-deployment-1',
     frontendDeploymentId: 'frontend-deployment-1',
     schemaVersion: '013',
-    exchangeName: 'coinbase',
+    exchangeName: 'BTCC',
     exchangeAccountId: 'account-ref-hash',
     environment: 'LIVE_CANDIDATE',
     status: 'PASSED',
@@ -112,4 +112,14 @@ test('passing check without full evidence is treated as missing', () => {
 
   assert.equal(decision.certificationPassed, false)
   assert.ok(decision.missingMandatoryChecks.includes(first.checkName))
+})
+
+test('non-canonical exchange evidence is rejected', () => {
+  const decision = evaluateCertification({
+    ...passedRun(),
+    exchangeName: 'COINBASE',
+  }, new Date('2026-07-17T10:00:00.000Z'))
+
+  assert.equal(decision.certificationPassed, false)
+  assert.ok(decision.reasons.includes('unsupported_certification_exchange'))
 })
