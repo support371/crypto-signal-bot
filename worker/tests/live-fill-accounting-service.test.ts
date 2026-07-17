@@ -9,6 +9,18 @@ import {
 import { persistSpotFillAccountingVerified } from '../src/live/fill-accounting-service.ts'
 import { asDecimalString } from '../src/live/decimal.ts'
 
+type Receipt = {
+  accounting_receipt_id: string
+  input_hash: string
+  accounting_hash: string
+  journal_id: string
+  position_quantity: string
+  cumulative_realized_pnl_quote: string
+  provider_mutation_allowed: number
+  reservation_applied: number
+  execution_allowed: number
+}
+
 class FakeStatement {
   private readonly database: FakeDatabase
   readonly sql: string
@@ -31,23 +43,25 @@ class FakeStatement {
 
 class FakeDatabase {
   receiptPresence: { accounting_receipt_id: string } | null = null
-  receipt: { input_hash: string; accounting_hash: string; journal_id: string } | null = null
+  storeReceipt: Receipt | null = null
+  verificationReceipt: Receipt | null = null
   journal: { journal_id: string } | null = null
-  position: {
-    quantity: string
-    cumulative_realized_pnl_quote: string
-    last_accounting_hash: string
-  } | null = null
 
   prepare(sql: string): D1PreparedStatement {
     return new FakeStatement(this, sql) as unknown as D1PreparedStatement
   }
 
   first(sql: string, _params: unknown[]): unknown {
-    if (sql.includes('SELECT accounting_receipt_id')) return this.receiptPresence
-    if (sql.includes('SELECT input_hash, accounting_hash, journal_id')) return this.receipt
+    if (
+      sql.includes('SELECT accounting_receipt_id')
+      && !sql.includes('accounting_hash')
+      && !sql.includes('input_hash')
+    ) {
+      return this.receiptPresence
+    }
+    if (sql.includes('provider_mutation_allowed')) return this.verificationReceipt
+    if (sql.includes('input_hash') && sql.includes('position_quantity')) return this.storeReceipt
     if (sql.includes('SELECT journal_id') && sql.includes('FROM ledger_journals')) return this.journal
-    if (sql.includes('SELECT quantity, cumulative_realized_pnl_quote')) return this.position
     return null
   }
 
@@ -105,6 +119,21 @@ async function requestHash(value: PersistSpotFillAccountingInput): Promise<strin
   })
 }
 
+async function receipt(overrides: Partial<Receipt> = {}): Promise<Receipt> {
+  return {
+    accounting_receipt_id: 'fill-accounting-receipt:fill-replay-1',
+    input_hash: await requestHash(input()),
+    accounting_hash: 'b'.repeat(64),
+    journal_id: 'fill-accounting-journal:fill-replay-1',
+    position_quantity: '0.025',
+    cumulative_realized_pnl_quote: '-12.5',
+    provider_mutation_allowed: 0,
+    reservation_applied: 0,
+    execution_allowed: 0,
+    ...overrides,
+  }
+}
+
 test('orphaned ledger journal without receipt is quarantined before accounting', async () => {
   const database = new FakeDatabase()
   database.journal = { journal_id: 'fill-accounting-journal:fill-replay-1' }
@@ -116,20 +145,11 @@ test('orphaned ledger journal without receipt is quarantined before accounting',
   )
 })
 
-test('replay returns persisted position quantity and cumulative realized PnL', async () => {
+test('replay returns position quantity and cumulative realized PnL from immutable receipt', async () => {
   const database = new FakeDatabase()
-  const accountingHash = 'b'.repeat(64)
   database.receiptPresence = { accounting_receipt_id: 'fill-accounting-receipt:fill-replay-1' }
-  database.receipt = {
-    input_hash: await requestHash(input()),
-    accounting_hash: accountingHash,
-    journal_id: 'fill-accounting-journal:fill-replay-1',
-  }
-  database.position = {
-    quantity: '0.025',
-    cumulative_realized_pnl_quote: '-12.5',
-    last_accounting_hash: accountingHash,
-  }
+  database.storeReceipt = await receipt()
+  database.verificationReceipt = await receipt()
 
   const result = await persistSpotFillAccountingVerified({ DB: database.asD1() }, input())
 
@@ -142,23 +162,28 @@ test('replay returns persisted position quantity and cumulative realized PnL', a
   assert.equal(result.executionAllowed, false)
 })
 
-test('replay rejects a position projection with a different accounting hash', async () => {
+test('replay rejects immutable receipt evidence that changes during verification', async () => {
   const database = new FakeDatabase()
   database.receiptPresence = { accounting_receipt_id: 'fill-accounting-receipt:fill-replay-1' }
-  database.receipt = {
-    input_hash: await requestHash(input()),
-    accounting_hash: 'b'.repeat(64),
-    journal_id: 'fill-accounting-journal:fill-replay-1',
-  }
-  database.position = {
-    quantity: '0.025',
-    cumulative_realized_pnl_quote: '10',
-    last_accounting_hash: 'c'.repeat(64),
-  }
+  database.storeReceipt = await receipt()
+  database.verificationReceipt = await receipt({ accounting_hash: 'c'.repeat(64) })
 
   await assert.rejects(
     persistSpotFillAccountingVerified({ DB: database.asD1() }, input()),
     (error: unknown) => error instanceof FillAccountingConflictError
-      && /position accounting hash/.test(error.message),
+      && /immutable receipt/.test(error.message),
+  )
+})
+
+test('replay rejects an immutable receipt that violates capability locks', async () => {
+  const database = new FakeDatabase()
+  database.receiptPresence = { accounting_receipt_id: 'fill-accounting-receipt:fill-replay-1' }
+  database.storeReceipt = await receipt()
+  database.verificationReceipt = await receipt({ execution_allowed: 1 })
+
+  await assert.rejects(
+    persistSpotFillAccountingVerified({ DB: database.asD1() }, input()),
+    (error: unknown) => error instanceof FillAccountingConflictError
+      && /permanent capability locks/.test(error.message),
   )
 })
