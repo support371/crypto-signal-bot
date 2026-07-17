@@ -98,6 +98,38 @@ CREATE TABLE IF NOT EXISTS live_position_accounting (
   PRIMARY KEY (exchange_account_id, product_id)
 );
 
+CREATE TABLE IF NOT EXISTS live_fill_accounting_reconciliations (
+  reconciliation_id TEXT PRIMARY KEY,
+  exchange_name TEXT NOT NULL CHECK (exchange_name IN ('BTCC', 'BITGET')),
+  exchange_account_id TEXT NOT NULL,
+  product_id TEXT NOT NULL,
+  base_asset TEXT NOT NULL,
+  quote_asset TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('CLEAR', 'HALT_FOR_REVIEW')),
+  reasons_json TEXT NOT NULL,
+  position_quantity TEXT NOT NULL,
+  reconstructed_quantity TEXT NOT NULL,
+  position_cost_basis_quote TEXT NOT NULL,
+  reconstructed_cost_basis_quote TEXT NOT NULL,
+  position_realized_pnl_quote TEXT NOT NULL,
+  reconstructed_realized_pnl_quote TEXT NOT NULL,
+  ledger_base_inventory_balance TEXT NOT NULL,
+  exchange_base_balance TEXT,
+  current_price TEXT,
+  market_value_quote TEXT,
+  unrealized_pnl_quote TEXT,
+  reconciliation_hash TEXT NOT NULL UNIQUE CHECK (length(reconciliation_hash) = 64),
+  provider_mutation_allowed INTEGER NOT NULL DEFAULT 0
+    CHECK (provider_mutation_allowed = 0),
+  reservation_applied INTEGER NOT NULL DEFAULT 0
+    CHECK (reservation_applied = 0),
+  execution_allowed INTEGER NOT NULL DEFAULT 0
+    CHECK (execution_allowed = 0),
+  observed_at TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (exchange_account_id, product_id, observed_at)
+);
+
 CREATE INDEX IF NOT EXISTS idx_live_cost_basis_lots_account_product_time
   ON live_cost_basis_lots(exchange_account_id, product_id, acquired_at, lot_id);
 
@@ -106,6 +138,9 @@ CREATE INDEX IF NOT EXISTS idx_live_cost_basis_consumptions_lot_time
 
 CREATE INDEX IF NOT EXISTS idx_live_realized_pnl_account_product_time
   ON live_realized_pnl_events(exchange_account_id, product_id, realized_at);
+
+CREATE INDEX IF NOT EXISTS idx_live_fill_accounting_reconciliation_status_time
+  ON live_fill_accounting_reconciliations(status, observed_at);
 
 CREATE TRIGGER IF NOT EXISTS live_fill_accounting_receipts_no_update
 BEFORE UPDATE ON live_fill_accounting_receipts
@@ -161,4 +196,18 @@ BEFORE DELETE ON live_realized_pnl_events
 FOR EACH ROW
 BEGIN
   SELECT RAISE(ABORT, 'live_realized_pnl_events cannot be deleted');
+END;
+
+CREATE TRIGGER IF NOT EXISTS live_fill_accounting_reconciliations_no_update
+BEFORE UPDATE ON live_fill_accounting_reconciliations
+FOR EACH ROW
+BEGIN
+  SELECT RAISE(ABORT, 'live_fill_accounting_reconciliations cannot be updated');
+END;
+
+CREATE TRIGGER IF NOT EXISTS live_fill_accounting_reconciliations_no_delete
+BEFORE DELETE ON live_fill_accounting_reconciliations
+FOR EACH ROW
+BEGIN
+  SELECT RAISE(ABORT, 'live_fill_accounting_reconciliations cannot be deleted');
 END;
