@@ -34,8 +34,7 @@ for (const [token, message] of [
   ['ordersSubscribed', 'Bitget orders subscription state is missing'],
   ['fillsSubscribed', 'Bitget fills subscription state is missing'],
   ['REST_SNAPSHOT_REQUIRED', 'Bitget fail-closed recovery action is missing'],
-  ['providerMutationAllowed', 'Bitget recovery mutation lock evidence is missing'],
-  ['executionAllowed', 'Bitget recovery execution lock evidence is missing'],
+  ['BitgetReadOnlyAdapter', 'Bitget stream must use the read-only normalizer boundary'],
 ]) {
   requireToken(bitgetStream, token, message)
 }
@@ -50,6 +49,7 @@ for (const [token, message] of [
   ['pagination is required before recovery', 'Bitget saturated-page failure is missing'],
   ['conflicting order snapshot at identical update time', 'Bitget conflicting order recovery is missing'],
   ['conflicting fill snapshot', 'Bitget conflicting fill recovery is missing'],
+  ['readOnly: true', 'Bitget REST read-only evidence is missing'],
   ['providerMutationAllowed: false', 'Bitget REST provider mutation lock is missing'],
   ['executionAllowed: false', 'Bitget REST execution lock is missing'],
 ]) {
@@ -68,6 +68,7 @@ for (const [token, message] of [
   ['BTCC recovery snapshot must be bounded', 'BTCC bounded-snapshot guard is missing'],
   ['manifestSha256', 'BTCC recovery manifest hash binding is missing'],
   ['officialGuideRevision', 'BTCC guide revision binding is missing'],
+  ['readOnly: true', 'BTCC read-only evidence is missing'],
   ['providerMutationAllowed: false', 'BTCC provider mutation lock is missing'],
   ['executionAllowed: false', 'BTCC execution lock is missing'],
 ]) {
