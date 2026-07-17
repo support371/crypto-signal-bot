@@ -18,6 +18,7 @@ The live-candidate Worker is intentionally read-only and always reports `liveRea
 - Candidate resources use isolated names and placeholder IDs, preventing accidental production deployment.
 - No routes or cron triggers are attached to the candidate configuration.
 - The account Durable Object accepts health reads only and rejects commands with HTTP 423.
+- Internal and coordinator route prefixes are deliberately unavailable through the public Worker.
 
 ## Implemented layers
 
@@ -59,7 +60,7 @@ No timeout or repeated request is interpreted as permission to submit another ex
 
 `worker/src/live/order-state-machine.ts` defines explicit legal transitions for validation, risk, reservation, preview, submission, open orders, partial fills, cancellation, terminal outcomes, recovery, and settlement.
 
-Illegal transitions throw and must never be silently accepted.
+Illegal transitions throw and must never be silently accepted. Final fill, cancellation, rejection, expiration, failure, and settlement states are classified as terminal; unresolved exchange states remain explicitly active.
 
 ### Reservations and double-entry accounting
 
@@ -85,19 +86,22 @@ Migration `006_live_immutable_audit.sql` creates an append-only audit table with
 
 Migration `003_live_release_authorizations.sql` and `worker/src/live/release-gate.ts` bind authorization to an exact Git SHA, Worker deployment, frontend deployment, schema version, exchange account reference, product allowlist, limits, expiration, and security and compliance review references.
 
-A live-candidate build remains unable to execute even when every prerequisite record is present.
+Activation prerequisites additionally require explicitly provisioned, isolated candidate resources. A live-candidate build remains unable to execute even when every prerequisite record is present.
 
 ## Verification
 
 The branch includes:
 
-- Node runtime tests for exact decimals, idempotency hashing, product rules, risk, ledger balancing, reconciliation, and audit chains;
+- Node runtime tests for exact decimals, idempotency hashing, order-state transitions, product rules, risk, ledger balancing, reconciliation, and audit chains;
 - full Worker TypeScript type checking;
 - local migration application for migrations 003 through 006;
 - a static live-candidate safety verifier;
 - a Wrangler dry-run bundle;
 - a dedicated GitHub Actions safety workflow;
+- CircleCI enforcement of live-foundation tests, type checking, both safety verifiers, and the dry-run bundle;
 - continued CircleCI paper-path validation.
+
+The branch must remain a draft and must not merge while any required automated check is failing, unavailable, or pending.
 
 ## Remaining engineering before any live-capable certification
 
