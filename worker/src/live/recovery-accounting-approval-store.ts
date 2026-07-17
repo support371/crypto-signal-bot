@@ -1,8 +1,4 @@
 import { canonicalJson } from './canonical-json.ts'
-import {
-  recordAuthorizationDecision,
-  type AuthorizationStoreEnv,
-} from './authorization-store.ts'
 import type { AuthorizationDecision } from './authorization.ts'
 import {
   evaluateVerifiedRecoveryAccountingApproval,
@@ -10,7 +6,9 @@ import {
 } from './recovery-accounting-approval-service.ts'
 import type { RecoveryAccountingApprovalInput } from './recovery-accounting-approval.ts'
 
-export interface RecoveryAccountingApprovalStoreEnv extends AuthorizationStoreEnv {}
+export interface RecoveryAccountingApprovalStoreEnv {
+  DB: D1Database
+}
 
 export interface PersistRecoveryAccountingApprovalResult {
   status: 'PROJECTED' | 'REPLAYED'
@@ -57,13 +55,19 @@ type ApprovalRow = {
   authorization_event_id: string
   plan_id: string
   plan_hash: string
+  actor_id: string
+  plan_prepared_by_actor_id: string
   decision: 'APPROVED' | 'DENIED'
   reasons_json: string
+  authorization_allowed: number
+  matched_roles_json: string
+  step_up_session_id: string | null
   approval_hash: string
   automatically_dispatched: number
   provider_mutation_allowed: number
   reservation_applied: number
   execution_allowed: number
+  occurred_at: string
 }
 
 type AuthorizationRow = {
@@ -72,18 +76,35 @@ type AuthorizationRow = {
   action: string
   resource_type: string
   resource_id: string
-  allowed: number
-  reasons_json: string
+  required_roles_json: string
+  actor_roles_json: string
+  step_up_required: number
   step_up_session_id: string | null
+  decision: 'ALLOW' | 'DENY'
+  reason: string | null
   correlation_id: string
   audit_event_hash: string
-  evaluated_at: string
+  occurred_at: string
 }
 
 function required(value: string, field: string): string {
   const normalized = value.trim()
   if (!normalized) throw new TypeError(`${field} is required`)
   return normalized
+}
+
+function sha256(value: string, field: string): string {
+  const normalized = required(value, field).toLowerCase()
+  if (!/^[a-f0-9]{64}$/.test(normalized)) {
+    throw new TypeError(`${field} must be a lowercase SHA-256 hash`)
+  }
+  return normalized
+}
+
+function iso(value: string, field: string): string {
+  const parsed = Date.parse(value)
+  if (!Number.isFinite(parsed)) throw new TypeError(`${field} must be ISO-8601`)
+  return new Date(parsed).toISOString()
 }
 
 function assertZeroCapabilities(
@@ -111,6 +132,14 @@ function expectedDecision(
   decision: VerifiedRecoveryAccountingApprovalDecision,
 ): 'APPROVED' | 'DENIED' {
   return decision.approved ? 'APPROVED' : 'DENIED'
+}
+
+function expectedAuthorizationDecision(decision: AuthorizationDecision): 'ALLOW' | 'DENY' {
+  return decision.allowed ? 'ALLOW' : 'DENY'
+}
+
+function expectedAuthorizationReason(decision: AuthorizationDecision): string | null {
+  return decision.reasons.join(',') || null
 }
 
 function assertPlanCompatible(
@@ -146,9 +175,15 @@ function assertApprovalCompatible(
     || row.authorization_event_id !== input.authorizationEventId
     || row.plan_id !== input.planId
     || row.plan_hash !== input.plan.planHash
+    || row.actor_id !== input.actorId
+    || row.plan_prepared_by_actor_id !== input.planPreparedByActorId
     || row.decision !== expectedDecision(decision)
     || row.reasons_json !== canonicalJson(decision.reasons)
+    || row.authorization_allowed !== (decision.authorizationDecision.allowed ? 1 : 0)
+    || row.matched_roles_json !== canonicalJson(decision.authorizationDecision.matchedRoles)
+    || row.step_up_session_id !== input.stepUpSession?.stepUpSessionId
     || row.approval_hash !== decision.approvalHash
+    || row.occurred_at !== decision.authorizationRequest.evaluatedAt
   ) {
     throw new RecoveryAccountingApprovalConflictError(
       'stored recovery accounting approval conflicts with evaluated evidence',
@@ -159,22 +194,25 @@ function assertApprovalCompatible(
 function assertAuthorizationCompatible(
   row: AuthorizationRow,
   input: RecoveryAccountingApprovalInput,
-  decision: AuthorizationDecision,
+  decision: VerifiedRecoveryAccountingApprovalDecision,
 ): void {
-  const request = decision.matchedRoles
-  void request
+  const authorization = decision.authorizationDecision
+  const request = decision.authorizationRequest
   if (
     row.authorization_event_id !== input.authorizationEventId
-    || row.actor_id !== input.actorId
-    || row.action !== 'RUN_RECONCILIATION'
-    || row.resource_type !== 'RECOVERY_ACCOUNTING_PLAN'
-    || row.resource_id !== input.planId
-    || row.allowed !== (decision.allowed ? 1 : 0)
-    || row.reasons_json !== canonicalJson(decision.reasons)
-    || row.step_up_session_id !== input.stepUpSession?.stepUpSessionId
+    || row.actor_id !== request.actorId
+    || row.action !== request.action
+    || row.resource_type !== request.resourceType
+    || row.resource_id !== request.resourceId
+    || row.required_roles_json !== canonicalJson(authorization.requiredRoles)
+    || row.actor_roles_json !== canonicalJson(authorization.matchedRoles)
+    || row.step_up_required !== (authorization.stepUpRequired ? 1 : 0)
+    || row.step_up_session_id !== request.stepUpSession?.stepUpSessionId
+    || row.decision !== expectedAuthorizationDecision(authorization)
+    || row.reason !== expectedAuthorizationReason(authorization)
     || row.correlation_id !== input.correlationId
-    || row.audit_event_hash !== input.auditEventHash
-    || row.evaluated_at !== input.evaluatedAt
+    || row.audit_event_hash !== sha256(input.auditEventHash, 'auditEventHash')
+    || row.occurred_at !== request.evaluatedAt
   ) {
     throw new RecoveryAccountingApprovalConflictError(
       'stored authorization event conflicts with recovery approval evidence',
@@ -204,8 +242,10 @@ async function loadApproval(
 ): Promise<ApprovalRow | null> {
   return env.DB.prepare(`
     SELECT approval_event_id, authorization_event_id, plan_id, plan_hash,
-           decision, reasons_json, approval_hash, automatically_dispatched,
-           provider_mutation_allowed, reservation_applied, execution_allowed
+           actor_id, plan_prepared_by_actor_id, decision, reasons_json,
+           authorization_allowed, matched_roles_json, step_up_session_id,
+           approval_hash, automatically_dispatched, provider_mutation_allowed,
+           reservation_applied, execution_allowed, occurred_at
       FROM live_recovery_accounting_approval_events
      WHERE approval_event_id = ? OR approval_hash = ?
      LIMIT 1
@@ -218,8 +258,9 @@ async function loadAuthorization(
 ): Promise<AuthorizationRow | null> {
   return env.DB.prepare(`
     SELECT authorization_event_id, actor_id, action, resource_type,
-           resource_id, allowed, reasons_json, step_up_session_id,
-           correlation_id, audit_event_hash, evaluated_at
+           resource_id, required_roles_json, actor_roles_json,
+           step_up_required, step_up_session_id, decision, reason,
+           correlation_id, audit_event_hash, occurred_at
       FROM live_authorization_events
      WHERE authorization_event_id = ?
      LIMIT 1
@@ -260,38 +301,28 @@ export async function persistRecoveryAccountingApproval(
   if (existingApproval) {
     assertApprovalCompatible(existingApproval, input, decision)
     const existingPlan = await loadPlan(env, input)
-    if (!existingPlan) {
+    const existingAuthorization = await loadAuthorization(env, input.authorizationEventId)
+    if (!existingPlan || !existingAuthorization) {
       throw new RecoveryAccountingApprovalConflictError(
-        'approval event exists without its immutable recovery accounting plan',
+        'approval event exists without its immutable plan and authorization evidence',
       )
     }
     assertPlanCompatible(existingPlan, input)
+    assertAuthorizationCompatible(existingAuthorization, input, decision)
     return result('REPLAYED', input, decision)
   }
 
   const existingPlan = await loadPlan(env, input)
   if (existingPlan) assertPlanCompatible(existingPlan, input)
-
   const existingAuthorization = await loadAuthorization(env, input.authorizationEventId)
   if (existingAuthorization) {
-    assertAuthorizationCompatible(
-      existingAuthorization,
-      input,
-      decision.authorizationDecision,
-    )
-  } else {
-    await recordAuthorizationDecision(env, {
-      authorizationEventId: input.authorizationEventId,
-      request: decision.authorizationRequest,
-      decision: decision.authorizationDecision,
-      correlationId: input.correlationId,
-      auditEventHash: input.auditEventHash,
-    })
+    assertAuthorizationCompatible(existingAuthorization, input, decision)
   }
 
-  await env.DB.batch([
-    env.DB.prepare(`
-      INSERT OR IGNORE INTO live_recovery_accounting_plans (
+  const statements: D1PreparedStatement[] = []
+  if (!existingPlan) {
+    statements.push(env.DB.prepare(`
+      INSERT INTO live_recovery_accounting_plans (
         plan_id, exchange_name, exchange_account_id, product_id,
         recovery_snapshot_hash, plan_hash, command_count, commands_json,
         prepared_by_actor_id, accounting_evidence_ready,
@@ -307,38 +338,69 @@ export async function persistRecoveryAccountingApproval(
       input.plan.commandCount,
       canonicalJson(input.plan.commands),
       input.planPreparedByActorId,
-    ),
-    env.DB.prepare(`
-      INSERT INTO live_recovery_accounting_approval_events (
-        approval_event_id, authorization_event_id, plan_id, plan_hash,
-        actor_id, plan_prepared_by_actor_id, decision, reasons_json,
-        authorization_allowed, matched_roles_json, step_up_session_id,
-        approval_hash, automatically_dispatched, provider_mutation_allowed,
-        reservation_applied, execution_allowed, occurred_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, ?)
+    ))
+  }
+
+  if (!existingAuthorization) {
+    statements.push(env.DB.prepare(`
+      INSERT INTO live_authorization_events (
+        authorization_event_id, actor_id, action, resource_type, resource_id,
+        required_roles_json, actor_roles_json, step_up_required,
+        step_up_session_id, decision, reason, correlation_id,
+        audit_event_hash, occurred_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
-      input.approvalEventId,
       input.authorizationEventId,
-      input.planId,
-      input.plan.planHash,
-      input.actorId,
-      input.planPreparedByActorId,
-      expectedDecision(decision),
-      canonicalJson(decision.reasons),
-      decision.authorizationDecision.allowed ? 1 : 0,
+      decision.authorizationRequest.actorId,
+      decision.authorizationRequest.action,
+      decision.authorizationRequest.resourceType,
+      decision.authorizationRequest.resourceId,
+      canonicalJson(decision.authorizationDecision.requiredRoles),
       canonicalJson(decision.authorizationDecision.matchedRoles),
-      input.stepUpSession?.stepUpSessionId ?? null,
-      decision.approvalHash,
-      input.evaluatedAt,
-    ),
-  ])
+      decision.authorizationDecision.stepUpRequired ? 1 : 0,
+      decision.authorizationRequest.stepUpSession?.stepUpSessionId ?? null,
+      expectedAuthorizationDecision(decision.authorizationDecision),
+      expectedAuthorizationReason(decision.authorizationDecision),
+      input.correlationId,
+      sha256(input.auditEventHash, 'auditEventHash'),
+      decision.authorizationRequest.evaluatedAt,
+    ))
+  }
+
+  statements.push(env.DB.prepare(`
+    INSERT INTO live_recovery_accounting_approval_events (
+      approval_event_id, authorization_event_id, plan_id, plan_hash,
+      actor_id, plan_prepared_by_actor_id, decision, reasons_json,
+      authorization_allowed, matched_roles_json, step_up_session_id,
+      approval_hash, automatically_dispatched, provider_mutation_allowed,
+      reservation_applied, execution_allowed, occurred_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, ?)
+  `).bind(
+    input.approvalEventId,
+    input.authorizationEventId,
+    input.planId,
+    input.plan.planHash,
+    input.actorId,
+    input.planPreparedByActorId,
+    expectedDecision(decision),
+    canonicalJson(decision.reasons),
+    decision.authorizationDecision.allowed ? 1 : 0,
+    canonicalJson(decision.authorizationDecision.matchedRoles),
+    input.stepUpSession?.stepUpSessionId ?? null,
+    decision.approvalHash,
+    decision.authorizationRequest.evaluatedAt,
+  ))
+
+  await env.DB.batch(statements)
 
   const projectedPlan = await loadPlan(env, input)
+  const projectedAuthorization = await loadAuthorization(env, input.authorizationEventId)
   const projectedApproval = await loadApproval(env, input, decision.approvalHash)
-  if (!projectedPlan || !projectedApproval) {
+  if (!projectedPlan || !projectedAuthorization || !projectedApproval) {
     throw new Error('recovery accounting approval evidence is missing after D1 batch')
   }
   assertPlanCompatible(projectedPlan, input)
+  assertAuthorizationCompatible(projectedAuthorization, input, decision)
   assertApprovalCompatible(projectedApproval, input, decision)
   return result('PROJECTED', input, decision)
 }
