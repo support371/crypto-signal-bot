@@ -1,4 +1,3 @@
-import type { D1Database, D1PreparedStatement } from '@cloudflare/workers-types'
 import type { BitgetRecoveryIngestionPlan } from './recovery-ingestion.ts'
 
 export interface RecoveryIngestionStoreEnv {
