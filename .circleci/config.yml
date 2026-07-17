@@ -5,6 +5,14 @@ executors:
     docker:
       - image: cimg/node:22.12.0
 
+commands:
+  install-worker:
+    steps:
+      - checkout
+      - run:
+          name: Install Worker dependencies
+          command: npm --prefix worker ci
+
 jobs:
   frontend-build:
     executor: node-worker
@@ -33,11 +41,6 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Print Worker runtime versions
-          command: |
-            node -v
-            npm -v
-      - run:
           name: Install root test dependencies
           command: npm ci
       - run:
@@ -47,58 +50,94 @@ jobs:
   worker-live-foundation-tests:
     executor: node-worker
     steps:
-      - checkout
+      - install-worker
       - run:
-          name: Install Worker dependencies
-          command: npm --prefix worker ci
-      - run:
-          name: Run disabled live, transfer, and certification foundation tests
+          name: Run complete disabled live foundation tests
           command: npm --prefix worker run test:live-foundation
+
+  worker-provider-tests:
+    executor: node-worker
+    steps:
+      - install-worker
+      - run:
+          name: Run BTCC and Bitget provider contract tests
+          command: npm --prefix worker run test:provider-contracts
 
   worker-typecheck:
     executor: node-worker
     steps:
+      - install-worker
+      - run:
+          name: Type-check complete Cloudflare Worker
+          command: npm --prefix worker run build
+
+  worker-provider-typecheck:
+    executor: node-worker
+    steps:
+      - install-worker
+      - run:
+          name: Type-check BTCC and Bitget provider contracts
+          command: npm --prefix worker run build:provider-contracts
+
+  worker-paper-safety:
+    executor: node-worker
+    steps:
+      - install-worker
+      - run:
+          name: Verify paper-safety contract
+          command: npm --prefix worker run verify:paper-safety
+
+  worker-live-candidate-safety:
+    executor: node-worker
+    steps:
+      - install-worker
+      - run:
+          name: Verify disabled live-candidate safety contract
+          command: npm --prefix worker run verify:live-candidate-safety
+
+  worker-regulated-safety:
+    executor: node-worker
+    steps:
+      - install-worker
+      - run:
+          name: Verify regulated foundation safety contract
+          command: npm --prefix worker run verify:regulated-foundation-safety
+
+  worker-certification-safety:
+    executor: node-worker
+    steps:
+      - install-worker
+      - run:
+          name: Verify certification safety contract
+          command: npm --prefix worker run verify:certification-safety
+
+  worker-cryptoops-operational-safety:
+    executor: node-worker
+    steps:
       - checkout
       - run:
-          name: Install Worker dependencies
-          command: npm --prefix worker ci
+          name: Verify operational CryptoOps Actions remain read-only
+          command: node scripts/verify-cryptoops-readonly-openapi.mjs
+
+  worker-cryptoops-candidate-safety:
+    executor: node-worker
+    steps:
+      - install-worker
       - run:
-          name: Type-check Cloudflare Worker
-          command: npm --prefix worker run build
+          name: Verify candidate CryptoOps schemas remain read-only
+          command: npm --prefix worker run verify:cryptoops-readonly-openapi
 
   worker-safety-contracts:
     executor: node-worker
     steps:
-      - checkout
       - run:
-          name: Install Worker dependencies
-          command: npm --prefix worker ci
-      - run:
-          name: Verify paper-safety contract
-          command: npm --prefix worker run verify:paper-safety
-      - run:
-          name: Verify disabled live-candidate safety contract
-          command: npm --prefix worker run verify:live-candidate-safety
-      - run:
-          name: Verify regulated foundation safety contract
-          command: node worker/scripts/verify-regulated-foundation-safety.mjs
-      - run:
-          name: Verify certification safety contract
-          command: node worker/scripts/verify-certification-safety.mjs
-      - run:
-          name: Verify operational CryptoOps Actions remain read-only
-          command: node scripts/verify-cryptoops-readonly-openapi.mjs
-      - run:
-          name: Verify candidate CryptoOps schemas remain read-only
-          command: node worker/scripts/verify-cryptoops-readonly-openapi.mjs
+          name: Confirm all Worker safety contracts passed
+          command: echo "All Worker safety contracts passed."
 
   worker-dry-run-bundles:
     executor: node-worker
     steps:
-      - checkout
-      - run:
-          name: Install Worker dependencies
-          command: npm --prefix worker ci
+      - install-worker
       - run:
           name: Build disabled live-candidate dry-run bundle
           command: npm --prefix worker run bundle:live-candidate
@@ -159,14 +198,31 @@ workflows:
       - frontend-build
       - worker-root-contracts
       - worker-live-foundation-tests
+      - worker-provider-tests
       - worker-typecheck
-      - worker-safety-contracts
+      - worker-provider-typecheck
+      - worker-paper-safety
+      - worker-live-candidate-safety
+      - worker-regulated-safety
+      - worker-certification-safety
+      - worker-cryptoops-operational-safety
+      - worker-cryptoops-candidate-safety
+      - worker-safety-contracts:
+          requires:
+            - worker-paper-safety
+            - worker-live-candidate-safety
+            - worker-regulated-safety
+            - worker-certification-safety
+            - worker-cryptoops-operational-safety
+            - worker-cryptoops-candidate-safety
       - worker-dry-run-bundles
       - worker-fast-path:
           requires:
             - worker-root-contracts
             - worker-live-foundation-tests
+            - worker-provider-tests
             - worker-typecheck
+            - worker-provider-typecheck
             - worker-safety-contracts
             - worker-dry-run-bundles
       - backend-test-audit
