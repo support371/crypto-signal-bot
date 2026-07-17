@@ -116,7 +116,7 @@ export async function loadReleaseAuthorization(
 export async function evaluateLiveCandidateReadiness(
   env: LiveGateEnv,
   now = new Date(),
-): Promise<LiveReadinessReport & { activationPrerequisitesSatisfied: boolean }> {
+): Promise<LiveReadinessReport & { authorizationEvidenceSatisfied: boolean }> {
   const configuredReleaseId = String(env.LIVE_RELEASE_ID ?? '').trim()
   const gitSha = String(env.BUILD_GIT_SHA ?? '').trim()
   const release = await loadReleaseAuthorization(env, configuredReleaseId)
@@ -151,7 +151,7 @@ export async function evaluateLiveCandidateReadiness(
     candidate_execution_path_locked: true,
   }
 
-  const activationPrerequisitesSatisfied = Object.entries(checks)
+  const authorizationEvidenceSatisfied = Object.entries(checks)
     .filter(([name]) => name !== 'candidate_execution_path_locked')
     .every(([, passed]) => passed)
 
@@ -171,6 +171,6 @@ export async function evaluateLiveCandidateReadiness(
     releaseId: release?.releaseId ?? null,
     gitSha,
     evaluatedAt: now.toISOString(),
-    activationPrerequisitesSatisfied,
+    authorizationEvidenceSatisfied,
   }
 }
