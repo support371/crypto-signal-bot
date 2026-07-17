@@ -5,6 +5,7 @@ compatibility_flags = ["nodejs_compat"]
 
 # This deployment is intentionally read-only. No routes or cron triggers are assigned.
 # Secrets must be configured through Cloudflare encrypted secrets, never in this file.
+# Placeholder resource IDs intentionally prevent accidental deployment against production.
 
 [vars]
 TRADING_MODE = "live-candidate"
@@ -15,6 +16,7 @@ LIVE_EXECUTION_ENABLED = "false"
 WITHDRAWALS_ENABLED = "false"
 LIVE_RELEASE_ID = ""
 BUILD_GIT_SHA = ""
+CANDIDATE_RESOURCES_CONFIGURED = "false"
 MARKET_DATA_PUBLIC_EXCHANGE = "coinbase"
 PAPER_STARTING_BALANCE_USDT = "10000"
 GUARDIAN_MAX_DRAWDOWN_PCT = "15"
@@ -25,13 +27,21 @@ CORS_ALLOWED_ORIGINS = "https://crypto-signal-bot-indol.vercel.app"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "crypto-signal-bot-db"
-database_id = "d647c639-845a-414e-9bb4-513e42ef4451"
+database_name = "crypto-signal-bot-live-candidate-db"
+database_id = "00000000-0000-0000-0000-000000000000"
 
 [[r2_buckets]]
 binding = "STORAGE"
-bucket_name = "crypto-signal-bot-storage"
+bucket_name = "crypto-signal-bot-live-candidate-storage"
 
 [[kv_namespaces]]
 binding = "AGENT_MEMORY"
-id = "8f0321c43b844ec08c514f1d04839a3c"
+id = "00000000000000000000000000000000"
+
+[[durable_objects.bindings]]
+name = "EXCHANGE_ACCOUNT_COORDINATOR"
+class_name = "ExchangeAccountCoordinator"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ExchangeAccountCoordinator"]
