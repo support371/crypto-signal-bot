@@ -7,11 +7,14 @@ on:
       - 'worker/src/live/**'
       - 'worker/src/index_live_candidate.ts'
       - 'worker/tests/live-foundation.test.ts'
+      - 'worker/tests/live-ledger.test.ts'
       - 'worker/migrations/003_live_release_authorizations.sql'
       - 'worker/migrations/004_live_idempotency_records.sql'
+      - 'worker/migrations/005_live_ledger_and_reservations.sql'
       - 'worker/scripts/verify-live-candidate-safety.mjs'
       - 'worker/package.json'
       - 'worker/package-lock.json'
+      - 'worker/tsconfig.json'
       - 'wrangler.live-candidate.toml'
       - '.github/workflows/live-candidate-safety.yml'
   workflow_dispatch:
@@ -47,7 +50,7 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
-      - name: Run exact-decimal and idempotency tests
+      - name: Run exact-decimal, product-rule, risk, and ledger tests
         run: npm run test:live-foundation
 
       - name: Typecheck Worker
@@ -61,6 +64,9 @@ jobs:
 
       - name: Apply idempotency migration locally
         run: npm run migrate:004:local
+
+      - name: Apply ledger and reservation migration locally
+        run: npm run migrate:005:local
 
       - name: Build a dry-run Cloudflare bundle
         run: npm run bundle:live-candidate
