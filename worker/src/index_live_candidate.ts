@@ -5,7 +5,11 @@ import {
   type LiveGateEnv,
 } from './live/release-gate'
 
-type Env = AgentContextEnv & LiveGateEnv
+export { ExchangeAccountCoordinator } from './live/account-coordinator'
+
+type Env = AgentContextEnv & LiveGateEnv & {
+  EXCHANGE_ACCOUNT_COORDINATOR: DurableObjectNamespace
+}
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 const LEGACY_FINANCIAL_PATHS = new Set([
@@ -119,6 +123,9 @@ export default {
         order_cancellation: false,
         withdrawals: false,
         deposits: false,
+        account_coordinator: 'execution-locked',
+        durable_idempotency: 'schema-and-service-only',
+        exact_decimal_arithmetic: true,
         readiness_endpoint: '/v1/live/readiness',
         reason: 'Candidate entrypoint is intentionally read-only',
       })
