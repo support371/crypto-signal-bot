@@ -57,12 +57,12 @@ function booleanValue(value: unknown): boolean {
   return value === true || value === 1 || value === '1' || String(value).toLowerCase() === 'true'
 }
 
-function orderTypes(value: unknown): readonly OrderType[] {
+function orderTypes(value: unknown, allowEmpty: boolean): readonly OrderType[] {
   if (!Array.isArray(value)) throw new TypeError('supportedOrderTypes must be an array')
   const normalized = Array.from(new Set(value
     .map((item) => String(item).trim().toUpperCase())
     .filter((item): item is OrderType => ORDER_TYPES.has(item as OrderType))))
-  if (normalized.length === 0) {
+  if (!allowEmpty && normalized.length === 0) {
     throw new TypeError('supportedOrderTypes must contain at least one supported type')
   }
   return normalized
@@ -79,6 +79,7 @@ export function normalizeProductRules(raw: RawProductRules): ProductRules {
   if (Date.parse(expiresAt) <= Date.parse(observedAt)) {
     throw new RangeError('expiresAt must be later than observedAt')
   }
+  const tradingEnabled = booleanValue(raw.tradingEnabled)
 
   return {
     productId: requiredText(raw.productId, 'productId'),
@@ -105,8 +106,8 @@ export function normalizeProductRules(raw: RawProductRules): ProductRules {
       asDecimalString(raw.minimumQuoteSize, 'minimumQuoteSize'),
       'minimumQuoteSize',
     ),
-    tradingEnabled: booleanValue(raw.tradingEnabled),
-    supportedOrderTypes: orderTypes(raw.supportedOrderTypes),
+    tradingEnabled,
+    supportedOrderTypes: orderTypes(raw.supportedOrderTypes, !tradingEnabled),
     observedAt,
     expiresAt,
   }
