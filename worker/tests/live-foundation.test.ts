@@ -15,6 +15,7 @@ import {
   normalizeProductRules,
   validateOrderAgainstProductRules,
 } from '../src/live/product-rules.ts'
+import { evaluatePreTradeRisk } from '../src/live/risk-engine.ts'
 
 test('decimal arithmetic is exact and canonical', () => {
   const oneTenth = asDecimalString('0.1')
@@ -169,4 +170,60 @@ test('stale product rules block an otherwise valid order', () => {
 
   assert.equal(result.accepted, false)
   assert.ok(result.reasons.includes('product_rules_stale'))
+})
+
+test('pre-trade risk approves only when every mandatory gate passes', () => {
+  const base = {
+    decisionId: 'risk-1',
+    configurationVersion: 'config-v1',
+    decidedAt: '2026-07-17T10:00:00.000Z',
+    side: 'BUY' as const,
+    orderNotional: asDecimalString('100'),
+    baseQuantity: asDecimalString('0.001'),
+    dailyTradedNotional: asDecimalString('250'),
+    currentPositionNotional: asDecimalString('500'),
+    availableQuoteBalance: asDecimalString('1000'),
+    availableBaseBalance: asDecimalString('1'),
+    openOrderCount: 1,
+    accountEligible: true,
+    releaseActive: true,
+    guardianClear: true,
+    executionUnlocked: true,
+    marketFeedFresh: true,
+    productRulesFresh: true,
+    reconciliationClear: true,
+    idempotencyClaimed: true,
+    limits: {
+      maxOrderNotional: asDecimalString('200'),
+      maxDailyNotional: asDecimalString('1000'),
+      maxPositionNotional: asDecimalString('1000'),
+      maxOpenOrders: 5,
+    },
+  }
+
+  const approved = evaluatePreTradeRisk(base)
+  assert.equal(approved.approved, true)
+  assert.ok(approved.rules.every((result) => result.passed))
+
+  const locked = evaluatePreTradeRisk({
+    ...base,
+    decisionId: 'risk-2',
+    executionUnlocked: false,
+  })
+  assert.equal(locked.approved, false)
+  assert.equal(
+    locked.rules.find((result) => result.rule === 'execution_unlocked')?.reason,
+    'execution_locked',
+  )
+
+  const overLimit = evaluatePreTradeRisk({
+    ...base,
+    decisionId: 'risk-3',
+    orderNotional: asDecimalString('300'),
+  })
+  assert.equal(overLimit.approved, false)
+  assert.equal(
+    overLimit.rules.find((result) => result.rule === 'order_notional_limit')?.reason,
+    'order_notional_exceeds_limit',
+  )
 })
