@@ -32,13 +32,14 @@ Bitget currently has strict spot response normalizers, an authenticated read-onl
 - Legacy live, order, transfer, and withdrawal routes return HTTP 403.
 - Every public non-safe HTTP method returns HTTP 403.
 - Sensitive reads fail closed when operator authentication is absent.
-- Public Worker routes cannot reach the account coordinator or candidate evidence endpoints.
+- Public Worker routes cannot reach the account coordinator, candidate evidence endpoints, or projection-alert acknowledgment workflow.
 - The account Durable Object remains halted for orders, cancellation, replacement, transfers, and withdrawals.
-- Its only mutation is an internally authenticated commit of non-executable assessment evidence, reservation drafts, and projection-outbox records.
-- Durable Object alarms retry D1 reporting projections only; they cannot submit, cancel, replace, transfer, or withdraw.
+- Its only mutation is an internally authenticated commit of non-executable assessment evidence, reservation drafts, projection-outbox records, and local reporting cursors.
+- Durable Object alarms retry D1 reporting projections and observability delivery only; they cannot submit, cancel, replace, transfer, or withdraw.
 - Reservation drafts are constrained to `applied=0` in both authoritative and reporting stores.
-- No timeout, ambiguous response, alarm retry, or repeated request authorizes another order submission.
-- Preview, assessment, persisted evidence, and projection records always report `executionAllowed=false`.
+- Projection-alert acknowledgment cannot retry a projection, apply a reservation, alter Guardian state, or unlock execution.
+- No timeout, ambiguous response, alarm retry, alert acknowledgment, or repeated request authorizes another order submission.
+- Preview, assessment, persisted evidence, projection records, observability results, and acknowledgment results always report `executionAllowed=false`.
 - Certification evidence can never activate the candidate; `certifiedForLive` is permanently false in this branch.
 
 ## Implemented layers
@@ -108,6 +109,27 @@ The architecture does not claim a distributed transaction between Durable Object
 
 The internal coordinator route requires `CANDIDATE_EVIDENCE_TOKEN`, uses a constant-time comparison, enforces a bounded request body, and is not reachable through the public Worker. The candidate configuration does not provision that secret.
 
+### Projection observability and incident acknowledgment
+
+`worker/src/live/observed-account-coordinator.ts` decorates the tested base coordinator without replacing its authoritative persistence or retry logic. It consumes the existing append-only projection events through a Durable Object cursor and writes observability evidence only after the base operation completes.
+
+The cursor advances only after successful D1 delivery. A D1 observability failure leaves the cursor unchanged, records a local failure count and safe error code, and schedules a one-minute retry without replacing an earlier coordinator alarm. Delivery is limited to 50 events per pass; a full batch schedules immediate continuation.
+
+`worker/src/live/candidate-projection-observability.ts` emits deterministic samples for:
+
+- projection lag in milliseconds;
+- projection attempt count;
+- conflict state;
+- dead-letter state.
+
+It creates deduplicated critical alerts for projection lag beyond five minutes, evidence conflicts, and terminal dead letters. Projection alerts use `guardianAction=NONE`; they do not alter trading or transfer state. When a delayed projection later succeeds, the lag incident is opened and immediately resolved so immutable history records both the breach and recovery.
+
+Metric sample IDs and alert-event IDs are deterministic. Metric insertion is replay-safe, and an existing alert event is detected before occurrence counts can be incremented again.
+
+`ACKNOWLEDGE_ALERT` is a dedicated authorization action. Only a scoped `RISK_OPERATOR` or `RISK_ADMIN` with a current AAL2/AAL3 `operations` step-up session may acknowledge a projection alert. Viewers, auditors, wrong account scopes, missing step-up sessions, and wrong step-up audiences are rejected. The authorization decision is recorded before the immutable acknowledgment event.
+
+Acknowledgment returns `projectionRetried=false`, `reservationApplied=false`, and `executionAllowed=false`. The workflow is not exposed by the public candidate Worker.
+
 ### Pre-trade risk
 
 `worker/src/live/risk-engine.ts` requires account eligibility, release authorization, Guardian health, execution unlock, fresh market and product data, clear reconciliation, durable idempotency, sufficient balances, and configured order, daily, position, and open-order limits.
@@ -120,7 +142,7 @@ Migration `004_live_idempotency_records.sql` and `worker/src/live/idempotency.ts
 
 ### Serialized account boundary
 
-`ExchangeAccountCoordinator` establishes one SQLite-backed Durable Object per future exchange account. It serializes assessment-evidence commits and reporting projection retries but remains permanently halted for all exchange and fund mutations.
+`ExchangeAccountCoordinator` establishes one SQLite-backed Durable Object per future exchange account. It serializes assessment-evidence commits, reporting projection retries, and observability delivery but remains permanently halted for all exchange and fund mutations.
 
 ### Order lifecycle
 
@@ -169,7 +191,7 @@ The branch defines separate CircleCI gates for:
 - complete Worker type checking;
 - provider-only type checking;
 - paper safety;
-- live-candidate, command-lock, evidence-persistence, alarm-retry, and dead-letter safety;
+- live-candidate, command-lock, evidence-persistence, alarm-retry, dead-letter, projection-observability, and acknowledgment-isolation safety;
 - regulated-foundation safety;
 - certification safety;
 - operational and candidate CryptoOps read-only schemas;
@@ -177,6 +199,8 @@ The branch defines separate CircleCI gates for:
 - frontend build and backend audit tests.
 
 The evidence tests verify deterministic envelopes, execution-lock preservation, reservation-draft extraction, a single D1 transactional batch, replay without duplicate projection, and conflict rejection. Retry tests verify exponential delays, the one-hour cap, immediate conflict quarantine, and terminal dead-letter escalation on attempt eight.
+
+Projection observability tests verify deterministic metrics, the five-minute lag threshold, recovery incident history, conflict/dead-letter severity, non-mutating Guardian behavior, and fail-closed timestamp and threshold validation. Authorization tests verify role scope and operations step-up requirements and prove that alert acknowledgment grants no trading authority.
 
 The live tests use Node's `node:test` runner and are excluded from the legacy Vitest contract runner to prevent cross-runner collection.
 
@@ -186,13 +210,12 @@ Local migration commands exist for migrations 003 through 014. The branch must r
 
 1. Import and review BTCC's official endpoint and signing manifest; then build its bounded read-only client.
 2. Execute Bitget read-only contract tests in an isolated non-live environment using a server-side key that has no write, transfer, or withdrawal authority.
-3. Connect projection lag, conflict, and dead-letter states to the existing alert store and an authorized operator acknowledgment workflow.
-4. Complete provider fill-to-ledger processing, positions, fees, cost basis, tax lots, and P&L reconciliation.
-5. Add BTCC and Bitget user-event or polling recovery with sequence, freshness, and REST snapshot rules.
-6. Bind queues, reconciliation schedules, retry budgets, dead-letter operations, and production alert delivery for the wider event pipeline.
-7. Build role-scoped frontend account, order-preview, risk, Guardian, reconciliation, audit, deposit, and withdrawal controls.
-8. Rehearse rollback, disaster recovery, key rotation, incident response, and provider outage handling.
-9. Complete independent security, eligibility, legal, jurisdiction, compliance, and tax review before any separate activation release.
+3. Complete provider fill-to-ledger processing, positions, fees, cost basis, tax lots, and P&L reconciliation.
+4. Add BTCC and Bitget user-event or polling recovery with sequence, freshness, and REST snapshot rules.
+5. Bind queues, reconciliation schedules, retry budgets, dead-letter operations, and production alert delivery for the wider event pipeline.
+6. Build role-scoped frontend account, order-preview, risk, Guardian, reconciliation, audit, deposit, and withdrawal controls.
+7. Rehearse rollback, disaster recovery, key rotation, incident response, and provider outage handling.
+8. Complete independent security, eligibility, legal, jurisdiction, compliance, and tax review before any separate activation release.
 
 ## Activation boundary
 
