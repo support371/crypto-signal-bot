@@ -14,6 +14,7 @@ export interface LiveGateEnv {
   LIVE_RELEASE_ID?: string
   BUILD_GIT_SHA?: string
   WITHDRAWALS_ENABLED?: string
+  CANDIDATE_RESOURCES_CONFIGURED?: string
 }
 
 type ReleaseRow = {
@@ -134,6 +135,7 @@ export async function evaluateLiveCandidateReadiness(
     explicit_mainnet_flag: enabled(env.ALLOW_MAINNET),
     explicit_live_execution_flag: enabled(env.LIVE_EXECUTION_ENABLED),
     withdrawals_disabled: !enabled(env.WITHDRAWALS_ENABLED),
+    isolated_candidate_resources_configured: enabled(env.CANDIDATE_RESOURCES_CONFIGURED),
     build_git_sha_present: gitSha.length >= 40,
     release_id_present: configuredReleaseId.length > 0,
     release_record_found: release !== null,
