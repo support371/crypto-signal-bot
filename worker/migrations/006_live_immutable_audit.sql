@@ -1,5 +1,6 @@
 -- Migration 006: immutable, hash-chained audit events.
 -- UPDATE and DELETE are prohibited by database triggers.
+-- A unique predecessor constraint prevents two events from forking one chain.
 
 CREATE TABLE IF NOT EXISTS immutable_audit_events (
   sequence_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -17,10 +18,12 @@ CREATE TABLE IF NOT EXISTS immutable_audit_events (
   outcome TEXT NOT NULL,
   before_json TEXT,
   after_json TEXT,
-  previous_event_hash TEXT,
+  previous_event_hash TEXT NOT NULL DEFAULT 'GENESIS'
+    CHECK (previous_event_hash = 'GENESIS' OR length(previous_event_hash) = 64),
   event_hash TEXT NOT NULL UNIQUE CHECK (length(event_hash) = 64),
   occurred_at TEXT NOT NULL,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (exchange_account_id, previous_event_hash)
 );
 
 CREATE INDEX IF NOT EXISTS idx_immutable_audit_account_sequence
