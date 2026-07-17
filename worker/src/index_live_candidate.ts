@@ -123,12 +123,19 @@ export default {
         order_cancellation: false,
         withdrawals: false,
         deposits: false,
-        account_coordinator: 'execution-locked',
+        account_coordinator: 'execution-locked-and-internal-only',
         durable_idempotency: 'schema-and-service-only',
         exact_decimal_arithmetic: true,
         readiness_endpoint: '/v1/live/readiness',
         reason: 'Candidate entrypoint is intentionally read-only',
       })
+    }
+
+    if (pathname.startsWith('/internal/') || pathname.startsWith('/v1/live/coordinator')) {
+      return json(request, env, {
+        error: 'Internal coordinator routes are not publicly exposed',
+        code: 'INTERNAL_ROUTE_NOT_EXPOSED',
+      }, 404)
     }
 
     if (LEGACY_FINANCIAL_PATHS.has(pathname) || pathname.startsWith('/v1/orders') || pathname.startsWith('/v1/withdrawals')) {
