@@ -92,8 +92,56 @@ jobs:
     steps:
       - install-worker
       - run:
-          name: Verify disabled live-candidate safety contract
-          command: npm --prefix worker run verify:live-candidate-safety
+          name: Verify disabled live-candidate entrypoint safety
+          command: node worker/scripts/verify-live-candidate-safety.mjs
+
+  worker-candidate-command-lock-safety:
+    executor: node-worker
+    steps:
+      - install-worker
+      - run:
+          name: Verify candidate command execution lock
+          command: node worker/scripts/verify-candidate-command-lock.mjs
+
+  worker-candidate-evidence-persistence-safety:
+    executor: node-worker
+    steps:
+      - install-worker
+      - run:
+          name: Verify candidate evidence persistence and retries
+          command: node worker/scripts/verify-candidate-evidence-persistence.mjs
+
+  worker-candidate-projection-observability-safety:
+    executor: node-worker
+    steps:
+      - install-worker
+      - run:
+          name: Verify projection observability and acknowledgment isolation
+          command: node worker/scripts/verify-candidate-projection-observability.mjs
+
+  worker-fill-accounting-safety:
+    executor: node-worker
+    steps:
+      - install-worker
+      - run:
+          name: Verify FIFO accounting and reconciliation isolation
+          command: node worker/scripts/verify-fill-accounting-safety.mjs
+
+  worker-reservation-settlement-safety:
+    executor: node-worker
+    steps:
+      - install-worker
+      - run:
+          name: Verify versioned reservation settlement
+          command: node worker/scripts/verify-reservation-settlement-safety.mjs
+
+  worker-exchange-recovery-safety:
+    executor: node-worker
+    steps:
+      - install-worker
+      - run:
+          name: Verify BTCC and Bitget recovery boundaries
+          command: node worker/scripts/verify-exchange-recovery-safety.mjs
 
   worker-regulated-safety:
     executor: node-worker
@@ -203,6 +251,12 @@ workflows:
       - worker-provider-typecheck
       - worker-paper-safety
       - worker-live-candidate-safety
+      - worker-candidate-command-lock-safety
+      - worker-candidate-evidence-persistence-safety
+      - worker-candidate-projection-observability-safety
+      - worker-fill-accounting-safety
+      - worker-reservation-settlement-safety
+      - worker-exchange-recovery-safety
       - worker-regulated-safety
       - worker-certification-safety
       - worker-cryptoops-operational-safety
@@ -211,6 +265,12 @@ workflows:
           requires:
             - worker-paper-safety
             - worker-live-candidate-safety
+            - worker-candidate-command-lock-safety
+            - worker-candidate-evidence-persistence-safety
+            - worker-candidate-projection-observability-safety
+            - worker-fill-accounting-safety
+            - worker-reservation-settlement-safety
+            - worker-exchange-recovery-safety
             - worker-regulated-safety
             - worker-certification-safety
             - worker-cryptoops-operational-safety
