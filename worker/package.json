@@ -14,7 +14,7 @@
     "test:live-foundation": "node --experimental-strip-types --test tests/live-*.test.ts",
     "test:provider-contracts": "node --experimental-strip-types --test tests/live-default-exchanges.test.ts tests/live-bitget-read-only-client.test.ts tests/live-bitget-preview.test.ts",
     "verify:paper-safety": "node scripts/verify-paper-safety.mjs",
-    "verify:live-candidate-safety": "node scripts/verify-live-candidate-safety.mjs",
+    "verify:live-candidate-safety": "node scripts/verify-live-candidate-safety.mjs && node scripts/verify-candidate-command-lock.mjs",
     "verify:regulated-foundation-safety": "node scripts/verify-regulated-foundation-safety.mjs",
     "verify:certification-safety": "node scripts/verify-certification-safety.mjs",
     "verify:cryptoops-readonly-openapi": "node scripts/verify-cryptoops-readonly-openapi.mjs",
