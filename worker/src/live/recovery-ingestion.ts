@@ -66,6 +66,8 @@ export interface BitgetRecoveryIngestionPlan {
   ingestionHash: string
 }
 
+type BitgetRecoveryIngestionEvidence = Omit<BitgetRecoveryIngestionPlan, 'ingestionHash'>
+
 function required(value: string, field: string): string {
   const normalized = value.trim()
   if (!normalized) throw new TypeError(`${field} is required`)
@@ -170,16 +172,16 @@ export async function buildBitgetRecoveryIngestionPlan(
   const fillObservations = Object.freeze(await Promise.all(
     input.recovery.snapshot.fills.map((fill) => fillObservation(snapshotId, fill)),
   ))
-  const accountingTaskIntents = Object.freeze(fillObservations.map((fill) => Object.freeze({
+  const accountingTaskIntents = Object.freeze(fillObservations.map((fill): RecoveryAccountingTaskIntent => Object.freeze({
     taskIntentId: `recovery-accounting:${fill.fillHash.slice(0, 32)}`,
     fillId: fill.fillId,
     fillHash: fill.fillHash,
     sequenceTimestamp: fill.sequenceTimestamp,
-    status: 'PENDING_ACCOUNTING' as const,
-    accountingApplied: false as const,
-    reservationSettled: false as const,
-    providerMutationAllowed: false as const,
-    executionAllowed: false as const,
+    status: 'PENDING_ACCOUNTING',
+    accountingApplied: false,
+    reservationSettled: false,
+    providerMutationAllowed: false,
+    executionAllowed: false,
   })))
 
   const requestHash = await canonicalHash({
@@ -194,7 +196,7 @@ export async function buildBitgetRecoveryIngestionPlan(
     serverTimestampMs: input.recovery.snapshot.serverTimestampMs,
     recoveredAt,
   })
-  const evidence = {
+  const evidence: BitgetRecoveryIngestionEvidence = {
     ingestionId,
     provider: 'BITGET',
     exchangeAccountId,
