@@ -66,6 +66,8 @@ for (const [token, message] of [
   ['ADD COLUMN version INTEGER NOT NULL DEFAULT 0', 'reservation version column is missing'],
   ['request_hash TEXT NOT NULL', 'settlement request hash column is missing'],
   ['next_version INTEGER NOT NULL CHECK (next_version = previous_version + 1)', 'monotonic settlement version constraint is missing'],
+  ['idx_live_reservation_settlement_version_claim', 'unique reservation version claim is missing'],
+  ['ON live_reservation_settlement_receipts(reservation_id, next_version)', 'reservation version uniqueness columns are missing'],
   ['reservation_state_updated INTEGER NOT NULL DEFAULT 1', 'reservation state evidence constraint is missing'],
   ['CHECK (provider_mutation_allowed = 0)', 'migration provider mutation lock is missing'],
   ['CHECK (execution_allowed = 0)', 'migration execution lock is missing'],
