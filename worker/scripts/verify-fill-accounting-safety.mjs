@@ -26,7 +26,7 @@ for (const [token, message] of [
   ['addSignedDecimal', 'signed cumulative realized PnL is missing'],
   ['InsufficientCostBasisError', 'insufficient FIFO basis must fail closed'],
   ['feeQuoteValue is required for third-asset commission', 'third-asset fee valuation guard is missing'],
-  ["commissionAsset === input.baseAsset", 'base-asset fee quantity treatment is missing'],
+  ['commissionAsset === baseAsset', 'base-asset fee quantity treatment is missing'],
   ['lot-consumption:', 'deterministic lot-consumption IDs are missing'],
   ['realized-pnl:', 'deterministic realized PnL IDs are missing'],
   ['markPositionToMarket', 'unrealized PnL mark-to-market function is missing'],
