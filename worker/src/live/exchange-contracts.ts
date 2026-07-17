@@ -50,7 +50,7 @@ export interface ExchangeProduct {
 }
 
 export interface ExchangeOrderSnapshot {
-  exchangeOrderId: string
+  exchangeOrderId: string | null
   clientOrderId: string | null
   productId: string
   side: OrderSide
