@@ -19,7 +19,7 @@ Coinbase is optional public/read-only data support. It is not a default executio
 
 BTCC remains fail-closed until an official dated, SHA-256-bound endpoint and signing manifest is imported and reviewed. No BTCC API host, endpoint, signing rule, precision rule, status, or permission model may be guessed.
 
-Bitget currently has strict spot normalizers, an authenticated read-only REST transport, a local locked preview, deterministic unsigned mutation candidates, and mandatory read-only recovery instructions. No Bitget write transport or signing path exists in this branch.
+Bitget currently has strict spot normalizers, an authenticated read-only REST transport, a local locked preview, deterministic unsigned mutation candidates, mandatory read-only recovery instructions, and a credential-free certification harness. No Bitget write transport or signing path exists in this branch.
 
 ## Safety invariants
 
@@ -32,12 +32,14 @@ Bitget currently has strict spot normalizers, an authenticated read-only REST tr
 - Legacy live, order, transfer, and withdrawal routes return HTTP 403.
 - Every public non-safe HTTP method returns HTTP 403.
 - Sensitive reads fail closed when operator authentication is absent.
-- Public Worker routes cannot reach candidate evidence, recovery approval, dispatch, fill accounting, reconciliation, reservation settlement, or transfer workflows.
+- Public Worker routes cannot reach candidate evidence, provider certification, recovery approval, dispatch, fill accounting, reconciliation, reservation settlement, or transfer workflows.
 - The account Durable Object remains halted for exchange orders, cancellations, replacements, transfers, and withdrawals.
 - Durable Object alarms retry D1 reporting projections and observability delivery only.
 - Candidate reservation drafts remain constrained to `applied=0`.
 - Timeout, ambiguous response, duplicate client ID, alarm retry, alert acknowledgment, evidence replay, and repeated requests never authorize automatic provider resubmission.
-- Preview, assessment, unsigned provider candidates, persisted evidence, projection records, accounting receipts, settlement receipts, approvals, validity records, and dispatch receipts permanently deny provider mutation and execution.
+- Preview, assessment, unsigned provider candidates, certification evidence, attestations, persisted evidence, projection records, accounting receipts, settlement receipts, approvals, validity records, and dispatch receipts permanently deny provider mutation and execution.
+- Fixture certification evidence can never be represented as external provider evidence.
+- External read-only evidence cannot project automatically into release certification.
 - Certification evidence can never activate the candidate; `certifiedForLive` remains false in this branch.
 
 ## Implemented layers
@@ -51,6 +53,30 @@ Bitget currently has strict spot normalizers, an authenticated read-only REST tr
 `worker/src/live/adapters/bitget/endpoints.ts` contains the read-only spot endpoint allowlist. `worker/src/live/adapters/bitget/read-only-client.ts` implements bounded HMAC-authenticated reads through an injected server-side secret provider. It rejects redirects, excessive requests/responses, non-GET endpoints, and API-key authorities that include trading, transfer, or withdrawal permission.
 
 `worker/src/live/adapters/bitget/normalizer.ts` normalizes product rules, balances, orders, and fills with exact decimal strings. Market buys remain quote-sized; the adapter never invents a requested base quantity.
+
+### Credential-free Bitget read-only certification
+
+`worker/src/live/bitget-read-only-certification.ts` accepts an injected read-only client and produces deterministic normalized evidence for:
+
+- API-key read-only authority;
+- product metadata and precision;
+- base and quote balances;
+- current orders;
+- historical orders;
+- fills;
+- pagination saturation;
+- duplicate and conflicting provider identities.
+
+The harness does not construct the secret-bearing Bitget transport, does not accept API keys or passphrases, contains no fetch call, and persists no credentials. Saturated pages return `BLOCKED` until continuation evidence exists. Malformed provider contracts and conflicting identities return `FAILED`. All results permanently set live certification, provider mutation, automatic retry, transfers, withdrawals, and execution to false.
+
+Migration `021_live_bitget_read_only_certification.sql` and `worker/src/live/bitget-read-only-certification-store.ts` persist only immutable run summaries, counts, statuses, and evidence hashes. Raw balances, orders, fills, user identifiers, and credentials are not stored. One D1 batch inserts one run plus all eight mandatory checks, followed by post-insert verification. Identical evidence replays; changed evidence under the same run identity is rejected.
+
+Migration `022_live_bitget_read_only_certification_attestation.sql` and `worker/src/live/bitget-read-only-certification-attestation.ts` distinguish evidence origin:
+
+- `INJECTED_FIXTURES` must remain `LOCAL_TEST`, has no operator authorization, and sets `externalReadOnlyEvidence=false`.
+- `ISOLATED_READ_ONLY_CLIENT` must use `SHADOW`, `TESTNET`, or `LIVE_CANDIDATE`, requires an operator identity and authorization-event hash, and requires a complete passed run with eight passing checks.
+
+An isolated source attestation marks evidence as external read-only evidence only. It permanently sets `certificationCheckProjectionAllowed=false`; it cannot automatically satisfy release certification, activate live trading, or authorize provider mutation.
 
 ### Disabled Bitget execution-candidate evidence
 
@@ -139,7 +165,7 @@ Migration `019_live_recovery_accounting_approval_validity.sql` caps approved dis
 
 The verified and fresh approval packages use module-private symbol brands defined with `enumerable:false`, `configurable:false`, and `writable:false`. Object spread and ordinary serialization therefore remove authority. A fresh derived package receives the verified brand again only after its immutable source brand is runtime-checked.
 
-Local migration commands apply approval evidence, dispatch evidence, and validity evidence explicitly in dependency order.
+Local migration commands apply approval evidence, dispatch evidence, validity evidence, read-only certification evidence, and source attestations explicitly. Migration number 020 remains reserved for the unpublished recovery-dispatch-attempt work and is not reused.
 
 ### Guardian, authorization, queues, transfers, and audit
 
@@ -154,21 +180,21 @@ CircleCI separately validates:
 - legacy Worker contracts;
 - the complete disabled live-foundation suite;
 - named core, accounting, recovery-contract, legacy-provider, and transfer test shards;
-- BTCC/Bitget provider tests;
+- BTCC/Bitget provider tests, including the fixture certification, immutable store, and source-attestation tests;
 - recovery ingestion, approval, dispatch, freshness, validity, and store tests;
 - full and provider TypeScript compilation;
 - both disabled dry-run bundles;
 - frontend build and backend audit;
-- static safety contracts for execution locks, persistence, retries, observability, accounting, settlement, recovery, approval, certification, paper isolation, and CryptoOps read-only schemas.
+- static safety contracts for execution locks, credential-free certification, certification persistence, source separation, persistence, retries, observability, accounting, settlement, recovery, approval, release certification, paper isolation, and CryptoOps read-only schemas.
 
-The safety chain enforces the absence of exchange write transport, public financial-mutation routes, automatic retries, enumerable approval brands, true execution flags, and provider-mutation capability.
+The safety chain enforces the absence of exchange write transport, public financial-mutation routes, automatic retries, credential persistence, fixture-to-external evidence promotion, automatic release-certification projection, enumerable approval brands, true execution flags, and provider-mutation capability.
 
 The branch must remain draft and must not merge while any required check is failed, pending, blocked, skipped, or unavailable.
 
 ## Remaining engineering before certification
 
 1. Import and review BTCC's official endpoint and signing manifest; then build its bounded read-only client.
-2. Execute Bitget read-only contract tests in an isolated non-live environment using a server-side key controlled by an eligible authorized operator and restricted to no write, transfer, or withdrawal authority.
+2. Execute the Bitget harness in an isolated non-live environment using a server-side key controlled by an eligible authorized operator and restricted to no write, transfer, or withdrawal authority; persist and independently attest the external read-only evidence.
 3. Complete provider-event and polling recovery orchestration with freshness, REST snapshots, fill accounting, settlement, reconciliation, and incident evidence.
 4. Build role-scoped frontend account, preview, risk, Guardian, reconciliation, audit, deposit, and withdrawal controls.
 5. Rehearse rollback, disaster recovery, key rotation, incident response, and provider outage handling.
