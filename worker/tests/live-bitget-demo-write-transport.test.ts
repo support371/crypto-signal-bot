@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { canonicalJson } from '../src/live/canonical-json.ts'
+import { canonicalHash, canonicalJson } from '../src/live/canonical-json.ts'
 import { asDecimalString } from '../src/live/decimal.ts'
 import type { ProductRules } from '../src/live/domain.ts'
 import {
@@ -354,6 +354,25 @@ test('candidate tampering, binding mismatch, expiry, and attempt replay fail bef
       SIGNING_MATERIAL,
     ),
     /hash does not match/,
+  )
+  const { candidateHash: _candidateHash, ...candidateEvidence } = candidate
+  const noncanonicalEvidence = {
+    ...candidateEvidence,
+    unsignedBody: { ...candidate.unsignedBody, symbol: 'btcusdt' },
+  }
+  const noncanonicalCandidate = {
+    ...noncanonicalEvidence,
+    candidateHash: await canonicalHash(noncanonicalEvidence),
+  } as BitgetUnsignedMutationCandidate
+  await assert.rejects(
+    transport.dispatch(
+      noncanonicalCandidate,
+      verifyBitgetDemoDispatchAuthorization(authorizationInput(noncanonicalCandidate, {
+        dispatchAttemptId: 'demo-attempt-noncanonical-symbol',
+      })),
+      SIGNING_MATERIAL,
+    ),
+    /canonical Bitget form/,
   )
   const differentCandidateHash = '9'.repeat(64)
   await assert.rejects(

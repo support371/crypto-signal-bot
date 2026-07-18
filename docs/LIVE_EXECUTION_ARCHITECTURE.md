@@ -19,7 +19,7 @@ Coinbase is optional public/read-only data support. It is not a default executio
 
 BTCC remains fail-closed until an official dated, SHA-256-bound endpoint and signing manifest is imported and reviewed. No BTCC API host, endpoint, signing rule, precision rule, status, or permission model may be guessed.
 
-Bitget currently has strict spot normalizers, an authenticated read-only REST transport, a local locked preview, deterministic unsigned mutation candidates, mandatory read-only recovery instructions, a credential-free certification harness, an immutable attested-recovery ingestion bridge, an isolated demo-only write-transport module, and a source-only Durable Object rate-limit authority. The demo modules have no runtime import, deployment binding, default fetcher, credential provider, public route, exchange-account coordinator composition, or live/mainnet mode. No live Bitget write transport or runtime signing path exists in this branch.
+Bitget currently has strict spot normalizers, an authenticated read-only REST transport, a local locked preview, deterministic unsigned mutation candidates, mandatory read-only recovery instructions, a credential-free certification harness, an immutable attested-recovery ingestion bridge, an isolated demo-only write-transport module, a source-only Durable Object rate-limit authority, and immutable reviewed demo-dispatch evidence. The demo modules have no runtime import, deployment binding, default fetcher, credential provider, public route, deployed exchange-account coordinator composition, or live/mainnet mode. No live Bitget write transport or runtime signing path exists in this branch.
 
 ## Safety invariants
 
@@ -168,9 +168,36 @@ window state fail closed. Concurrent tests prove the 10/10/5 ceilings and
 operation independence. Every receipt permanently disables provider mutation,
 live execution, real funds, mainnet, withdrawals, and automatic retry.
 
+Migration `025_live_bitget_demo_dispatch_evidence.sql` and the source-only
+evidence store add three independent boundaries before any future demo call:
+
+- a reviewed authorization reloads immutable `ALLOW` evidence, requires a
+  scoped risk role, binds the exact candidate hash, and verifies an unrevoked
+  AAL2/AAL3 step-up session whose lifetime covers the authorization;
+- a one-shot attempt claim is inserted before the injected dispatch callback;
+  the same authorization, attempt, or candidate can never be claimed again;
+- a returned result summary and its zero-to-two exact read-only recovery
+  requirements are hash-bound and inserted in one D1 batch. Exact replay is
+  idempotent, while changed replay or corrupted capability evidence fails
+  closed.
+
+The loader reconstructs the transport's module-private, non-enumerable
+authorization brand only after the immutable evidence, candidate, account,
+operation, endpoint, actor/preparer separation, validity window, and permanent
+locks pass again. The orchestrator executes inside an injected account-scoped
+serializer, claims before dispatch, never catches an uncertain call for retry,
+and leaves an orphaned claim permanently unusable after interruption. A new
+candidate and a new independent review are required instead.
+
+The authorization row binds Guardian, risk, and idempotency evidence hashes,
+but this source-only slice does not yet provide the runtime adapters that reload
+those underlying systems immediately before a demo call. The non-public runner
+must supply and revalidate those dependencies; a stored boolean or hash alone
+must never become sufficient execution authority.
+
 This is not a deployed demo runner or a live execution client. There is no demo
 credential binding, no default network client, no runtime composition of the
-Durable Object authority, and no public or internal runtime route. Bitget's official
+Durable Object authority or reviewed executor, and no public or internal runtime route. Bitget's official
 [REST demo documentation](https://www.bitget.com/api-doc/common/demotrading/restapi)
 also requires a separately created demo API key and KYC. Those external
 requirements are not satisfied by this source module. The body and header
@@ -304,7 +331,7 @@ The verified and fresh approval packages use module-private symbol brands define
 
 Migration `020_live_recovery_accounting_dispatch_attempts.sql` records an immutable claim before accounting commands run. It permits only one genesis attempt, blocks replay after completion, and permits continuation after a partial or failed dispatch only through the latest predecessor and a new independently reviewed approval. The orchestrator reloads immutable approval and validity evidence inside the per-account serializer, claims the attempt before execution, stops on the first failure, and persists the dispatch summary and receipts without automatic retry.
 
-Local migration commands apply approval evidence, dispatch evidence, validity evidence, dispatch-attempt evidence, read-only certification evidence, source attestations, and attested recovery bindings explicitly. Every dispatch-attempt row permanently records zero provider-mutation, reservation-application, and execution capability.
+Local migration commands apply approval evidence, dispatch evidence, validity evidence, dispatch-attempt evidence, read-only certification evidence, source attestations, attested recovery bindings, and reviewed Bitget demo evidence explicitly. Every recovery dispatch-attempt row permanently records zero provider-mutation, reservation-application, and execution capability. Every demo result permanently records zero real-provider-mutation, live-execution, real-funds, mainnet, withdrawal, and automatic-retry capability.
 
 ### Guardian, authorization, queues, transfers, and audit
 
@@ -314,7 +341,7 @@ The withdrawal candidate is a separate disabled Worker with separate placeholder
 
 ## Validation
 
-Required validation is independent of GitHub Actions billing. CircleCI owns the automatic pull-request matrix and the aggregate `billing-independent-release-gate`; every GitHub Actions workflow is manual and advisory. The aggregate requires frontend and backend validation, the complete Worker fast path, clean and upgrade migration verification through migration 024, committed-secret and release-lock checks, and all three disabled dry-run bundles. See `docs/CI_BILLING_INDEPENDENCE.md`.
+Required validation is independent of GitHub Actions billing. CircleCI owns the automatic pull-request matrix and the aggregate `billing-independent-release-gate`; every GitHub Actions workflow is manual and advisory. The aggregate requires frontend and backend validation, the complete Worker fast path, clean and upgrade migration verification through migration 025, committed-secret and release-lock checks, and all three disabled dry-run bundles. See `docs/CI_BILLING_INDEPENDENCE.md`.
 
 CircleCI separately validates:
 
@@ -328,7 +355,7 @@ CircleCI separately validates:
 - frontend build and backend audit;
 - static safety contracts for execution locks, credential-free certification, certification persistence, source separation, attested recovery ingestion, persistence, retries, observability, accounting, settlement, recovery, approval, release certification, paper isolation, and CryptoOps read-only schemas.
 
-The safety chain enforces the absence of runtime-reachable or live exchange write transport, public financial-mutation routes, automatic retries, completed-plan replay, credential persistence, fixture-to-external evidence promotion, automatic release-certification projection, automatic accounting dispatch from attested recovery, enumerable approval brands, true live-execution flags, and real provider-mutation capability. It separately proves that the isolated demo-only transport and Durable Object rate limiter have no runtime import, binding, default fetcher, credential provider, exchange call, live/mainnet mode, deletion path, or automatic retry.
+The safety chain enforces the absence of runtime-reachable or live exchange write transport, public financial-mutation routes, automatic retries, completed-plan replay, credential persistence, fixture-to-external evidence promotion, automatic release-certification projection, automatic accounting dispatch from attested recovery, enumerable approval brands, true live-execution flags, and real provider-mutation capability. It separately proves that the isolated demo-only transport, Durable Object rate limiter, reviewed authorization loader, one-shot claim, and immutable result store have no runtime import, binding, default fetcher, credential provider, deletion path, live/mainnet mode, or automatic retry.
 
 The branch must remain draft and must not merge while any required check is failed, pending, blocked, skipped, or unavailable.
 
@@ -340,14 +367,15 @@ The branch must remain draft and must not merge while any required check is fail
 4. Build role-scoped frontend account, preview, risk, Guardian, reconciliation, audit, deposit, and withdrawal controls.
 5. Rehearse rollback, disaster recovery, key rotation, incident response, and provider outage handling.
 6. Complete independent security, eligibility, legal, jurisdiction, compliance, and tax review before any separate activation release.
-7. Add immutable demo-dispatch result receipts and independently reviewed
-   attempt orchestration, then compose the reviewed demo-only transport,
-   source-only Durable Object rate limiter, and existing read-only recovery
-   boundary inside a separate, non-public demo certification runner. The
-   bounded transport, fixed signed-body fixtures, conservative provider-code
-   manifest, durable rate-limit authority, and fail-closed recovery
-   requirements now exist, but no runtime composition or credential binding
-   exists.
+7. Compose the reviewed demo-only transport, source-only Durable Object rate
+   limiter, immutable one-shot orchestration, result evidence, and existing
+   read-only recovery boundary inside a separate, non-public demo
+   certification runner. The bounded transport, fixed signed-body fixtures,
+   conservative provider-code manifest, durable rate-limit authority, reviewed
+   authorization reload, and fail-closed result persistence now exist, but no
+   runtime composition or credential binding exists. The runner must also
+   reload the bound Guardian, risk, and idempotency evidence immediately before
+   invoking its demo-only executor.
 8. After demo certification and independent review, design the separate live
    transport release behind the full authorization, Guardian, risk,
    reconciliation, idempotency, deployment-identity, and account-serialization

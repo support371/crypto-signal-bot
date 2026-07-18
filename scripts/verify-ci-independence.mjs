@@ -88,6 +88,9 @@ for (const contract of requiredCircleContracts) {
 if (!circle.includes('node worker/scripts/verify-bitget-demo-rate-limit-authority-safety.mjs')) {
   throw new Error('CircleCI demo safety job must verify the Durable Object rate-limit authority')
 }
+if (!circle.includes('node worker/scripts/verify-bitget-demo-dispatch-evidence-safety.mjs')) {
+  throw new Error('CircleCI demo safety job must verify immutable reviewed dispatch evidence')
+}
 
 const aggregateStart = circle.indexOf('      - billing-independent-release-gate:')
 if (aggregateStart < 0) {

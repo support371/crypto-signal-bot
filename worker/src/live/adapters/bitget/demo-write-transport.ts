@@ -1,5 +1,5 @@
 import { canonicalHash, canonicalJson, sha256Hex } from '../../canonical-json.ts'
-import { BITGET_API_ORIGIN } from './endpoints.ts'
+import { BITGET_API_ORIGIN, normalizeBitgetSymbol } from './endpoints.ts'
 import {
   BITGET_MUTATION_EVIDENCE_ENDPOINTS,
   type BitgetCandidateOperation,
@@ -311,7 +311,7 @@ export function verifyBitgetDemoDispatchAuthorization(
   return Object.freeze(authorization)
 }
 
-function assertVerifiedAuthorization(
+export function assertBitgetDemoDispatchAuthorizationVerified(
   value: VerifiedBitgetDemoDispatchAuthorization,
 ): asserts value is VerifiedBitgetDemoDispatchAuthorization {
   if ((value as unknown as Record<symbol, unknown>)[VERIFIED_DEMO_AUTHORIZATION] !== true) {
@@ -357,8 +357,11 @@ function assertUnsignedBody(candidate: BitgetUnsignedMutationCandidate): void {
   }
 
   const body = candidate.unsignedBody
-  if (!body.symbol) {
-    throw new BitgetDemoWriteTransportError('CANDIDATE_BODY_INVALID', 'Candidate symbol is required')
+  if (!body.symbol || body.symbol !== normalizeBitgetSymbol(body.symbol)) {
+    throw new BitgetDemoWriteTransportError(
+      'CANDIDATE_BODY_INVALID',
+      'Candidate symbol is required and must use canonical Bitget form',
+    )
   }
   const oldIdentityCount = Number(Boolean(body.orderId)) + Number(Boolean(body.clientOid))
   if (candidate.operation === 'PLACE') {
@@ -380,7 +383,9 @@ function assertUnsignedBody(candidate: BitgetUnsignedMutationCandidate): void {
   }
 }
 
-async function assertCandidateIntegrity(candidate: BitgetUnsignedMutationCandidate): Promise<void> {
+export async function assertBitgetDemoCandidateIntegrity(
+  candidate: BitgetUnsignedMutationCandidate,
+): Promise<void> {
   const { candidateHash, ...evidence } = candidate
   if (await canonicalHash(evidence) !== candidateHash) {
     throw new BitgetDemoWriteTransportError('CANDIDATE_HASH_MISMATCH', 'Bitget candidate hash does not match its evidence')
@@ -743,8 +748,8 @@ export class BitgetDemoWriteTransport {
     authorization: VerifiedBitgetDemoDispatchAuthorization,
     signingMaterial: BitgetDemoSigningMaterial,
   ): Promise<BitgetDemoDispatchResult> {
-    assertVerifiedAuthorization(authorization)
-    await assertCandidateIntegrity(candidate)
+    assertBitgetDemoDispatchAuthorizationVerified(authorization)
+    await assertBitgetDemoCandidateIntegrity(candidate)
     const now = this.now()
     if (!Number.isSafeInteger(now) || String(now).length !== 13) {
       throw new BitgetDemoWriteTransportError('CLOCK_INVALID', 'Bitget demo signing clock must return Unix milliseconds')

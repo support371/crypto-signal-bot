@@ -22,6 +22,8 @@ const failures = []
 const modulePath = 'worker/src/live/adapters/bitget/demo-write-transport.ts'
 const allowedSourceImporters = new Set([
   'worker/src/live/adapters/bitget/demo-rate-limit-authority.ts',
+  'worker/src/live/adapters/bitget/demo-dispatch-evidence-store.ts',
+  'worker/src/live/adapters/bitget/demo-dispatch-orchestrator.ts',
 ])
 const transport = read(modulePath)
 const packageJson = read('worker/package.json')
@@ -48,7 +50,7 @@ for (const [token, message] of [
   ['BITGET_MUTATION_EVIDENCE_ENDPOINTS.cancelReplaceOrder', 'cancel-replace endpoint must come from the exact candidate allowlist'],
   ['Object.defineProperty(authorization, VERIFIED_DEMO_AUTHORIZATION', 'authorization brand must use an explicit property descriptor'],
   ['enumerable: false', 'authorization brand must be non-enumerable'],
-  ['await assertCandidateIntegrity(candidate)', 'candidate evidence hash must be reverified before dispatch'],
+  ['await assertBitgetDemoCandidateIntegrity(candidate)', 'candidate evidence hash must be reverified before dispatch'],
   ['this.rateLimitAuthority.claim(rateLimitRequest)', 'account rate-limit authority must be claimed before dispatch'],
   ['options.fetcher', 'transport must require an injected fetcher'],
   ["method: 'POST'", 'demo transport must explicitly select POST'],
