@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS live_bitget_attested_recovery_readiness (
     reservation_required_count >= 0 AND reservation_required_count <= accounting_task_count
   ),
   settlement_receipt_count INTEGER NOT NULL CHECK (
-    settlement_receipt_count >= 0 AND settlement_receipt_count <= reservation_required_count
+    settlement_receipt_count >= 0 AND settlement_receipt_count <= accounting_task_count
   ),
   dispatch_status TEXT NOT NULL CHECK (dispatch_status IN ('NOT_STARTED', 'COMPLETED', 'PARTIAL', 'FAILED')),
   reconciliation_status TEXT NOT NULL CHECK (reconciliation_status IN ('NOT_RUN', 'CLEAR', 'HALT_FOR_REVIEW')),
