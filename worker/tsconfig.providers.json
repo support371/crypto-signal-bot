@@ -4,6 +4,9 @@
     "src/live/exchange-registry.ts",
     "src/live/bitget-locked-order-command.ts",
     "src/live/bitget-read-only-certification.ts",
+    "src/live/bitget-read-only-certification-store.ts",
+    "src/live/bitget-read-only-certification-attestation.ts",
+    "src/live/bitget-attested-recovery-ingestion.ts",
     "src/live/adapters/btcc/**/*.ts",
     "src/live/adapters/bitget/**/*.ts"
   ]
