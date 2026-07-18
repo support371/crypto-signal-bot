@@ -3,6 +3,7 @@ import type { RecoveryAccountingApprovalStoreEnv } from './recovery-accounting-a
 import {
   executeVerifiedRecoveryAccountingPackage,
   loadVerifiedApprovedRecoveryAccountingPackage,
+  sealDerivedVerifiedApprovedRecoveryAccountingPackage,
   type VerifiedApprovedRecoveryAccountingPackage,
 } from './recovery-accounting-dispatch-service.ts'
 import {
@@ -95,6 +96,18 @@ async function expectedValidityHash(
   })
 }
 
+function defineFreshApprovalBrand<T extends VerifiedApprovedRecoveryAccountingPackage>(
+  approvedPackage: T,
+): T & FreshApprovedRecoveryAccountingPackage {
+  Object.defineProperty(approvedPackage, FRESH_APPROVAL_PACKAGE, {
+    value: true,
+    enumerable: false,
+    configurable: false,
+    writable: false,
+  })
+  return approvedPackage as T & FreshApprovedRecoveryAccountingPackage
+}
+
 export async function loadFreshApprovedRecoveryAccountingPackage(
   env: RecoveryAccountingApprovalStoreEnv,
   planId: string,
@@ -153,18 +166,22 @@ export async function loadFreshApprovedRecoveryAccountingPackage(
     )
   }
 
-  return Object.freeze({
+  const freshPackage = defineFreshApprovalBrand({
     ...approvedPackage,
     approvalValidFrom: new Date(validFromMs).toISOString(),
     approvalExpiresAt: new Date(expiresAtMs).toISOString(),
     approvalValidityHash: validityHash,
-    [FRESH_APPROVAL_PACKAGE]: true,
-    operatorApproved: true,
-    automaticallyDispatched: false,
-    providerMutationAllowed: false,
-    reservationApplied: false,
-    executionAllowed: false,
-  })
+    operatorApproved: true as const,
+    automaticallyDispatched: false as const,
+    providerMutationAllowed: false as const,
+    reservationApplied: false as const,
+    executionAllowed: false as const,
+  } as FreshApprovedRecoveryAccountingPackage)
+
+  return sealDerivedVerifiedApprovedRecoveryAccountingPackage(
+    approvedPackage,
+    freshPackage,
+  )
 }
 
 export async function executeFreshApprovedRecoveryAccountingPackage(
