@@ -4,10 +4,22 @@ import {
   evaluateLiveCandidateReadiness,
   type LiveGateEnv,
 } from './live/release-gate'
+import {
+  authenticateOperatorRead,
+  type OperatorReadAuthEnv,
+  type OperatorReadResource,
+} from './live/operator-read-auth'
+import {
+  readActiveAlerts,
+  readAuditHead,
+  readLatestAttestedRecoveryReadiness,
+  readLatestBitgetCertification,
+  readLatestFillReconciliation,
+} from './live/operator-read-model'
 
 export { ExchangeAccountCoordinator } from './live/observed-account-coordinator'
 
-type Env = AgentContextEnv & LiveGateEnv & {
+type Env = AgentContextEnv & LiveGateEnv & OperatorReadAuthEnv & {
   EXCHANGE_ACCOUNT_COORDINATOR: DurableObjectNamespace
 }
 
@@ -21,6 +33,7 @@ const LEGACY_FINANCIAL_PATHS = new Set([
   '/order',
 ])
 const SENSITIVE_READ_PREFIXES = ['/agent/memory/', '/audit', '/system/config']
+const OPERATOR_PREFIX = '/v1/operator/'
 
 function configuredOrigins(env: Env): string[] {
   return String(env.CORS_ALLOWED_ORIGINS ?? '')
@@ -88,7 +101,7 @@ function preflight(request: Request, env: Env): Response {
     headers: {
       'Access-Control-Allow-Origin': origin,
       'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, Idempotency-Key',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Operator-Id, Idempotency-Key',
       'Access-Control-Max-Age': '600',
       'Cache-Control': 'no-store',
       Vary: 'Origin',
@@ -103,6 +116,122 @@ function isSensitiveRead(pathname: string): boolean {
   )
 }
 
+function requiredQuery(url: URL, name: string): string | null {
+  const value = url.searchParams.get(name)?.trim() ?? ''
+  return value || null
+}
+
+async function authorizeOperator(
+  request: Request,
+  env: Env,
+  resource: OperatorReadResource,
+  exchangeAccountId: string | null,
+): Promise<Response | { actorId: string; matchedRoles: readonly string[] }> {
+  const result = await authenticateOperatorRead(env, request, {
+    resource,
+    exchangeName: resource === 'ACTIVATION_GATE' ? null : 'BITGET',
+    exchangeAccountId,
+  })
+
+  if (result.status === 'NOT_CONFIGURED') {
+    return json(request, env, {
+      error: 'Operator authentication is not configured',
+      code: result.code,
+    }, 503)
+  }
+  if (result.status === 'UNAUTHENTICATED') {
+    return json(request, env, { error: 'Unauthorized', code: result.code }, 401)
+  }
+  if (result.status === 'FORBIDDEN') {
+    return json(request, env, { error: 'Forbidden', code: result.code }, 403)
+  }
+
+  return {
+    actorId: result.principal.actorId,
+    matchedRoles: result.principal.matchedRoles,
+  }
+}
+
+async function handleOperatorRead(
+  request: Request,
+  env: Env,
+  url: URL,
+): Promise<Response> {
+  const pathname = url.pathname
+  const exchangeAccountId = requiredQuery(url, 'account_id')
+  const productId = requiredQuery(url, 'product_id')
+
+  try {
+    if (pathname === '/v1/operator/activation-gate') {
+      const principal = await authorizeOperator(request, env, 'ACTIVATION_GATE', null)
+      if (principal instanceof Response) return principal
+      const report = await evaluateLiveCandidateReadiness(env)
+      return json(request, env, {
+        ...report,
+        activationEnabled: false,
+        activationBlocked: true,
+        realMoneyMovementAllowed: false,
+        operator: principal,
+      }, 503)
+    }
+
+    const resourceByPath: Readonly<Record<string, OperatorReadResource>> = {
+      '/v1/operator/certification': 'CERTIFICATION',
+      '/v1/operator/recovery-readiness': 'RECOVERY_READINESS',
+      '/v1/operator/reconciliation': 'RECONCILIATION',
+      '/v1/operator/alerts': 'ALERTS',
+      '/v1/operator/audit-head': 'AUDIT_HEAD',
+    }
+    const resource = resourceByPath[pathname]
+    if (!resource) {
+      return json(request, env, { error: 'Operator route not found', code: 'OPERATOR_ROUTE_NOT_FOUND' }, 404)
+    }
+    if (!exchangeAccountId) {
+      return json(request, env, {
+        error: 'account_id is required',
+        code: 'OPERATOR_ACCOUNT_ID_REQUIRED',
+      }, 400)
+    }
+
+    const principal = await authorizeOperator(request, env, resource, exchangeAccountId)
+    if (principal instanceof Response) return principal
+
+    let evidence: unknown
+    if (resource === 'CERTIFICATION') {
+      evidence = await readLatestBitgetCertification(env, exchangeAccountId, productId)
+    } else if (resource === 'RECOVERY_READINESS') {
+      evidence = await readLatestAttestedRecoveryReadiness(env, exchangeAccountId, productId)
+    } else if (resource === 'RECONCILIATION') {
+      evidence = await readLatestFillReconciliation(env, exchangeAccountId, productId)
+    } else if (resource === 'ALERTS') {
+      const requestedLimit = Number(url.searchParams.get('limit') ?? '50')
+      evidence = await readActiveAlerts(
+        env,
+        exchangeAccountId,
+        Number.isFinite(requestedLimit) ? requestedLimit : 50,
+      )
+    } else {
+      evidence = await readAuditHead(env, exchangeAccountId)
+    }
+
+    return json(request, env, {
+      environment: 'live-candidate',
+      readOnly: true,
+      resource,
+      operator: principal,
+      evidence,
+      providerMutationAllowed: false,
+      executionAllowed: false,
+      withdrawalsAllowed: false,
+    })
+  } catch {
+    return json(request, env, {
+      error: 'Operator evidence is unavailable',
+      code: 'OPERATOR_EVIDENCE_UNAVAILABLE',
+    }, 503)
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url)
@@ -110,6 +239,16 @@ export default {
     const method = request.method.toUpperCase()
 
     if (method === 'OPTIONS') return preflight(request, env)
+
+    if (pathname.startsWith(OPERATOR_PREFIX)) {
+      if (method !== 'GET' && method !== 'HEAD') {
+        return json(request, env, {
+          error: 'Operator mutation routes are disabled',
+          code: 'LIVE_CANDIDATE_READ_ONLY',
+        }, 403)
+      }
+      return handleOperatorRead(request, env, url)
+    }
 
     if (method === 'GET' && pathname === '/v1/live/readiness') {
       const report = await evaluateLiveCandidateReadiness(env)
@@ -127,6 +266,7 @@ export default {
         durable_idempotency: 'schema-and-service-only',
         exact_decimal_arithmetic: true,
         readiness_endpoint: '/v1/live/readiness',
+        operator_read_prefix: OPERATOR_PREFIX,
         reason: 'Candidate entrypoint is intentionally read-only',
       })
     }
