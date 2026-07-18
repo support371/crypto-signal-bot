@@ -13,11 +13,15 @@ type CheckRow = Record<string, unknown> & { check_name: string; status: string }
 type AttestationRow = Record<string, unknown> & { attestation_id: string; run_id: string; source_mode: string }
 
 class FakeStatement {
-  constructor(
-    readonly database: FakeD1,
-    readonly sql: string,
-    readonly params: unknown[] = [],
-  ) {}
+  readonly database: FakeD1
+  readonly sql: string
+  readonly params: unknown[]
+
+  constructor(database: FakeD1, sql: string, params: unknown[] = []) {
+    this.database = database
+    this.sql = sql
+    this.params = params
+  }
 
   bind(...params: unknown[]): D1PreparedStatement {
     return new FakeStatement(this.database, this.sql, params) as unknown as D1PreparedStatement
