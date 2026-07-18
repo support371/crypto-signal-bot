@@ -28,6 +28,24 @@ GUARDIAN_MAX_FAILED_ORDERS = "5"
 RATE_LIMIT_RPM = "60"
 CORS_ALLOWED_ORIGINS = "https://crypto-signal-bot-indol.vercel.app"
 
+# Account-level Bitget certification secrets. These bindings are read-only
+# credential inputs only; the candidate still has placeholder storage resources,
+# no public certification route, no triggers, and all execution flags disabled.
+[[secrets_store_secrets]]
+binding = "BITGET_CERT_API_KEY"
+store_id = "077d4599269544239a34ade0f64d2f48"
+secret_name = "BITGET_CERT_API_KEY"
+
+[[secrets_store_secrets]]
+binding = "BITGET_CERT_API_SECRET"
+store_id = "077d4599269544239a34ade0f64d2f48"
+secret_name = "BITGET_CERT_API_SECRET"
+
+[[secrets_store_secrets]]
+binding = "BITGET_CERT_API_PASSPHRASE"
+store_id = "077d4599269544239a34ade0f64d2f48"
+secret_name = "BITGET_CERT_API_PASSPHRASE"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "crypto-signal-bot-live-candidate-db"

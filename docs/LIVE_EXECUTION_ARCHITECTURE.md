@@ -118,6 +118,25 @@ The candidate builder:
 
 The class contains no fetcher, secret provider, HMAC signer, or callable write transport. Its submission methods permanently throw `CandidateExecutionLockedError`.
 
+### Bitget certification secret boundary
+
+The operator has provisioned three account-level Cloudflare Secrets Store
+entries for Bitget read-only certification. The live-candidate Wrangler file
+binds only `BITGET_CERT_API_KEY`, `BITGET_CERT_API_SECRET`, and
+`BITGET_CERT_API_PASSPHRASE`. Secret values are never stored in Git, D1, KV,
+R2, logs, fixtures, or browser variables.
+
+`BitgetCertificationSecretsStoreProvider` obtains each value through the
+binding's asynchronous `get()` method, normalizes it in request-local memory,
+and returns frozen material to the existing GET-only Bitget client. Binding
+failures are redacted and fail closed. The public candidate entrypoint does not
+import this provider and no certification route or scheduled trigger exists.
+
+The account-level secrets are stored and named, but the candidate is still not
+deployed or externally certified: D1, R2, KV, and release identities remain
+placeholders, `CANDIDATE_RESOURCES_CONFIGURED=false`, and every mutation,
+execution, transfer, and withdrawal capability remains false.
+
 The provider-body contract was rechecked on 2026-07-18 against Bitget's
 official [place-order](https://www.bitget.com/api-doc/spot/trade/Place-Order),
 [cancel-order](https://www.bitget.com/api-doc/spot/trade/Cancel-Order),
@@ -242,4 +261,4 @@ The branch must remain draft and must not merge while any required check is fail
 
 ## Activation boundary
 
-No code in this branch authorizes mainnet trading or withdrawals. No real order, deposit, transfer, or withdrawal has been submitted. No exchange credential or candidate evidence secret has been provisioned. Any future activation must be a separate independently reviewed release tied to an exact deployment and eligible authorized account ownership.
+No code in this branch authorizes mainnet trading or withdrawals. No real order, deposit, transfer, or withdrawal has been submitted. Read-only Bitget certification secrets exist only in Cloudflare Secrets Store and are not deployed, publicly routed, persisted by the application, or authorized for exchange mutation. Any future activation must be a separate independently reviewed release tied to an exact deployment and eligible authorized account ownership.
