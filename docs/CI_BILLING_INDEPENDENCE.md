@@ -10,7 +10,8 @@ CircleCI is the authoritative automatic validation provider for pull requests an
 
 The CircleCI context `billing-independent-release-gate` succeeds only after:
 
-- frontend lint, tests, and production build;
+- frontend lint, tests, production build, and an enforced route-splitting
+  performance budget;
 - backend imports, tests, stabilization tests, lint, and repository audit;
 - complete Worker and provider typechecks;
 - full and isolated live-foundation tests;

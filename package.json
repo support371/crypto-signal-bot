@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "npm run typecheck:architecture && vite build",
+    "build": "npm run typecheck:architecture && vite build && npm run verify:frontend-performance",
     "lint": "eslint src/App.tsx src/AppCore.tsx src/main.tsx src/context/AuthContext.ts src/context/AuthProvider.tsx src/providers/QueryClientProvider.tsx src/lib/env.ts src/lib/backendRuntime.ts src/lib/infrastructureApi.ts src/pages/Infrastructure.tsx src/components/LayoutCore.tsx --report-unused-disable-directives --max-warnings 0",
     "lint:legacy": "eslint src --report-unused-disable-directives --max-warnings 0",
     "typecheck": "tsc --noEmit",
@@ -17,7 +17,8 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:worker": "vitest run -c worker/vitest.config.ts",
-    "verify:ci-independence": "node scripts/verify-ci-independence.mjs && node scripts/verify-release-lock.mjs"
+    "verify:ci-independence": "node scripts/verify-ci-independence.mjs && node scripts/verify-release-lock.mjs",
+    "verify:frontend-performance": "node scripts/verify-frontend-performance.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

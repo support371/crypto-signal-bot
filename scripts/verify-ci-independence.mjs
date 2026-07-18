@@ -6,6 +6,7 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(here, '..')
 const workflowsRoot = path.join(root, '.github', 'workflows')
 const circlePath = path.join(root, '.circleci', 'config.yml')
+const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 
 const forbiddenTriggers = [
   'pull_request',
@@ -54,6 +55,9 @@ for (const filename of workflowFiles) {
 const circle = fs.readFileSync(circlePath, 'utf8')
 if (!circle.includes('image: cimg/node:22.12.0')) {
   throw new Error('CircleCI migration verification requires the pinned Node 22.12 runtime')
+}
+if (!packageJson.scripts?.build?.includes('verify:frontend-performance')) {
+  throw new Error('frontend production build must enforce the performance budget')
 }
 const requiredCircleContracts = [
   'frontend-build:',
