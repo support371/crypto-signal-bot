@@ -9,6 +9,8 @@
     "src/live/bitget-attested-recovery-ingestion.ts",
     "src/live/bitget-attested-recovery-readiness.ts",
     "src/live/bitget-attested-recovery-readiness-observability.ts",
+    "src/live/operator-read-auth.ts",
+    "src/live/operator-read-model.ts",
     "src/live/adapters/btcc/**/*.ts",
     "src/live/adapters/bitget/**/*.ts"
   ]
