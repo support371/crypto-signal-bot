@@ -1,11 +1,7 @@
-name: self-hosted-validate
+name: self-hosted-validate (manual advisory)
 
+# Required validation runs in CircleCI; a GitHub runner is never a prerequisite.
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
   workflow_dispatch:
 
 permissions:

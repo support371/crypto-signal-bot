@@ -16,7 +16,8 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:worker": "vitest run -c worker/vitest.config.ts"
+    "test:worker": "vitest run -c worker/vitest.config.ts",
+    "verify:ci-independence": "node scripts/verify-ci-independence.mjs && node scripts/verify-release-lock.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

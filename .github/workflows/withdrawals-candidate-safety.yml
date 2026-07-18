@@ -1,27 +1,7 @@
-name: Withdrawal Candidate Safety
+name: Withdrawal Candidate Safety (manual advisory)
 
+# Required withdrawal-candidate safety validation runs in CircleCI.
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - 'worker/src/live/authorization.ts'
-      - 'worker/src/live/guardian.ts'
-      - 'worker/src/live/queue-contracts.ts'
-      - 'worker/src/live/transfer-state.ts'
-      - 'worker/src/live/withdrawal-policy.ts'
-      - 'worker/src/live/adapters/coinbase/**'
-      - 'worker/src/index_withdrawals_candidate.ts'
-      - 'worker/tests/live-*.test.ts'
-      - 'worker/migrations/007_live_exchange_projections.sql'
-      - 'worker/migrations/009_live_queue_delivery.sql'
-      - 'worker/migrations/010_live_authorization.sql'
-      - 'worker/migrations/011_live_transfer_lifecycle.sql'
-      - 'worker/scripts/verify-regulated-foundation-safety.mjs'
-      - 'worker/package.json'
-      - 'worker/package-lock.json'
-      - 'worker/tsconfig.json'
-      - 'wrangler.withdrawals-candidate.toml'
-      - '.github/workflows/withdrawals-candidate-safety.yml'
   workflow_dispatch:
 
 permissions:

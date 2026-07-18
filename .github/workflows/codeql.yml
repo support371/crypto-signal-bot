@@ -1,13 +1,9 @@
-name: "CodeQL Advanced"
-# Pull request validation is owned by CircleCI for this repository.
-# CodeQL now runs on the self-hosted CryptoOps runner lane.
+name: "CodeQL Advanced (manual advisory)"
+# CodeQL is optional defense-in-depth and cannot be a required release check.
+# Required compilation, tests, safety proofs, and audits run in CircleCI.
 
 on:
   workflow_dispatch:
-  push:
-    branches: ["main"]
-  schedule:
-    - cron: '41 16 * * 6'
 
 jobs:
   analyze:

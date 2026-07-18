@@ -1,24 +1,7 @@
-name: Live Certification Safety
+name: Live Certification Safety (manual advisory)
 
+# Required certification safety validation runs in CircleCI.
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - 'worker/src/live/observability.ts'
-      - 'worker/src/live/observability-store.ts'
-      - 'worker/src/live/certification.ts'
-      - 'worker/tests/live-observability.test.ts'
-      - 'worker/tests/live-certification.test.ts'
-      - 'worker/migrations/003_live_release_authorizations.sql'
-      - 'worker/migrations/007_live_exchange_projections.sql'
-      - 'worker/migrations/012_live_observability.sql'
-      - 'worker/migrations/013_live_certification.sql'
-      - 'worker/scripts/verify-certification-safety.mjs'
-      - 'worker/package.json'
-      - 'worker/package-lock.json'
-      - 'worker/tsconfig.json'
-      - 'wrangler.live-candidate.toml'
-      - '.github/workflows/live-certification-safety.yml'
   workflow_dispatch:
 
 permissions:

@@ -184,7 +184,9 @@ Migration `019_live_recovery_accounting_approval_validity.sql` caps approved dis
 
 The verified and fresh approval packages use module-private symbol brands defined with `enumerable:false`, `configurable:false`, and `writable:false`. Object spread and ordinary serialization therefore remove authority. A fresh derived package receives the verified brand again only after its immutable source brand is runtime-checked.
 
-Local migration commands apply approval evidence, dispatch evidence, validity evidence, read-only certification evidence, source attestations, and attested recovery bindings explicitly. Migration number 020 remains reserved for the unpublished recovery-dispatch-attempt work and is not reused.
+Migration `020_live_recovery_accounting_dispatch_attempts.sql` records an immutable claim before accounting commands run. It permits only one genesis attempt, blocks replay after completion, and permits continuation after a partial or failed dispatch only through the latest predecessor and a new independently reviewed approval. The orchestrator reloads immutable approval and validity evidence inside the per-account serializer, claims the attempt before execution, stops on the first failure, and persists the dispatch summary and receipts without automatic retry.
+
+Local migration commands apply approval evidence, dispatch evidence, validity evidence, dispatch-attempt evidence, read-only certification evidence, source attestations, and attested recovery bindings explicitly. Every dispatch-attempt row permanently records zero provider-mutation, reservation-application, and execution capability.
 
 ### Guardian, authorization, queues, transfers, and audit
 
@@ -194,19 +196,21 @@ The withdrawal candidate is a separate disabled Worker with separate placeholder
 
 ## Validation
 
+Required validation is independent of GitHub Actions billing. CircleCI owns the automatic pull-request matrix and the aggregate `billing-independent-release-gate`; every GitHub Actions workflow is manual and advisory. The aggregate requires frontend and backend validation, the complete Worker fast path, clean and upgrade migration verification through migration 024, committed-secret and release-lock checks, and both disabled dry-run bundles. See `docs/CI_BILLING_INDEPENDENCE.md`.
+
 CircleCI separately validates:
 
 - legacy Worker contracts;
 - the complete disabled live-foundation suite;
 - named core, accounting, recovery-contract, legacy-provider, and transfer test shards;
 - BTCC/Bitget provider tests, including fixture certification, immutable certification storage, source attestation, and attested recovery ingestion;
-- recovery ingestion, approval, dispatch, freshness, validity, and store tests;
+- recovery ingestion, approval, dispatch, freshness, validity, immutable-attempt orchestration, and store tests;
 - full and provider TypeScript compilation;
 - both disabled dry-run bundles;
 - frontend build and backend audit;
 - static safety contracts for execution locks, credential-free certification, certification persistence, source separation, attested recovery ingestion, persistence, retries, observability, accounting, settlement, recovery, approval, release certification, paper isolation, and CryptoOps read-only schemas.
 
-The safety chain enforces the absence of exchange write transport, public financial-mutation routes, automatic retries, credential persistence, fixture-to-external evidence promotion, automatic release-certification projection, automatic accounting dispatch from attested recovery, enumerable approval brands, true execution flags, and provider-mutation capability.
+The safety chain enforces the absence of exchange write transport, public financial-mutation routes, automatic retries, completed-plan replay, credential persistence, fixture-to-external evidence promotion, automatic release-certification projection, automatic accounting dispatch from attested recovery, enumerable approval brands, true execution flags, and provider-mutation capability.
 
 The branch must remain draft and must not merge while any required check is failed, pending, blocked, skipped, or unavailable.
 

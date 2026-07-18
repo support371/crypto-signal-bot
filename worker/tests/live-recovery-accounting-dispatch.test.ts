@@ -143,12 +143,14 @@ async function rows() {
   return {
     plan: {
       plan_id: 'recovery-plan-1',
+      exchange_name: 'BITGET',
       plan_hash: planHash,
       recovery_snapshot_hash: hashable.recoverySnapshotHash,
       exchange_account_id: hashable.exchangeAccountId,
       product_id: hashable.productId,
       command_count: commands.length,
       commands_json: JSON.stringify(commands),
+      prepared_by_actor_id: 'planner-1',
       accounting_evidence_ready: 1,
       automatically_dispatched: 0,
       provider_mutation_allowed: 0,
@@ -161,6 +163,7 @@ async function rows() {
       plan_id: 'recovery-plan-1',
       plan_hash: planHash,
       actor_id: 'risk-operator-1',
+      plan_prepared_by_actor_id: 'planner-1',
       decision: 'APPROVED',
       authorization_allowed: 1,
       approval_hash: 'd'.repeat(64),

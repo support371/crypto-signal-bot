@@ -1,12 +1,7 @@
-name: CryptoOps Read-Only Actions
+name: CryptoOps Read-Only Actions (manual advisory)
 
+# Required read-only Action validation runs in CircleCI.
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - 'gpt-actions/url/**'
-      - 'scripts/verify-cryptoops-readonly-openapi.mjs'
-      - '.github/workflows/cryptoops-readonly.yml'
   workflow_dispatch:
 
 permissions:

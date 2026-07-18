@@ -14,6 +14,14 @@ commands:
           command: npm --prefix worker ci
 
 jobs:
+  ci-billing-independence:
+    executor: node-worker
+    steps:
+      - checkout
+      - run:
+          name: Prove required validation is independent of GitHub billing
+          command: npm run verify:ci-independence
+
   frontend-build:
     executor: node-worker
     steps:
@@ -29,6 +37,9 @@ jobs:
       - run:
           name: Lint frontend
           command: npm run lint
+      - run:
+          name: Test frontend
+          command: npm run test:run
       - run:
           name: Build frontend
           environment:
@@ -122,6 +133,14 @@ jobs:
           name: Run fresh approved recovery accounting dispatch tests
           command: node --experimental-strip-types --test worker/tests/live-recovery-accounting-dispatch-freshness.test.ts
 
+  worker-recovery-accounting-fresh-dispatch-orchestrator-tests:
+    executor: node-worker
+    steps:
+      - install-worker
+      - run:
+          name: Run reviewed fresh-dispatch orchestration tests
+          command: node --experimental-strip-types --test worker/tests/live-recovery-accounting-fresh-dispatch-orchestrator.test.ts
+
   worker-recovery-accounting-validity-tests:
     executor: node-worker
     steps:
@@ -145,6 +164,14 @@ jobs:
       - run:
           name: Type-check BTCC and Bitget provider contracts
           command: npm --prefix worker run build:provider-contracts
+
+  worker-live-candidate-migrations:
+    executor: node-worker
+    steps:
+      - install-worker
+      - run:
+          name: Verify clean and upgrade migration paths through migration 024
+          command: npm --prefix worker run verify:migrations
 
   worker-paper-safety:
     executor: node-worker
@@ -283,6 +310,13 @@ jobs:
           name: Confirm all Worker gates passed
           command: echo "All Worker fast-path gates passed."
 
+  billing-independent-release-gate:
+    executor: node-worker
+    steps:
+      - run:
+          name: Confirm billing-independent aggregate release gate passed
+          command: echo "All required non-live validation passed without GitHub Actions."
+
   backend-test-audit:
     docker:
       - image: cimg/python:3.11
@@ -326,6 +360,7 @@ workflows:
   version: 2
   stabilize-production-runtime:
     jobs:
+      - ci-billing-independence
       - frontend-build
       - worker-root-contracts
       - worker-live-foundation-tests
@@ -381,9 +416,11 @@ workflows:
       - worker-recovery-accounting-dispatch-tests
       - worker-recovery-accounting-dispatch-store-tests
       - worker-recovery-accounting-dispatch-freshness-tests
+      - worker-recovery-accounting-fresh-dispatch-orchestrator-tests
       - worker-recovery-accounting-validity-tests
       - worker-typecheck
       - worker-provider-typecheck
+      - worker-live-candidate-migrations
       - worker-paper-safety
       - worker-live-candidate-safety
       - worker-candidate-command-lock-safety
@@ -431,9 +468,17 @@ workflows:
             - worker-recovery-accounting-dispatch-tests
             - worker-recovery-accounting-dispatch-store-tests
             - worker-recovery-accounting-dispatch-freshness-tests
+            - worker-recovery-accounting-fresh-dispatch-orchestrator-tests
             - worker-recovery-accounting-validity-tests
             - worker-typecheck
             - worker-provider-typecheck
             - worker-safety-contracts
             - worker-dry-run-bundles
       - backend-test-audit
+      - billing-independent-release-gate:
+          requires:
+            - ci-billing-independence
+            - frontend-build
+            - backend-test-audit
+            - worker-fast-path
+            - worker-live-candidate-migrations

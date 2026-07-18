@@ -10,6 +10,7 @@ export interface ApprovedRecoveryAccountingPackage {
   approvalEventId: string
   authorizationEventId: string
   approvedByActorId: string
+  planPreparedByActorId: string
   plan: BitgetRecoveryAccountingPlan
   approvalHash: string
   approvalOccurredAt: string
@@ -80,12 +81,14 @@ export class RecoveryAccountingDispatchConflictError extends Error {
 
 type PlanRow = {
   plan_id: string
+  exchange_name: string
   plan_hash: string
   recovery_snapshot_hash: string
   exchange_account_id: string
   product_id: string
   command_count: number
   commands_json: string
+  prepared_by_actor_id: string
   accounting_evidence_ready: number
   automatically_dispatched: number
   provider_mutation_allowed: number
@@ -99,6 +102,7 @@ type ApprovalRow = {
   plan_id: string
   plan_hash: string
   actor_id: string
+  plan_prepared_by_actor_id: string
   decision: 'APPROVED' | 'DENIED'
   authorization_allowed: number
   approval_hash: string
@@ -175,8 +179,9 @@ export async function loadApprovedRecoveryAccountingPackage(
   const normalizedPlanId = required(planId, 'planId')
   const normalizedApprovalEventId = required(approvalEventId, 'approvalEventId')
   const planRow = await env.DB.prepare(`
-    SELECT plan_id, plan_hash, recovery_snapshot_hash, exchange_account_id,
-           product_id, command_count, commands_json, accounting_evidence_ready,
+    SELECT plan_id, exchange_name, plan_hash, recovery_snapshot_hash,
+           exchange_account_id, product_id, command_count, commands_json,
+           prepared_by_actor_id, accounting_evidence_ready,
            automatically_dispatched, provider_mutation_allowed,
            reservation_applied, execution_allowed
       FROM live_recovery_accounting_plans
@@ -185,7 +190,8 @@ export async function loadApprovedRecoveryAccountingPackage(
   `).bind(normalizedPlanId).first<PlanRow>()
   const approvalRow = await env.DB.prepare(`
     SELECT approval_event_id, authorization_event_id, plan_id, plan_hash,
-           actor_id, decision, authorization_allowed, approval_hash,
+           actor_id, plan_prepared_by_actor_id, decision,
+           authorization_allowed, approval_hash,
            automatically_dispatched, provider_mutation_allowed,
            reservation_applied, execution_allowed, occurred_at
       FROM live_recovery_accounting_approval_events
@@ -213,6 +219,9 @@ export async function loadApprovedRecoveryAccountingPackage(
     || approvalRow.plan_id !== normalizedPlanId
     || approvalRow.approval_event_id !== normalizedApprovalEventId
     || approvalRow.plan_hash !== planRow.plan_hash
+    || planRow.exchange_name !== 'BITGET'
+    || approvalRow.plan_prepared_by_actor_id !== planRow.prepared_by_actor_id
+    || approvalRow.actor_id === planRow.prepared_by_actor_id
     || planRow.accounting_evidence_ready !== 1
   ) {
     throw new RecoveryAccountingDispatchConflictError(
@@ -247,6 +256,10 @@ export async function loadApprovedRecoveryAccountingPackage(
       'authorizationEventId',
     ),
     approvedByActorId: required(approvalRow.actor_id, 'approvedByActorId'),
+    planPreparedByActorId: required(
+      planRow.prepared_by_actor_id,
+      'planPreparedByActorId',
+    ),
     plan,
     approvalHash: sha256(approvalRow.approval_hash, 'approvalHash'),
     approvalOccurredAt: iso(approvalRow.occurred_at, 'approvalOccurredAt'),

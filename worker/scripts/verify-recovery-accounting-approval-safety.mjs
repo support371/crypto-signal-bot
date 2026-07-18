@@ -19,6 +19,8 @@ const dispatchService = read('worker/src/live/recovery-accounting-dispatch-servi
 const freshness = read('worker/src/live/recovery-accounting-dispatch-freshness.ts')
 const migration = read('worker/migrations/018_live_recovery_accounting_approval.sql')
 const validityMigration = read('worker/migrations/019_live_recovery_accounting_approval_validity.sql')
+const attemptMigration = read('worker/migrations/020_live_recovery_accounting_dispatch_attempts.sql')
+const orchestrator = read('worker/src/live/recovery-accounting-fresh-dispatch-orchestrator.ts')
 const packageJson = read('worker/package.json')
 const entrypoint = read('worker/src/index_live_candidate.ts')
 
@@ -124,9 +126,36 @@ for (const [token, message] of [
 ]) requireToken(validityMigration, token, message)
 
 for (const [token, message] of [
+  ['claimFreshRecoveryAccountingDispatchAttempt', 'immutable dispatch attempt claim is missing'],
+  ["previous?.status === 'COMPLETED'", 'completed-plan replay rejection is missing'],
+  ['new independently reviewed approval', 'partial resume must require new reviewed approval'],
+  ['return executor.serializer.run', 'orchestration must remain inside the per-account serializer'],
+  ['clock.now()', 'approval freshness must use the trusted orchestration clock'],
+  ['persistRecoveryAccountingDispatchResult', 'dispatch summary persistence is missing'],
+  ['providerMutationAllowed: false', 'orchestration provider mutation lock is missing'],
+  ['reservationApplied: false', 'orchestration reservation lock is missing'],
+  ['executionAllowed: false', 'orchestration execution lock is missing'],
+]) requireToken(orchestrator, token, message)
+
+for (const [token, message] of [
+  ['live_recovery_accounting_dispatch_attempts', 'dispatch attempt table is missing'],
+  ['UNIQUE (plan_id, predecessor_attempt_id)', 'dispatch predecessor uniqueness is missing'],
+  ['approval_event_id TEXT NOT NULL UNIQUE', 'one-attempt-per-approval constraint is missing'],
+  ['completed recovery accounting plan cannot be dispatched again', 'completed-plan database guard is missing'],
+  ['new approval', 'partial-resume database approval guard is missing'],
+  ['CHECK (automatically_retried = 0)', 'dispatch attempt automatic retry lock is missing'],
+  ['CHECK (provider_mutation_allowed = 0)', 'dispatch attempt provider mutation lock is missing'],
+  ['CHECK (reservation_applied = 0)', 'dispatch attempt reservation lock is missing'],
+  ['CHECK (execution_allowed = 0)', 'dispatch attempt execution lock is missing'],
+  ['live_recovery_accounting_dispatch_attempts_no_update', 'dispatch attempt immutability trigger is missing'],
+]) requireToken(attemptMigration, token, message)
+
+for (const [token, message] of [
   ['018_live_recovery_accounting_approval.sql', 'migration 018 approval command is missing'],
   ['018_live_recovery_accounting_dispatch.sql', 'migration 018 dispatch command is missing'],
   ['019_live_recovery_accounting_approval_validity.sql', 'migration 019 validity command is missing'],
+  ['020_live_recovery_accounting_dispatch_attempts.sql', 'migration 020 dispatch-attempt command is missing'],
+  ['verify:migrations', 'live migration replay verifier is missing'],
 ]) requireToken(packageJson, token, message)
 
 for (const forbidden of [
@@ -148,6 +177,7 @@ for (const forbidden of [
     || store.includes(forbidden)
     || dispatchService.includes(forbidden)
     || freshness.includes(forbidden)
+    || orchestrator.includes(forbidden)
   ) {
     failures.push(`forbidden recovery approval capability detected: ${forbidden}`)
   }
@@ -158,6 +188,8 @@ if (
   || entrypoint.includes('/recovery/accounting/dispatch')
   || entrypoint.includes('/recovery-accounting-approval')
   || entrypoint.includes('/recovery-accounting-validity')
+  || entrypoint.includes('/recovery-accounting-attempt')
+  || entrypoint.includes('/recovery-accounting-fresh-dispatch')
 ) {
   failures.push('recovery accounting approval must not be publicly exposed')
 }

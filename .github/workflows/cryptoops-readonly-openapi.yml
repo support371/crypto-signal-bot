@@ -1,14 +1,7 @@
-name: CryptoOps Read-Only OpenAPI
+name: CryptoOps Read-Only OpenAPI (manual advisory)
 
+# Required read-only schema validation runs in CircleCI.
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - 'openapi/cryptoops-live-candidate-readonly.yaml'
-      - 'openapi/cryptoops-withdrawals-candidate-readonly.yaml'
-      - 'docs/CUSTOM_GPT_LIVE_CANDIDATE.md'
-      - 'worker/scripts/verify-cryptoops-readonly-openapi.mjs'
-      - '.github/workflows/cryptoops-readonly-openapi.yml'
   workflow_dispatch:
 
 permissions:
