@@ -87,6 +87,38 @@ jobs:
           name: Run recovery accounting approval and store tests
           command: node --experimental-strip-types --test worker/tests/live-recovery-accounting-approval.test.ts worker/tests/live-recovery-accounting-approval-store.test.ts
 
+  worker-recovery-accounting-dispatch-tests:
+    executor: node-worker
+    steps:
+      - install-worker
+      - run:
+          name: Run recovery accounting dispatch tests
+          command: node --experimental-strip-types --test worker/tests/live-recovery-accounting-dispatch.test.ts
+
+  worker-recovery-accounting-dispatch-store-tests:
+    executor: node-worker
+    steps:
+      - install-worker
+      - run:
+          name: Run recovery accounting dispatch store tests
+          command: node --experimental-strip-types --test worker/tests/live-recovery-accounting-dispatch-store.test.ts
+
+  worker-recovery-accounting-dispatch-freshness-tests:
+    executor: node-worker
+    steps:
+      - install-worker
+      - run:
+          name: Run fresh approved recovery accounting dispatch tests
+          command: node --experimental-strip-types --test worker/tests/live-recovery-accounting-dispatch-freshness.test.ts
+
+  worker-recovery-accounting-validity-tests:
+    executor: node-worker
+    steps:
+      - install-worker
+      - run:
+          name: Run recovery accounting approval validity tests
+          command: node --experimental-strip-types --test worker/tests/live-recovery-accounting-approval-validity.test.ts
+
   worker-typecheck:
     executor: node-worker
     steps:
@@ -290,6 +322,10 @@ workflows:
       - worker-recovery-ingestion-plan-tests
       - worker-recovery-ingestion-store-tests
       - worker-recovery-accounting-approval-tests
+      - worker-recovery-accounting-dispatch-tests
+      - worker-recovery-accounting-dispatch-store-tests
+      - worker-recovery-accounting-dispatch-freshness-tests
+      - worker-recovery-accounting-validity-tests
       - worker-typecheck
       - worker-provider-typecheck
       - worker-paper-safety
@@ -331,6 +367,10 @@ workflows:
             - worker-recovery-ingestion-plan-tests
             - worker-recovery-ingestion-store-tests
             - worker-recovery-accounting-approval-tests
+            - worker-recovery-accounting-dispatch-tests
+            - worker-recovery-accounting-dispatch-store-tests
+            - worker-recovery-accounting-dispatch-freshness-tests
+            - worker-recovery-accounting-validity-tests
             - worker-typecheck
             - worker-provider-typecheck
             - worker-safety-contracts
