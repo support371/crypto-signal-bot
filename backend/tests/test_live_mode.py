@@ -8,6 +8,7 @@ These tests verify that:
   - startup_checks raises on unguarded mainnet, warns cleanly on everything else
 """
 
+import asyncio
 import builtins
 import os
 
@@ -259,7 +260,29 @@ class FakeMarketDataService:
 
 
 class TestHybridPaperModeStartup:
-    def test_hybrid_live_paper_mode_starts_market_data_service_and_keeps_paper_execution(self):
+    @pytest.mark.asyncio
+    async def test_coingecko_prewarm_timeout_is_nonfatal(self, monkeypatch):
+        from backend.adapters.exchanges import coingecko as coingecko_module
+
+        async def stalled_warm_cache():
+            await asyncio.Future()
+
+        monkeypatch.setattr(coingecko_module, "warm_cache", stalled_warm_cache)
+        monkeypatch.setattr(app_module, "COINGECKO_WARM_CACHE_TIMEOUT_SECONDS", 0.01)
+
+        await asyncio.wait_for(app_module._warm_coingecko_cache(), timeout=0.5)
+
+    def test_hybrid_live_paper_mode_starts_market_data_service_and_keeps_paper_execution(
+        self,
+        monkeypatch,
+    ):
+        from backend.adapters.exchanges import coingecko as coingecko_module
+
+        async def no_op_warm_cache():
+            return None
+
+        monkeypatch.setattr(coingecko_module, "warm_cache", no_op_warm_cache)
+
         original_mode = app_module.TRADING_MODE
         original_network = app_module.NETWORK
         original_live_market = app_module.PAPER_USE_LIVE_MARKET_DATA
