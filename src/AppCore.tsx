@@ -37,7 +37,8 @@ function RequireAuth({ children }: { children: ReactNode }) {
   }
 
   if (!user) {
-    return <Navigate to="/auth" replace state={{ from: location.pathname }} />;
+    const returnPath = `${location.pathname}${location.search}${location.hash}`;
+    return <Navigate to="/auth" replace state={{ from: returnPath }} />;
   }
 
   return children;
