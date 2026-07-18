@@ -207,6 +207,7 @@ jobs:
             node worker/scripts/verify-bitget-demo-write-transport-safety.mjs
             node worker/scripts/verify-bitget-demo-rate-limit-authority-safety.mjs
             node worker/scripts/verify-bitget-demo-dispatch-evidence-safety.mjs
+            node worker/scripts/verify-bitget-demo-certification-runner-safety.mjs
 
   worker-candidate-evidence-persistence-safety:
     executor: node-worker

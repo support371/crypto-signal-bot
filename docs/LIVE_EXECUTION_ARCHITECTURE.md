@@ -19,7 +19,7 @@ Coinbase is optional public/read-only data support. It is not a default executio
 
 BTCC remains fail-closed until an official dated, SHA-256-bound endpoint and signing manifest is imported and reviewed. No BTCC API host, endpoint, signing rule, precision rule, status, or permission model may be guessed.
 
-Bitget currently has strict spot normalizers, an authenticated read-only REST transport, a local locked preview, deterministic unsigned mutation candidates, mandatory read-only recovery instructions, a credential-free certification harness, an immutable attested-recovery ingestion bridge, an isolated demo-only write-transport module, a source-only Durable Object rate-limit authority, and immutable reviewed demo-dispatch evidence. The demo modules have no runtime import, deployment binding, default fetcher, credential provider, public route, deployed exchange-account coordinator composition, or live/mainnet mode. No live Bitget write transport or runtime signing path exists in this branch.
+Bitget currently has strict spot normalizers, an authenticated read-only REST transport, a local locked preview, deterministic unsigned mutation candidates, mandatory read-only recovery instructions, a credential-free certification harness, an immutable attested-recovery ingestion bridge, an isolated demo-only write-transport module, a source-only Durable Object rate-limit authority, immutable reviewed demo-dispatch evidence, and a source-only non-public certification runner. The demo modules have no Worker entrypoint import, deployment binding, default fetcher, credential implementation, public route, deployed exchange-account coordinator composition, or live/mainnet mode. No live Bitget write transport or runtime signing path exists in this branch.
 
 ## Safety invariants
 
@@ -189,18 +189,38 @@ serializer, claims before dispatch, never catches an uncertain call for retry,
 and leaves an orphaned claim permanently unusable after interruption. A new
 candidate and a new independent review are required instead.
 
-The authorization row binds Guardian, risk, and idempotency evidence hashes,
-but this source-only slice does not yet provide the runtime adapters that reload
-those underlying systems immediately before a demo call. The non-public runner
-must supply and revalidate those dependencies; a stored boolean or hash alone
-must never become sufficient execution authority.
+`worker/src/live/adapters/bitget/demo-certification-runner.ts` now composes the
+reviewed source boundaries without making them runtime-reachable. After the
+orchestrator has inserted its immutable one-shot claim, the runner:
 
-This is not a deployed demo runner or a live execution client. There is no demo
-credential binding, no default network client, no runtime composition of the
-Durable Object authority or reviewed executor, and no public or internal runtime route. Bitget's official
+- invokes an injected loader for exact Guardian, risk, and idempotency
+  snapshots reloaded no more than two seconds earlier;
+- re-hashes each stable snapshot binding (excluding only the trusted reload
+  timestamp) and requires exact equality with the immutable authorization;
+- restores a second module-private, non-enumerable in-memory verification brand
+  that object spread and JSON serialization cannot preserve;
+- selects an injected account-scoped rate authority;
+- allows injected demo signing material to be used exactly once, only inside an
+  active callback, and returns no material or signed headers;
+- invokes the existing bounded demo transport with an injected fetcher;
+- persists the result through the existing one-batch evidence store; and
+- for ambiguous outcomes only, invokes one injected read-only recovery boundary
+  after verifying the persisted result and lookup-plan hashes. The recovery
+  receipt permanently blocks provider mutation, execution, automatic retry,
+  and automatic accounting dispatch.
+
+A missing, stale, changed, copied, late, or multiply used dependency fails
+closed. A failure after the one-shot claim leaves the claim unusable and
+requires a new candidate and a new independent review; it is never retried.
+A stored boolean or hash alone is not sufficient demo authority.
+
+This is not a deployed demo runner or a live execution client. The source-only
+runner has no Worker entrypoint import, demo credential implementation or
+binding, default network client, Durable Object namespace binding, public or
+internal runtime route, or deployed recovery adapter. Bitget's official
 [REST demo documentation](https://www.bitget.com/api-doc/common/demotrading/restapi)
 also requires a separately created demo API key and KYC. Those external
-requirements are not satisfied by this source module. The body and header
+requirements are not satisfied by this source-only composition. The body and header
 fixtures follow Bitget's official
 [signature contract](https://www.bitget.com/api-doc/common/signature).
 
@@ -353,9 +373,9 @@ CircleCI separately validates:
 - full and provider TypeScript compilation;
 - all three disabled dry-run bundles, including the Bitget trade quarantine;
 - frontend build and backend audit;
-- static safety contracts for execution locks, credential-free certification, certification persistence, source separation, attested recovery ingestion, persistence, retries, observability, accounting, settlement, recovery, approval, release certification, paper isolation, and CryptoOps read-only schemas.
+- static safety contracts for execution locks, credential-free certification, certification persistence, source separation, attested recovery ingestion, persistence, retries, observability, accounting, settlement, recovery, approval, the source-only demo certification runner, release certification, paper isolation, and CryptoOps read-only schemas.
 
-The safety chain enforces the absence of runtime-reachable or live exchange write transport, public financial-mutation routes, automatic retries, completed-plan replay, credential persistence, fixture-to-external evidence promotion, automatic release-certification projection, automatic accounting dispatch from attested recovery, enumerable approval brands, true live-execution flags, and real provider-mutation capability. It separately proves that the isolated demo-only transport, Durable Object rate limiter, reviewed authorization loader, one-shot claim, and immutable result store have no runtime import, binding, default fetcher, credential provider, deletion path, live/mainnet mode, or automatic retry.
+The safety chain enforces the absence of runtime-reachable or live exchange write transport, public financial-mutation routes, automatic retries, completed-plan replay, credential persistence, fixture-to-external evidence promotion, automatic release-certification projection, automatic accounting dispatch from attested recovery, enumerable approval brands, true live-execution flags, and real provider-mutation capability. It separately proves that the isolated demo-only transport, Durable Object rate limiter, reviewed authorization loader, one-shot claim, immutable result store, and source-only certification runner have no Worker entrypoint import, deployment binding, default fetcher, credential implementation, deletion path, live/mainnet mode, or automatic retry.
 
 The branch must remain draft and must not merge while any required check is failed, pending, blocked, skipped, or unavailable.
 
@@ -367,15 +387,15 @@ The branch must remain draft and must not merge while any required check is fail
 4. Build role-scoped frontend account, preview, risk, Guardian, reconciliation, audit, deposit, and withdrawal controls.
 5. Rehearse rollback, disaster recovery, key rotation, incident response, and provider outage handling.
 6. Complete independent security, eligibility, legal, jurisdiction, compliance, and tax review before any separate activation release.
-7. Compose the reviewed demo-only transport, source-only Durable Object rate
-   limiter, immutable one-shot orchestration, result evidence, and existing
-   read-only recovery boundary inside a separate, non-public demo
-   certification runner. The bounded transport, fixed signed-body fixtures,
-   conservative provider-code manifest, durable rate-limit authority, reviewed
-   authorization reload, and fail-closed result persistence now exist, but no
-   runtime composition or credential binding exists. The runner must also
-   reload the bound Guardian, risk, and idempotency evidence immediately before
-   invoking its demo-only executor.
+7. Implement and independently review the non-public runtime adapters for the
+   source-only demo certification runner: current Guardian/risk/idempotency
+   snapshot loading, an isolated demo-only credential callback, an
+   account-scoped Durable Object namespace, and the GET-only recovery boundary.
+   Bind them only in a separate non-live certification environment after
+   isolated resources and external read-only certification exist. The runner
+   composition and hostile fixtures now exist, but no adapter implementation,
+   credential binding, namespace binding, runtime route, deployment, or
+   external demo call exists.
 8. After demo certification and independent review, design the separate live
    transport release behind the full authorization, Guardian, risk,
    reconciliation, idempotency, deployment-identity, and account-serialization

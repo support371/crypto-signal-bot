@@ -18,9 +18,11 @@ The CircleCI context `billing-independent-release-gate` succeeds only after:
 - BTCC and Bitget provider tests;
 - recovery, accounting, approval, dispatch, freshness, and validity tests;
 - every paper, candidate, accounting, recovery, certification, and CryptoOps safety verifier;
-- the isolated Bitget demo write-transport, Durable Object rate-limit, and
-  immutable reviewed-dispatch verifiers, including their runtime-import,
-  binding, network-client, live-mode, deletion, and retry prohibitions;
+- the isolated Bitget demo write-transport, Durable Object rate-limit,
+  immutable reviewed-dispatch, and source-only certification-runner verifiers,
+  including their runtime-import, binding, default-network-client, live-mode,
+  deletion, credential-binding, multi-use credential-callback, and retry
+  prohibitions;
 - clean-database and upgrade migration verification through migration 025;
 - all three disabled Worker dry-run bundles, including the route-less Bitget
   trade-credential quarantine;

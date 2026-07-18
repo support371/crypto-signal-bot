@@ -21,8 +21,9 @@ function sourceFiles(directory) {
 const failures = []
 const storePath = 'worker/src/live/adapters/bitget/demo-dispatch-evidence-store.ts'
 const orchestratorPath = 'worker/src/live/adapters/bitget/demo-dispatch-orchestrator.ts'
+const runnerPath = 'worker/src/live/adapters/bitget/demo-certification-runner.ts'
 const migrationPath = 'worker/migrations/025_live_bitget_demo_dispatch_evidence.sql'
-const allowedSourceImporters = new Set([orchestratorPath])
+const allowedSourceImporters = new Set([orchestratorPath, runnerPath])
 const store = read(storePath)
 const orchestrator = read(orchestratorPath)
 const migration = read(migrationPath)
@@ -106,7 +107,7 @@ for (const pattern of [
 }
 
 for (const sourcePath of sourceFiles('worker/src')) {
-  if (sourcePath === storePath || sourcePath === orchestratorPath) continue
+  if (sourcePath === storePath || allowedSourceImporters.has(sourcePath)) continue
   if (/demo-dispatch-evidence-store\.ts|demo-dispatch-orchestrator\.ts/.test(read(sourcePath))) {
     failures.push(`${sourcePath} must not import source-only Bitget demo dispatch evidence`)
   }
