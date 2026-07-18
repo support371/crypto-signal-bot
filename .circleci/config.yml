@@ -170,7 +170,7 @@ jobs:
     steps:
       - install-worker
       - run:
-          name: Verify clean and upgrade migration paths through migration 025
+          name: Verify clean and upgrade migration paths through migration 026
           command: npm --prefix worker run verify:migrations
 
   worker-paper-safety:
@@ -208,6 +208,7 @@ jobs:
             node worker/scripts/verify-bitget-demo-rate-limit-authority-safety.mjs
             node worker/scripts/verify-bitget-demo-dispatch-evidence-safety.mjs
             node worker/scripts/verify-bitget-demo-certification-runner-safety.mjs
+            node worker/scripts/verify-bitget-demo-certification-evidence-safety.mjs
 
   worker-candidate-evidence-persistence-safety:
     executor: node-worker

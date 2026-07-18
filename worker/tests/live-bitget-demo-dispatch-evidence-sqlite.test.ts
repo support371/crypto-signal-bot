@@ -7,9 +7,24 @@ import { fileURLToPath } from 'node:url'
 
 import { asDecimalString } from '../src/live/decimal.ts'
 import type { ProductRules } from '../src/live/domain.ts'
+import { canonicalHash } from '../src/live/canonical-json.ts'
+import {
+  claimBitgetDemoReadOnlyRecoveryAttempt,
+  persistBitgetDemoReadOnlyRecoveryReceipt,
+  recordBitgetDemoControlVerification,
+} from '../src/live/adapters/bitget/demo-certification-evidence-store.ts'
+import {
+  bitgetDemoControlEvidenceBindingHash,
+  runReviewedBitgetDemoCertification,
+  verifyFreshBitgetDemoControlEvidence,
+  type BitgetDemoFreshControlEvidenceInput,
+  type BitgetDemoReadOnlyRecoveryReceiptBase,
+} from '../src/live/adapters/bitget/demo-certification-runner.ts'
 import type {
   BitgetDemoDispatchAuthorizationInput,
   BitgetDemoDispatchResult,
+  BitgetDemoRateLimitClaimInput,
+  BitgetDemoSigningMaterial,
 } from '../src/live/adapters/bitget/demo-write-transport.ts'
 import {
   claimReviewedBitgetDemoDispatchAttempt,
@@ -50,7 +65,7 @@ class SqliteD1 {
   constructor() {
     this.database.exec('PRAGMA foreign_keys = ON;')
     const migrations = fs.readdirSync(migrationsRoot)
-      .filter((name) => /^(?:00[3-9]|01\d|02[0-5])_.*\.sql$/.test(name))
+      .filter((name) => /^(?:00[3-9]|01\d|02[0-6])_.*\.sql$/.test(name))
       .sort()
     for (const migration of migrations) {
       this.database.exec(fs.readFileSync(path.join(migrationsRoot, migration), 'utf8'))
@@ -139,7 +154,10 @@ async function candidate(): Promise<BitgetUnsignedMutationCandidate> {
   })
 }
 
-function authorization(current: BitgetUnsignedMutationCandidate): BitgetDemoDispatchAuthorizationInput {
+function authorization(
+  current: BitgetUnsignedMutationCandidate,
+  overrides: Partial<BitgetDemoDispatchAuthorizationInput> = {},
+): BitgetDemoDispatchAuthorizationInput {
   return {
     authorizationId: 'demo-sqlite-authorization-0001',
     dispatchAttemptId: 'demo-sqlite-attempt-0001',
@@ -166,7 +184,50 @@ function authorization(current: BitgetUnsignedMutationCandidate): BitgetDemoDisp
     mainnetAllowed: false,
     withdrawalsAllowed: false,
     automaticRetryAllowed: false,
+    ...overrides,
   }
+}
+
+function freshEvidence(current: BitgetUnsignedMutationCandidate): BitgetDemoFreshControlEvidenceInput {
+  const common = {
+    schemaVersion: 1 as const,
+    environment: 'BITGET_DEMO' as const,
+    exchangeAccountId: 'bitget-demo-sqlite-account-0001',
+    candidateHash: current.candidateHash,
+    operation: current.operation,
+    productSymbol: 'BTCUSDT',
+    reloadedAt: '2026-07-18T04:00:30.500Z',
+    liveExecutionAllowed: false as const,
+    realFundsAllowed: false as const,
+    mainnetAllowed: false as const,
+    withdrawalsAllowed: false as const,
+    automaticRetryAllowed: false as const,
+  }
+  return Object.freeze({
+    guardian: Object.freeze({
+      ...common,
+      evidenceType: 'GUARDIAN' as const,
+      status: 'CLEAR' as const,
+      actionAllowed: true as const,
+      stateVersionHash: 'a'.repeat(64),
+    }),
+    risk: Object.freeze({
+      ...common,
+      evidenceType: 'RISK' as const,
+      decisionId: 'demo-sqlite-risk-decision-0001',
+      configurationVersion: 'demo-sqlite-risk-v1',
+      approved: true as const,
+    }),
+    idempotency: Object.freeze({
+      ...common,
+      evidenceType: 'IDEMPOTENCY' as const,
+      authorizationId: 'demo-sqlite-authorization-0001',
+      dispatchAttemptId: 'demo-sqlite-attempt-0001',
+      claimId: 'demo-sqlite-idempotency-claim-0001',
+      idempotencyKeyHash: 'b'.repeat(64),
+      status: 'CLAIMED' as const,
+    }),
+  })
 }
 
 function configureAuthorizationContext(database: SqliteD1, current: BitgetUnsignedMutationCandidate): void {
@@ -233,11 +294,21 @@ function result(current: BitgetUnsignedMutationCandidate): BitgetDemoDispatchRes
   })
 }
 
-test('migration 025 and the D1 store persist exact reviewed demo evidence end to end', async () => {
+test('migrations 025-026 persist reviewed dispatch, fresh-control, and recovery evidence end to end', async () => {
   const database = new SqliteD1()
   try {
     const current = await candidate()
-    const input = authorization(current)
+    const evidence = freshEvidence(current)
+    const [guardianEvidenceHash, riskEvidenceHash, idempotencyEvidenceHash] = await Promise.all([
+      bitgetDemoControlEvidenceBindingHash(evidence.guardian),
+      bitgetDemoControlEvidenceBindingHash(evidence.risk),
+      bitgetDemoControlEvidenceBindingHash(evidence.idempotency),
+    ])
+    const input = authorization(current, {
+      guardianEvidenceHash,
+      riskEvidenceHash,
+      idempotencyEvidenceHash,
+    })
     configureAuthorizationContext(database, current)
     const authorizationReceipt = await recordReviewedBitgetDemoDispatchAuthorization(
       database.env(),
@@ -257,18 +328,85 @@ test('migration 025 and the D1 store persist exact reviewed demo evidence end to
       reviewed,
       '2026-07-18T04:00:30.000Z',
     )
+    const verified = await verifyFreshBitgetDemoControlEvidence(
+      evidence,
+      current,
+      reviewed.authorization,
+      '2026-07-18T04:00:30.500Z',
+    )
+    await assert.rejects(
+      recordBitgetDemoControlVerification(
+        database.env(),
+        current,
+        reviewed.authorization,
+        { ...verified },
+      ),
+      /freshly reloaded and in-memory verified control evidence/,
+    )
+    const controlProjection = await recordBitgetDemoControlVerification(
+      database.env(),
+      current,
+      reviewed.authorization,
+      verified,
+    )
+    const dispatchResult = result(current)
     const projected = await persistBitgetDemoDispatchResult(
       database.env(),
       reviewed,
       claim,
       current,
-      result(current),
+      dispatchResult,
       '2026-07-18T04:00:31.000Z',
+    )
+    const dispatch = Object.freeze({
+      reviewedAuthorization: reviewed,
+      claim,
+      result: dispatchResult,
+      persistence: projected,
+    })
+    const recoveryAttempt = await claimBitgetDemoReadOnlyRecoveryAttempt(
+      database.env(),
+      dispatch,
+      '2026-07-18T04:00:32.000Z',
+    )
+    const recoveryBase: BitgetDemoReadOnlyRecoveryReceiptBase = Object.freeze({
+      schemaVersion: 1,
+      recoveryId: 'demo-sqlite-recovery-0001',
+      dispatchAttemptId: dispatchResult.dispatchAttemptId,
+      authorizationId: dispatchResult.authorizationId,
+      exchangeAccountId: dispatchResult.exchangeAccountId,
+      candidateHash: dispatchResult.candidateHash,
+      resultHash: projected.resultHash,
+      lookupPlanHash: recoveryAttempt.lookupPlanHash,
+      lookupCount: recoveryAttempt.lookupCount,
+      status: 'INCOMPLETE',
+      snapshotHash: null,
+      observedAt: '2026-07-18T04:00:32.500Z',
+      readOnly: true,
+      providerMutationAllowed: false,
+      executionAllowed: false,
+      accountingAutomaticallyDispatched: false,
+      liveExecutionAllowed: false,
+      realFundsAllowed: false,
+      mainnetAllowed: false,
+      withdrawalsAllowed: false,
+      automaticRetryAllowed: false,
+    })
+    const recoveryReceipt = Object.freeze({
+      ...recoveryBase,
+      receiptHash: await canonicalHash(recoveryBase),
+    })
+    const recoveryProjection = await persistBitgetDemoReadOnlyRecoveryReceipt(
+      database.env(),
+      recoveryAttempt,
+      recoveryReceipt,
     )
 
     assert.equal(authorizationReceipt.projectionStatus, 'PROJECTED')
+    assert.equal(controlProjection.projectionStatus, 'PROJECTED')
     assert.equal(projected.projectionStatus, 'PROJECTED')
     assert.equal(projected.recoveryLookupCount, 1)
+    assert.equal(recoveryProjection.projectionStatus, 'PROJECTED')
     assert.equal(
       database.database.prepare('SELECT COUNT(*) AS count FROM live_bitget_demo_dispatch_authorizations').get()?.count,
       1,
@@ -285,11 +423,247 @@ test('migration 025 and the D1 store persist exact reviewed demo evidence end to
       database.database.prepare('SELECT COUNT(*) AS count FROM live_bitget_demo_dispatch_recovery_requirements').get()?.count,
       1,
     )
+    assert.equal(
+      database.database.prepare('SELECT COUNT(*) AS count FROM live_bitget_demo_control_verifications').get()?.count,
+      1,
+    )
+    assert.equal(
+      database.database.prepare('SELECT COUNT(*) AS count FROM live_bitget_demo_recovery_attempts').get()?.count,
+      1,
+    )
+    assert.equal(
+      database.database.prepare('SELECT COUNT(*) AS count FROM live_bitget_demo_recovery_receipts').get()?.count,
+      1,
+    )
+    assert.equal(
+      (await recordBitgetDemoControlVerification(
+        database.env(),
+        current,
+        reviewed.authorization,
+        verified,
+      )).projectionStatus,
+      'REPLAYED',
+    )
+    assert.equal(
+      (await persistBitgetDemoReadOnlyRecoveryReceipt(
+        database.env(),
+        recoveryAttempt,
+        recoveryReceipt,
+      )).projectionStatus,
+      'REPLAYED',
+    )
+    await assert.rejects(
+      claimBitgetDemoReadOnlyRecoveryAttempt(
+        database.env(),
+        dispatch,
+        '2026-07-18T04:00:33.000Z',
+      ),
+      /already durably claimed/,
+    )
     assert.throws(
       () => database.database.exec(
         "UPDATE live_bitget_demo_dispatch_results SET mainnet_allowed = 1 WHERE dispatch_attempt_id = 'demo-sqlite-attempt-0001';",
       ),
       /cannot be updated/,
+    )
+    assert.throws(
+      () => database.database.exec(
+        "DELETE FROM live_bitget_demo_recovery_attempts WHERE dispatch_attempt_id = 'demo-sqlite-attempt-0001';",
+      ),
+      /cannot be deleted/,
+    )
+  } finally {
+    database.close()
+  }
+})
+
+test('migration 026 rejects a demo result that has no immutable fresh-control verification', async () => {
+  const database = new SqliteD1()
+  try {
+    const current = await candidate()
+    const input = authorization(current)
+    configureAuthorizationContext(database, current)
+    await recordReviewedBitgetDemoDispatchAuthorization(
+      database.env(),
+      current,
+      input,
+      '2026-07-18T04:00:06.000Z',
+    )
+    const reviewed = await loadReviewedBitgetDemoDispatchAuthorization(
+      database.env(),
+      current,
+      input.authorizationId,
+      input.dispatchAttemptId,
+      '2026-07-18T04:00:30.000Z',
+    )
+    const claim = await claimReviewedBitgetDemoDispatchAttempt(
+      database.env(),
+      reviewed,
+      '2026-07-18T04:00:30.000Z',
+    )
+    await assert.rejects(
+      persistBitgetDemoDispatchResult(
+        database.env(),
+        reviewed,
+        claim,
+        current,
+        result(current),
+        '2026-07-18T04:00:31.000Z',
+      ),
+      /result evidence batch was rejected/,
+    )
+    assert.equal(
+      database.database.prepare('SELECT COUNT(*) AS count FROM live_bitget_demo_dispatch_results').get()?.count,
+      0,
+    )
+  } finally {
+    database.close()
+  }
+})
+
+test('source-only runner persists fresh controls before dispatch and one-shot recovery evidence after ambiguity', async () => {
+  const database = new SqliteD1()
+  try {
+    const current = await candidate()
+    const evidence = freshEvidence(current)
+    const [guardianEvidenceHash, riskEvidenceHash, idempotencyEvidenceHash] = await Promise.all([
+      bitgetDemoControlEvidenceBindingHash(evidence.guardian),
+      bitgetDemoControlEvidenceBindingHash(evidence.risk),
+      bitgetDemoControlEvidenceBindingHash(evidence.idempotency),
+    ])
+    const input = authorization(current, {
+      guardianEvidenceHash,
+      riskEvidenceHash,
+      idempotencyEvidenceHash,
+    })
+    configureAuthorizationContext(database, current)
+    await recordReviewedBitgetDemoDispatchAuthorization(
+      database.env(),
+      current,
+      input,
+      '2026-07-18T04:00:06.000Z',
+    )
+    const signingMaterial: Readonly<BitgetDemoSigningMaterial> = Object.freeze({
+      apiKey: 'fixture-only-access-id',
+      secretKey: 'fixture-only-signing-key',
+      passphrase: 'fixture-only-passphrase',
+    })
+    const events: string[] = []
+    const outcome = await runReviewedBitgetDemoCertification(
+      database.env(),
+      Object.freeze({
+        authorizationId: input.authorizationId,
+        dispatchAttemptId: input.dispatchAttemptId,
+        candidate: current,
+      }),
+      {
+        serializer: {
+          async run<T>(_accountId: string, operation: () => Promise<T>): Promise<T> {
+            events.push('serialized')
+            return operation()
+          },
+        },
+        freshControlEvidenceLoader: {
+          async load() {
+            events.push('fresh-control')
+            return evidence
+          },
+        },
+        credentialProvider: {
+          async withDemoSigningMaterial<T>(_request, use): Promise<T> {
+            events.push('credential-callback')
+            return use(signingMaterial)
+          },
+        },
+        rateLimitAuthorityProvider: {
+          async forAccount() {
+            events.push('rate-authority')
+            return {
+              async claim(request: Readonly<BitgetDemoRateLimitClaimInput>) {
+                events.push('rate-claim')
+                return Object.freeze({
+                  allowed: true,
+                  exchangeAccountId: request.exchangeAccountId,
+                  dispatchAttemptId: request.dispatchAttemptId,
+                  candidateHash: request.candidateHash,
+                  operation: request.operation,
+                  claimedAtMs: request.requestedAtMs,
+                  windowMs: request.windowMs,
+                  maximumRequests: request.maximumRequests,
+                  receiptHash: HASHES.rateLimit,
+                })
+              },
+            }
+          },
+        },
+        recoveryBoundary: {
+          async recover(request) {
+            events.push('read-only-recovery')
+            const base: BitgetDemoReadOnlyRecoveryReceiptBase = Object.freeze({
+              schemaVersion: 1,
+              recoveryId: 'demo-sqlite-runner-recovery-0001',
+              dispatchAttemptId: request.result.dispatchAttemptId,
+              authorizationId: request.result.authorizationId,
+              exchangeAccountId: request.result.exchangeAccountId,
+              candidateHash: request.result.candidateHash,
+              resultHash: request.resultHash,
+              lookupPlanHash: request.lookupPlanHash,
+              lookupCount: request.lookups.length,
+              status: 'INCOMPLETE',
+              snapshotHash: null,
+              observedAt: request.requestedAt,
+              readOnly: true,
+              providerMutationAllowed: false,
+              executionAllowed: false,
+              accountingAutomaticallyDispatched: false,
+              liveExecutionAllowed: false,
+              realFundsAllowed: false,
+              mainnetAllowed: false,
+              withdrawalsAllowed: false,
+              automaticRetryAllowed: false,
+            })
+            return Object.freeze({ ...base, receiptHash: await canonicalHash(base) })
+          },
+        },
+        fetcher: async () => {
+          events.push('fetch')
+          return new Response(JSON.stringify({
+            code: '50000',
+            msg: 'provider unavailable',
+            data: {},
+          }), { status: 503, headers: { 'content-type': 'application/json' } })
+        },
+        clock: Object.freeze({ now: () => new Date('2026-07-18T04:00:30.500Z') }),
+      },
+    )
+
+    assert.equal(outcome.dispatch.result.requiresReadOnlyRecovery, true)
+    assert.equal(outcome.recoveryAttempt?.oneShot, true)
+    assert.equal(outcome.recovery?.status, 'INCOMPLETE')
+    assert.equal(outcome.recoveryPersistence?.projectionStatus, 'PROJECTED')
+    assert.equal(outcome.providerMutationAllowed, false)
+    assert.equal(outcome.executionAllowed, false)
+    assert.equal(outcome.automaticRetryAllowed, false)
+    assert.deepEqual(events, [
+      'serialized',
+      'fresh-control',
+      'rate-authority',
+      'credential-callback',
+      'rate-claim',
+      'fetch',
+      'read-only-recovery',
+    ])
+    assert.equal(
+      database.database.prepare('SELECT COUNT(*) AS count FROM live_bitget_demo_control_verifications').get()?.count,
+      1,
+    )
+    assert.equal(
+      database.database.prepare('SELECT COUNT(*) AS count FROM live_bitget_demo_recovery_attempts').get()?.count,
+      1,
+    )
+    assert.equal(
+      database.database.prepare('SELECT COUNT(*) AS count FROM live_bitget_demo_recovery_receipts').get()?.count,
+      1,
     )
   } finally {
     database.close()

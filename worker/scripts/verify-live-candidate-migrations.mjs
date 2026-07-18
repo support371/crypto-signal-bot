@@ -11,21 +11,24 @@ const migrations = fs.readdirSync(migrationsRoot)
     const match = /^(\d{3})_.*\.sql$/.exec(name)
     if (!match) return false
     const sequence = Number(match[1])
-    return sequence >= 3 && sequence <= 25
+    return sequence >= 3 && sequence <= 26
   })
   .sort()
 
 if (migrations[0] !== '003_live_release_authorizations.sql') {
   throw new Error('live-candidate migration sequence must start at 003')
 }
-if (migrations.at(-1) !== '025_live_bitget_demo_dispatch_evidence.sql') {
-  throw new Error('live-candidate migration sequence must end at 025')
+if (migrations.at(-1) !== '026_live_bitget_demo_certification_evidence.sql') {
+  throw new Error('live-candidate migration sequence must end at 026')
 }
 if (!migrations.includes('020_live_recovery_accounting_dispatch_attempts.sql')) {
   throw new Error('migration 020 dispatch-attempt boundary is missing')
 }
 if (!migrations.includes('025_live_bitget_demo_dispatch_evidence.sql')) {
   throw new Error('migration 025 Bitget demo evidence boundary is missing')
+}
+if (!migrations.includes('026_live_bitget_demo_certification_evidence.sql')) {
+  throw new Error('migration 026 Bitget demo certification evidence boundary is missing')
 }
 
 const upgradeMigrations = migrations.filter((name) => Number(name.slice(0, 3)) >= 20)
@@ -106,6 +109,17 @@ function verifyBitgetDemoEvidenceConstraints(db) {
       'migration-025-account', '${hash('b')}', '${hash('1')}',
       '${hash('2')}', '2026-07-18T03:00:30.000Z'
     );
+    INSERT INTO live_bitget_demo_control_verifications (
+      dispatch_attempt_id, authorization_id, exchange_account_id,
+      candidate_hash, operation, product_symbol, claim_hash,
+      guardian_evidence_hash, risk_evidence_hash,
+      idempotency_evidence_hash, verified_at, verification_hash
+    ) VALUES (
+      'migration-025-attempt', 'migration-025-authorization',
+      'migration-025-account', '${hash('b')}', 'PLACE', 'BTCUSDT',
+      '${hash('2')}', '${hash('e')}', '${hash('d')}', '${hash('f')}',
+      '2026-07-18T03:00:30.500Z', '${hash('9')}'
+    );
     INSERT INTO live_bitget_demo_dispatch_results (
       dispatch_attempt_id, authorization_id, exchange_account_id,
       candidate_hash, operation, endpoint, category, reason,
@@ -137,6 +151,11 @@ function verifyBitgetDemoEvidenceConstraints(db) {
     "DELETE FROM live_bitget_demo_dispatch_results WHERE dispatch_attempt_id = 'migration-025-attempt';",
     'immutable Bitget demo result deletion',
   )
+  expectRejected(
+    db,
+    "UPDATE live_bitget_demo_control_verifications SET automatically_retried = 1 WHERE dispatch_attempt_id = 'migration-025-attempt';",
+    'immutable Bitget demo fresh-control verification update',
+  )
 }
 
 const emptyDatabase = database()
@@ -150,12 +169,12 @@ try {
 const upgradeDatabase = database()
 try {
   apply(upgradeDatabase, baselineMigrations, 'upgrade baseline through migration 019')
-  apply(upgradeDatabase, upgradeMigrations, 'upgrade from migration 019 through migration 025')
-  apply(upgradeDatabase, upgradeMigrations, 'idempotent replay of migrations 020 through 025')
+  apply(upgradeDatabase, upgradeMigrations, 'upgrade from migration 019 through migration 026')
+  apply(upgradeDatabase, upgradeMigrations, 'idempotent replay of migrations 020 through 026')
 } finally {
   upgradeDatabase.close()
 }
 
 console.log(
-  `Live-candidate empty and upgrade paths verified (${migrations.length} files; migrations 020-025 replayed).`,
+  `Live-candidate empty and upgrade paths verified (${migrations.length} files; migrations 020-026 replayed).`,
 )

@@ -223,6 +223,38 @@ function dependencies(input: {
   }
 }
 
+function certificationExecutor(input: {
+  evidence: BitgetDemoFreshControlEvidenceInput
+  events: string[]
+  fetcher: typeof fetch
+  credentialProvider?: BitgetDemoCredentialProvider
+}) {
+  return createBitgetDemoCertificationExecutor(
+    dependencies(input),
+    Object.freeze({
+      async record({ candidate, authorization, verified }) {
+        input.events.push('control-persistence')
+        return Object.freeze({
+          projectionStatus: 'PROJECTED' as const,
+          dispatchAttemptId: authorization.dispatchAttemptId,
+          authorizationId: authorization.authorizationId,
+          candidateHash: candidate.candidateHash,
+          claimHash: '9'.repeat(64),
+          verificationHash: 'a'.repeat(64),
+          verifiedAt: verified.verifiedAt,
+          providerMutationAllowed: false as const,
+          executionAllowed: false as const,
+          liveExecutionAllowed: false as const,
+          realFundsAllowed: false as const,
+          mainnetAllowed: false as const,
+          withdrawalsAllowed: false as const,
+          automaticRetryAllowed: false as const,
+        })
+      },
+    }),
+  )
+}
+
 test('fresh Guardian, risk, and idempotency evidence receives a non-enumerable in-memory brand', async () => {
   const { current, evidence, authorization } = await fixture()
   const verified = await verifyFreshBitgetDemoControlEvidence(
@@ -264,7 +296,7 @@ test('fresh Guardian, risk, and idempotency evidence receives a non-enumerable i
 test('certification executor reloads controls before callback-scoped credentials and demo transport', async () => {
   const { current, evidence, authorization } = await fixture()
   const events: string[] = []
-  const executor = createBitgetDemoCertificationExecutor(dependencies({
+  const executor = certificationExecutor({
     evidence,
     events,
     fetcher: async (url, init) => {
@@ -282,11 +314,12 @@ test('certification executor reloads controls before callback-scoped credentials
         },
       }), { status: 200, headers: { 'content-type': 'application/json' } })
     },
-  }))
+  })
 
   const result = await executor.dispatch(current, authorization)
   assert.deepEqual(events, [
     'fresh-control',
+    'control-persistence',
     'rate-authority',
     'credential-callback',
     'rate-claim',
@@ -309,14 +342,14 @@ test('stale or changed control evidence fails before credentials, rate claim, an
       reloadedAt: '2026-07-18T03:00:20.000Z',
     },
   }
-  const executor = createBitgetDemoCertificationExecutor(dependencies({
+  const executor = certificationExecutor({
     evidence: stale,
     events,
     fetcher: async () => {
       events.push('fetch')
       throw new Error('fetch must not run')
     },
-  }))
+  })
   await assert.rejects(
     executor.dispatch(current, authorization),
     (error: unknown) => (
@@ -325,6 +358,32 @@ test('stale or changed control evidence fails before credentials, rate claim, an
     ),
   )
   assert.deepEqual(events, ['fresh-control'])
+})
+
+test('fresh-control evidence persistence must succeed before credentials, rate authority, or fetch', async () => {
+  const { current, evidence, authorization } = await fixture()
+  const events: string[] = []
+  const executor = createBitgetDemoCertificationExecutor(
+    dependencies({
+      evidence,
+      events,
+      fetcher: async () => {
+        events.push('fetch')
+        throw new Error('fetch must not run')
+      },
+    }),
+    {
+      async record() {
+        events.push('control-persistence')
+        throw new Error('immutable control evidence unavailable')
+      },
+    },
+  )
+  await assert.rejects(
+    executor.dispatch(current, authorization),
+    /immutable control evidence unavailable/,
+  )
+  assert.deepEqual(events, ['fresh-control', 'control-persistence'])
 })
 
 test('credential provider must execute its signing-material callback exactly once while active', async () => {
@@ -338,7 +397,7 @@ test('credential provider must execute its signing-material callback exactly onc
       return Object.freeze({}) as T
     },
   }
-  const executor = createBitgetDemoCertificationExecutor(dependencies({
+  const executor = certificationExecutor({
     evidence,
     events,
     credentialProvider: unusedProvider,
@@ -346,7 +405,7 @@ test('credential provider must execute its signing-material callback exactly onc
       events.push('fetch')
       throw new Error('fetch must not run')
     },
-  }))
+  })
   await assert.rejects(
     executor.dispatch(current, authorization),
     (error: unknown) => (
@@ -397,7 +456,7 @@ function reviewedOutcome(input: {
 test('ambiguous result invokes one hash-bound read-only recovery without retry or accounting dispatch', async () => {
   const { current, evidence, authorization } = await fixture()
   const events: string[] = []
-  const executor = createBitgetDemoCertificationExecutor(dependencies({
+  const executor = certificationExecutor({
     evidence,
     events,
     fetcher: async () => new Response(JSON.stringify({
@@ -405,7 +464,7 @@ test('ambiguous result invokes one hash-bound read-only recovery without retry o
       msg: 'provider unavailable',
       data: {},
     }), { status: 503, headers: { 'content-type': 'application/json' } }),
-  }))
+  })
   const result = await executor.dispatch(current, authorization)
   assert.equal(result.requiresReadOnlyRecovery, true)
   const resultHash = await canonicalHash(result)
@@ -449,7 +508,7 @@ test('ambiguous result invokes one hash-bound read-only recovery without retry o
 test('acknowledged result does not call recovery and a forged recovery receipt fails closed', async () => {
   const { current, evidence, authorization } = await fixture()
   const events: string[] = []
-  const executor = createBitgetDemoCertificationExecutor(dependencies({
+  const executor = certificationExecutor({
     evidence,
     events,
     fetcher: async () => new Response(JSON.stringify({
@@ -457,7 +516,7 @@ test('acknowledged result does not call recovery and a forged recovery receipt f
       msg: 'success',
       data: { orderId: 'demo-provider-order-0002', clientOid: 'demo-runner-place-0001' },
     }), { status: 200, headers: { 'content-type': 'application/json' } }),
-  }))
+  })
   const acknowledged = await executor.dispatch(current, authorization)
   const acknowledgedHash = await canonicalHash(acknowledged)
   let calls = 0

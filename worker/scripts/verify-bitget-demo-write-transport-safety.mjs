@@ -24,6 +24,7 @@ const allowedSourceImporters = new Set([
   'worker/src/live/adapters/bitget/demo-rate-limit-authority.ts',
   'worker/src/live/adapters/bitget/demo-dispatch-evidence-store.ts',
   'worker/src/live/adapters/bitget/demo-dispatch-orchestrator.ts',
+  'worker/src/live/adapters/bitget/demo-certification-evidence-store.ts',
   'worker/src/live/adapters/bitget/demo-certification-runner.ts',
 ])
 const transport = read(modulePath)

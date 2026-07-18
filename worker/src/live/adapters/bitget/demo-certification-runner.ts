@@ -8,6 +8,14 @@ import {
 } from './demo-dispatch-orchestrator.ts'
 import type { BitgetDemoDispatchEvidenceEnv } from './demo-dispatch-evidence-store.ts'
 import {
+  claimBitgetDemoReadOnlyRecoveryAttempt,
+  persistBitgetDemoReadOnlyRecoveryReceipt,
+  recordBitgetDemoControlVerification,
+  type BitgetDemoControlVerificationProjectionReceipt,
+  type BitgetDemoReadOnlyRecoveryAttempt,
+  type BitgetDemoRecoveryReceiptProjectionReceipt,
+} from './demo-certification-evidence-store.ts'
+import {
   assertBitgetDemoCandidateIntegrity,
   assertBitgetDemoDispatchAuthorizationVerified,
   BitgetDemoWriteTransport,
@@ -165,10 +173,20 @@ export interface BitgetDemoCertificationRunnerDependencies {
   maxResponseBytes?: number
 }
 
+export interface BitgetDemoControlVerificationRecorder {
+  record(input: Readonly<{
+    candidate: BitgetUnsignedMutationCandidate
+    authorization: VerifiedBitgetDemoDispatchAuthorization
+    verified: VerifiedFreshBitgetDemoControlEvidence
+  }>): Promise<BitgetDemoControlVerificationProjectionReceipt>
+}
+
 export interface BitgetDemoCertificationOutcome extends BitgetDemoPermanentCapabilityLocks {
   environment: 'BITGET_DEMO'
   dispatch: ReviewedBitgetDemoDispatchOutcome
+  recoveryAttempt: Readonly<BitgetDemoReadOnlyRecoveryAttempt> | null
   recovery: Readonly<BitgetDemoReadOnlyRecoveryReceipt> | null
+  recoveryPersistence: Readonly<BitgetDemoRecoveryReceiptProjectionReceipt> | null
   demoCertificationOnly: true
   providerMutationAllowed: false
   executionAllowed: false
@@ -452,6 +470,7 @@ function assertResultBinding(
 
 export function createBitgetDemoCertificationExecutor(
   dependencies: BitgetDemoCertificationRunnerDependencies,
+  verificationRecorder: BitgetDemoControlVerificationRecorder,
 ): Readonly<{
   serializer: BitgetDemoAccountDispatchSerializer
   dispatch(
@@ -480,6 +499,12 @@ export function createBitgetDemoCertificationExecutor(
   if (typeof dependencies.fetcher !== 'function') {
     throw new BitgetDemoCertificationRunnerError('FETCHER_REQUIRED', 'an injected demo fetcher is required')
   }
+  if (!verificationRecorder || typeof verificationRecorder.record !== 'function') {
+    throw new BitgetDemoCertificationRunnerError(
+      'CONTROL_VERIFICATION_RECORDER_REQUIRED',
+      'an immutable fresh-control verification recorder is required',
+    )
+  }
   const clock = dependencies.clock ?? SYSTEM_CLOCK
 
   return Object.freeze({
@@ -501,6 +526,32 @@ export function createBitgetDemoCertificationExecutor(
         evaluatedAt,
       )
       assertFreshBitgetDemoControlEvidenceVerified(verified)
+      const controlPersistence = await verificationRecorder.record(Object.freeze({
+        candidate,
+        authorization,
+        verified,
+      }))
+      if (
+        !['PROJECTED', 'REPLAYED'].includes(controlPersistence.projectionStatus)
+        || controlPersistence.dispatchAttemptId !== authorization.dispatchAttemptId
+        || controlPersistence.authorizationId !== authorization.authorizationId
+        || controlPersistence.candidateHash !== candidate.candidateHash
+        || !SHA256_PATTERN.test(controlPersistence.claimHash)
+        || !SHA256_PATTERN.test(controlPersistence.verificationHash)
+        || controlPersistence.verifiedAt !== verified.verifiedAt
+        || controlPersistence.providerMutationAllowed !== false
+        || controlPersistence.executionAllowed !== false
+        || controlPersistence.liveExecutionAllowed !== false
+        || controlPersistence.realFundsAllowed !== false
+        || controlPersistence.mainnetAllowed !== false
+        || controlPersistence.withdrawalsAllowed !== false
+        || controlPersistence.automaticRetryAllowed !== false
+      ) {
+        throw new BitgetDemoCertificationRunnerError(
+          'CONTROL_VERIFICATION_PERSISTENCE_INVALID',
+          'fresh-control verification persistence does not bind the reviewed demo attempt',
+        )
+      }
 
       const rateLimitAuthority = await dependencies.rateLimitAuthorityProvider.forAccount(
         authorization.exchangeAccountId,
@@ -585,6 +636,10 @@ export async function recoverReviewedBitgetDemoDispatch(
   outcome: ReviewedBitgetDemoDispatchOutcome,
   boundary: BitgetDemoReadOnlyRecoveryBoundary,
   clock: BitgetDemoDispatchClock = SYSTEM_CLOCK,
+  requestBinding?: Readonly<{
+    requestedAt: string
+    lookupPlanHash: string
+  }>,
 ): Promise<Readonly<BitgetDemoReadOnlyRecoveryReceipt> | null> {
   if (!outcome.result.requiresReadOnlyRecovery) return null
   if (!boundary || typeof boundary.recover !== 'function') {
@@ -605,7 +660,15 @@ export async function recoverReviewedBitgetDemoDispatch(
   }
 
   const lookupPlanHash = await canonicalHash(outcome.result.recoveryLookups)
-  const requestedAt = clockIso(clock)
+  const requestedAt = requestBinding === undefined
+    ? clockIso(clock)
+    : canonicalTimestamp(requestBinding.requestedAt, 'recovery requestedAt').value
+  if (requestBinding !== undefined && requestBinding.lookupPlanHash !== lookupPlanHash) {
+    throw new BitgetDemoCertificationRunnerError(
+      'RECOVERY_CLAIM_BINDING_INVALID',
+      'immutable read-only recovery claim does not match the persisted lookup plan',
+    )
+  }
   const returned = await boundary.recover(Object.freeze({
     result: outcome.result,
     resultHash: outcome.persistence.resultHash,
@@ -666,21 +729,62 @@ export async function runReviewedBitgetDemoCertification(
   dependencies: BitgetDemoCertificationRunnerDependencies,
 ): Promise<BitgetDemoCertificationOutcome> {
   const clock = dependencies.clock ?? SYSTEM_CLOCK
+  const verificationRecorder: BitgetDemoControlVerificationRecorder = Object.freeze({
+    record: async (
+      recordInput: Parameters<BitgetDemoControlVerificationRecorder['record']>[0],
+    ) => recordBitgetDemoControlVerification(
+      env,
+      recordInput.candidate,
+      recordInput.authorization,
+      recordInput.verified,
+    ),
+  })
+  const executor = createBitgetDemoCertificationExecutor(
+    dependencies,
+    verificationRecorder,
+  )
   const dispatch = await orchestrateReviewedBitgetDemoDispatch(
     env,
     input,
-    createBitgetDemoCertificationExecutor(dependencies),
+    executor,
     clock,
   )
-  const recovery = await recoverReviewedBitgetDemoDispatch(
-    dispatch,
-    dependencies.recoveryBoundary,
-    clock,
-  )
+  let recoveryAttempt: BitgetDemoReadOnlyRecoveryAttempt | null = null
+  let recovery: Readonly<BitgetDemoReadOnlyRecoveryReceipt> | null = null
+  let recoveryPersistence: Readonly<BitgetDemoRecoveryReceiptProjectionReceipt> | null = null
+  if (dispatch.result.requiresReadOnlyRecovery) {
+    recoveryAttempt = await claimBitgetDemoReadOnlyRecoveryAttempt(
+      env,
+      dispatch,
+      clockIso(clock),
+    )
+    recovery = await recoverReviewedBitgetDemoDispatch(
+      dispatch,
+      dependencies.recoveryBoundary,
+      clock,
+      Object.freeze({
+        requestedAt: recoveryAttempt.requestedAt,
+        lookupPlanHash: recoveryAttempt.lookupPlanHash,
+      }),
+    )
+    if (recovery === null) {
+      throw new BitgetDemoCertificationRunnerError(
+        'RECOVERY_RECEIPT_REQUIRED',
+        'claimed read-only recovery attempt returned no receipt',
+      )
+    }
+    recoveryPersistence = await persistBitgetDemoReadOnlyRecoveryReceipt(
+      env,
+      recoveryAttempt,
+      recovery,
+    )
+  }
   return Object.freeze({
     environment: 'BITGET_DEMO' as const,
     dispatch,
+    recoveryAttempt,
     recovery,
+    recoveryPersistence,
     demoCertificationOnly: true as const,
     providerMutationAllowed: false as const,
     executionAllowed: false as const,

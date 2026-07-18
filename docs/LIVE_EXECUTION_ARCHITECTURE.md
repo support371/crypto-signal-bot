@@ -19,7 +19,7 @@ Coinbase is optional public/read-only data support. It is not a default executio
 
 BTCC remains fail-closed until an official dated, SHA-256-bound endpoint and signing manifest is imported and reviewed. No BTCC API host, endpoint, signing rule, precision rule, status, or permission model may be guessed.
 
-Bitget currently has strict spot normalizers, an authenticated read-only REST transport, a local locked preview, deterministic unsigned mutation candidates, mandatory read-only recovery instructions, a credential-free certification harness, an immutable attested-recovery ingestion bridge, an isolated demo-only write-transport module, a source-only Durable Object rate-limit authority, immutable reviewed demo-dispatch evidence, and a source-only non-public certification runner. The demo modules have no Worker entrypoint import, deployment binding, default fetcher, credential implementation, public route, deployed exchange-account coordinator composition, or live/mainnet mode. No live Bitget write transport or runtime signing path exists in this branch.
+Bitget currently has strict spot normalizers, an authenticated read-only REST transport, a local locked preview, deterministic unsigned mutation candidates, mandatory read-only recovery instructions, a credential-free certification harness, an immutable attested-recovery ingestion bridge, an isolated demo-only write-transport module, a source-only Durable Object rate-limit authority, immutable reviewed demo-dispatch and certification evidence, and a source-only non-public certification runner. The demo modules have no Worker entrypoint import, deployment binding, default fetcher, credential implementation, public route, deployed exchange-account coordinator composition, or live/mainnet mode. No live Bitget write transport or runtime signing path exists in this branch.
 
 ## Safety invariants
 
@@ -199,20 +199,26 @@ orchestrator has inserted its immutable one-shot claim, the runner:
   timestamp) and requires exact equality with the immutable authorization;
 - restores a second module-private, non-enumerable in-memory verification brand
   that object spread and JSON serialization cannot preserve;
+- persists the exact verification and one-shot claim binding in append-only D1
+  evidence before any rate authority, credential callback, or transport use;
 - selects an injected account-scoped rate authority;
 - allows injected demo signing material to be used exactly once, only inside an
   active callback, and returns no material or signed headers;
 - invokes the existing bounded demo transport with an injected fetcher;
-- persists the result through the existing one-batch evidence store; and
-- for ambiguous outcomes only, invokes one injected read-only recovery boundary
-  after verifying the persisted result and lookup-plan hashes. The recovery
-  receipt permanently blocks provider mutation, execution, automatic retry,
-  and automatic accounting dispatch.
+- persists the result through the existing one-batch evidence store, whose
+  migration-026 trigger rejects results without exact fresh-control evidence;
+  and
+- for ambiguous outcomes only, inserts an immutable one-shot read-only recovery
+  claim before invoking the injected recovery boundary, then persists the
+  verified recovery receipt. The attempt and receipt permanently block provider
+  mutation, execution, automatic retry, and automatic accounting dispatch.
 
 A missing, stale, changed, copied, late, or multiply used dependency fails
-closed. A failure after the one-shot claim leaves the claim unusable and
-requires a new candidate and a new independent review; it is never retried.
-A stored boolean or hash alone is not sufficient demo authority.
+closed. A failure after the dispatch claim leaves the dispatch unusable and
+requires a new candidate and a new independent review. A failure after the
+read-only recovery claim leaves that recovery attempt unusable and requires a
+separately reviewed recovery process; neither path retries automatically. A
+stored boolean or hash alone is not sufficient demo authority.
 
 This is not a deployed demo runner or a live execution client. The source-only
 runner has no Worker entrypoint import, demo credential implementation or
@@ -351,7 +357,7 @@ The verified and fresh approval packages use module-private symbol brands define
 
 Migration `020_live_recovery_accounting_dispatch_attempts.sql` records an immutable claim before accounting commands run. It permits only one genesis attempt, blocks replay after completion, and permits continuation after a partial or failed dispatch only through the latest predecessor and a new independently reviewed approval. The orchestrator reloads immutable approval and validity evidence inside the per-account serializer, claims the attempt before execution, stops on the first failure, and persists the dispatch summary and receipts without automatic retry.
 
-Local migration commands apply approval evidence, dispatch evidence, validity evidence, dispatch-attempt evidence, read-only certification evidence, source attestations, attested recovery bindings, and reviewed Bitget demo evidence explicitly. Every recovery dispatch-attempt row permanently records zero provider-mutation, reservation-application, and execution capability. Every demo result permanently records zero real-provider-mutation, live-execution, real-funds, mainnet, withdrawal, and automatic-retry capability.
+Local migration commands apply approval evidence, dispatch evidence, validity evidence, dispatch-attempt evidence, read-only certification evidence, source attestations, attested recovery bindings, reviewed Bitget demo evidence, fresh-control verification, and one-shot read-only recovery evidence explicitly through migration 026. Every recovery dispatch-attempt row permanently records zero provider-mutation, reservation-application, and execution capability. Every demo verification, result, recovery attempt, and recovery receipt permanently records zero real-provider-mutation, live-execution, real-funds, mainnet, withdrawal, automatic-accounting-dispatch, and automatic-retry capability.
 
 ### Guardian, authorization, queues, transfers, and audit
 
@@ -361,7 +367,7 @@ The withdrawal candidate is a separate disabled Worker with separate placeholder
 
 ## Validation
 
-Required validation is independent of GitHub Actions billing. CircleCI owns the automatic pull-request matrix and the aggregate `billing-independent-release-gate`; every GitHub Actions workflow is manual and advisory. The aggregate requires frontend and backend validation, the complete Worker fast path, clean and upgrade migration verification through migration 025, committed-secret and release-lock checks, and all three disabled dry-run bundles. See `docs/CI_BILLING_INDEPENDENCE.md`.
+Required validation is independent of GitHub Actions billing. CircleCI owns the automatic pull-request matrix and the aggregate `billing-independent-release-gate`; every GitHub Actions workflow is manual and advisory. The aggregate requires frontend and backend validation, the complete Worker fast path, clean and upgrade migration verification through migration 026, committed-secret and release-lock checks, and all three disabled dry-run bundles. See `docs/CI_BILLING_INDEPENDENCE.md`.
 
 CircleCI separately validates:
 
@@ -373,9 +379,9 @@ CircleCI separately validates:
 - full and provider TypeScript compilation;
 - all three disabled dry-run bundles, including the Bitget trade quarantine;
 - frontend build and backend audit;
-- static safety contracts for execution locks, credential-free certification, certification persistence, source separation, attested recovery ingestion, persistence, retries, observability, accounting, settlement, recovery, approval, the source-only demo certification runner, release certification, paper isolation, and CryptoOps read-only schemas.
+- static safety contracts for execution locks, credential-free certification, certification persistence, source separation, attested recovery ingestion, persistence, retries, observability, accounting, settlement, recovery, approval, the source-only demo certification runner and its immutable evidence store, release certification, paper isolation, and CryptoOps read-only schemas.
 
-The safety chain enforces the absence of runtime-reachable or live exchange write transport, public financial-mutation routes, automatic retries, completed-plan replay, credential persistence, fixture-to-external evidence promotion, automatic release-certification projection, automatic accounting dispatch from attested recovery, enumerable approval brands, true live-execution flags, and real provider-mutation capability. It separately proves that the isolated demo-only transport, Durable Object rate limiter, reviewed authorization loader, one-shot claim, immutable result store, and source-only certification runner have no Worker entrypoint import, deployment binding, default fetcher, credential implementation, deletion path, live/mainnet mode, or automatic retry.
+The safety chain enforces the absence of runtime-reachable or live exchange write transport, public financial-mutation routes, automatic retries, completed-plan replay, credential persistence, fixture-to-external evidence promotion, automatic release-certification projection, automatic accounting dispatch from attested recovery, enumerable approval brands, true live-execution flags, and real provider-mutation capability. It separately proves that the isolated demo-only transport, Durable Object rate limiter, reviewed authorization loader, one-shot dispatch and recovery claims, immutable result/control/recovery stores, and source-only certification runner have no Worker entrypoint import, deployment binding, default fetcher, credential implementation, deletion path, live/mainnet mode, or automatic retry.
 
 The branch must remain draft and must not merge while any required check is failed, pending, blocked, skipped, or unavailable.
 

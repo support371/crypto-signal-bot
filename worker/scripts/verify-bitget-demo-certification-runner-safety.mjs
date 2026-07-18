@@ -20,6 +20,7 @@ function sourceFiles(directory) {
 
 const failures = []
 const modulePath = 'worker/src/live/adapters/bitget/demo-certification-runner.ts'
+const certificationStorePath = 'worker/src/live/adapters/bitget/demo-certification-evidence-store.ts'
 const runner = read(modulePath)
 const packageJson = read('worker/package.json')
 
@@ -36,6 +37,7 @@ for (const [token, message] of [
   ['bitgetDemoControlEvidenceBindingHash(input.risk)', 'risk evidence must be re-hashed'],
   ['bitgetDemoControlEvidenceBindingHash(input.idempotency)', 'idempotency evidence must be re-hashed'],
   ['assertFreshBitgetDemoControlEvidenceVerified(verified)', 'fresh control brand must be checked before credential use'],
+  ['verificationRecorder.record(', 'fresh control verification must be persisted before credential use'],
   ['rateLimitAuthorityProvider.forAccount(', 'account-scoped rate authority must be selected'],
   ['new BitgetDemoWriteTransport({', 'reviewed bounded demo transport must be composed'],
   ['fetcher: dependencies.fetcher', 'demo fetcher must be injected'],
@@ -43,7 +45,9 @@ for (const [token, message] of [
   ['materialUseCount !== 1', 'signing material callback must be one-shot'],
   ['return transport.dispatch(candidate, authorization, material)', 'demo transport must receive callback-scoped material directly'],
   ['orchestrateReviewedBitgetDemoDispatch(', 'immutable reviewed one-shot orchestration must be composed'],
+  ['claimBitgetDemoReadOnlyRecoveryAttempt(', 'ambiguous recovery must be claimed durably before a read-only call'],
   ['recoverReviewedBitgetDemoDispatch(', 'ambiguous results must use the read-only recovery boundary'],
+  ['persistBitgetDemoReadOnlyRecoveryReceipt(', 'read-only recovery receipts must be persisted immutably'],
   ['outcome.persistence.resultHash !== await canonicalHash(outcome.result)', 'persisted result hash must be reverified before recovery'],
   ['accountingAutomaticallyDispatched: false', 'read-only recovery must not dispatch accounting automatically'],
   ['providerMutationAllowed: false', 'provider mutation lock is missing'],
@@ -58,21 +62,35 @@ for (const [token, message] of [
 }
 
 const loaderPosition = runner.indexOf('freshControlEvidenceLoader.load(')
+const persistencePosition = runner.indexOf('verificationRecorder.record(')
 const credentialPosition = runner.indexOf('credentialProvider.withDemoSigningMaterial(')
 const transportPosition = runner.indexOf('return transport.dispatch(candidate, authorization, material)')
 if (
   loaderPosition < 0
+  || persistencePosition < 0
   || credentialPosition < 0
   || transportPosition < 0
   || loaderPosition >= credentialPosition
+  || loaderPosition >= persistencePosition
+  || persistencePosition >= credentialPosition
   || credentialPosition >= transportPosition
 ) {
   failures.push('fresh controls, callback-scoped credentials, and demo transport are in the wrong order')
 }
 
 const orchestrationPosition = runner.lastIndexOf('orchestrateReviewedBitgetDemoDispatch(')
+const recoveryClaimPosition = runner.lastIndexOf('claimBitgetDemoReadOnlyRecoveryAttempt(')
 const recoveryPosition = runner.lastIndexOf('recoverReviewedBitgetDemoDispatch(')
-if (orchestrationPosition < 0 || recoveryPosition < 0 || orchestrationPosition >= recoveryPosition) {
+const recoveryPersistencePosition = runner.lastIndexOf('persistBitgetDemoReadOnlyRecoveryReceipt(')
+if (
+  orchestrationPosition < 0
+  || recoveryClaimPosition < 0
+  || recoveryPosition < 0
+  || recoveryPersistencePosition < 0
+  || orchestrationPosition >= recoveryClaimPosition
+  || recoveryClaimPosition >= recoveryPosition
+  || recoveryPosition >= recoveryPersistencePosition
+) {
   failures.push('immutable result persistence must complete before read-only recovery')
 }
 
@@ -104,7 +122,7 @@ for (const pattern of [
 }
 
 for (const sourcePath of sourceFiles('worker/src')) {
-  if (sourcePath === modulePath) continue
+  if (sourcePath === modulePath || sourcePath === certificationStorePath) continue
   if (/demo-certification-runner\.ts/.test(read(sourcePath))) {
     failures.push(`${sourcePath} must not import the source-only demo certification runner`)
   }
