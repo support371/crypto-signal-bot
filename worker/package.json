@@ -14,7 +14,7 @@
     "test:live-foundation": "node --experimental-strip-types --test tests/live-*.test.ts",
     "test:provider-contracts": "node --experimental-strip-types --test tests/live-default-exchanges.test.ts tests/live-bitget-read-only-client.test.ts tests/live-bitget-read-only-certification.test.ts tests/live-bitget-preview.test.ts tests/live-bitget-execution-candidate.test.ts tests/live-bitget-user-stream.test.ts tests/live-bitget-recovery.test.ts tests/live-btcc-recovery.test.ts",
     "verify:paper-safety": "node scripts/verify-paper-safety.mjs",
-    "verify:live-candidate-safety": "node scripts/verify-live-candidate-safety.mjs && node scripts/verify-candidate-command-lock.mjs && node scripts/verify-bitget-execution-candidate-safety.mjs && node scripts/verify-bitget-read-only-certification-safety.mjs && node scripts/verify-bitget-read-only-certification-persistence.mjs && node scripts/verify-candidate-evidence-persistence.mjs && node scripts/verify-candidate-projection-observability.mjs && node scripts/verify-fill-accounting-safety.mjs && node scripts/verify-reservation-settlement-safety.mjs && node scripts/verify-exchange-recovery-safety.mjs && node scripts/verify-recovery-ingestion-safety.mjs && node scripts/verify-recovery-accounting-approval-safety.mjs",
+    "verify:live-candidate-safety": "node scripts/verify-live-candidate-safety.mjs && node scripts/verify-candidate-command-lock.mjs && node scripts/verify-bitget-execution-candidate-safety.mjs && node scripts/verify-bitget-read-only-certification-safety.mjs && node scripts/verify-bitget-read-only-certification-persistence.mjs && node scripts/verify-bitget-read-only-certification-attestation.mjs && node scripts/verify-candidate-evidence-persistence.mjs && node scripts/verify-candidate-projection-observability.mjs && node scripts/verify-fill-accounting-safety.mjs && node scripts/verify-reservation-settlement-safety.mjs && node scripts/verify-exchange-recovery-safety.mjs && node scripts/verify-recovery-ingestion-safety.mjs && node scripts/verify-recovery-accounting-approval-safety.mjs",
     "verify:regulated-foundation-safety": "node scripts/verify-regulated-foundation-safety.mjs",
     "verify:certification-safety": "node scripts/verify-certification-safety.mjs",
     "verify:cryptoops-readonly-openapi": "node scripts/verify-cryptoops-readonly-openapi.mjs",
@@ -45,6 +45,7 @@
     "migrate:018:local": "npm run migrate:018:approval:local && npm run migrate:018:dispatch:local",
     "migrate:019:local": "wrangler d1 execute crypto-signal-bot-live-candidate-db --config ../wrangler.live-candidate.toml --local --file=migrations/019_live_recovery_accounting_approval_validity.sql",
     "migrate:021:local": "wrangler d1 execute crypto-signal-bot-live-candidate-db --config ../wrangler.live-candidate.toml --local --file=migrations/021_live_bitget_read_only_certification.sql",
+    "migrate:022:local": "wrangler d1 execute crypto-signal-bot-live-candidate-db --config ../wrangler.live-candidate.toml --local --file=migrations/022_live_bitget_read_only_certification_attestation.sql",
     "smoke": "node scripts/smoke-check.mjs"
   },
   "dependencies": {
