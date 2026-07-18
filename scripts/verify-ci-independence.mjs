@@ -52,6 +52,9 @@ for (const filename of workflowFiles) {
 }
 
 const circle = fs.readFileSync(circlePath, 'utf8')
+if (!circle.includes('image: cimg/node:22.12.0')) {
+  throw new Error('CircleCI migration verification requires the pinned Node 22.12 runtime')
+}
 const requiredCircleContracts = [
   'frontend-build:',
   'backend-test-audit:',

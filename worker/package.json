@@ -18,7 +18,7 @@
     "verify:regulated-foundation-safety": "node scripts/verify-regulated-foundation-safety.mjs",
     "verify:certification-safety": "node scripts/verify-certification-safety.mjs",
     "verify:cryptoops-readonly-openapi": "node scripts/verify-cryptoops-readonly-openapi.mjs",
-    "verify:migrations": "node --no-warnings scripts/verify-live-candidate-migrations.mjs",
+    "verify:migrations": "node --experimental-sqlite --no-warnings scripts/verify-live-candidate-migrations.mjs",
     "deploy": "wrangler deploy --config ../wrangler.toml",
     "cf:whoami": "wrangler whoami --config ../wrangler.toml",
     "migrate": "wrangler d1 execute crypto-signal-bot-db --config ../wrangler.toml --file=migrations/001_init.sql",
