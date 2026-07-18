@@ -55,6 +55,17 @@ jobs:
           name: Run complete disabled live foundation tests
           command: npm --prefix worker run test:live-foundation
 
+  worker-live-test-shard:
+    parameters:
+      test-files:
+        type: string
+    executor: node-worker
+    steps:
+      - install-worker
+      - run:
+          name: Run isolated live foundation test shard
+          command: node --experimental-strip-types --test << parameters.test-files >>
+
   worker-provider-tests:
     executor: node-worker
     steps:
@@ -318,6 +329,51 @@ workflows:
       - frontend-build
       - worker-root-contracts
       - worker-live-foundation-tests
+      - worker-live-test-shard:
+          name: worker-live-core-tests
+          test-files: >-
+            worker/tests/live-audit.test.ts
+            worker/tests/live-authorization.test.ts
+            worker/tests/live-candidate-command-plan.test.ts
+            worker/tests/live-candidate-evidence.test.ts
+            worker/tests/live-candidate-projection-observability.test.ts
+            worker/tests/live-candidate-projection-retry.test.ts
+            worker/tests/live-certification.test.ts
+            worker/tests/live-foundation.test.ts
+            worker/tests/live-guardian.test.ts
+            worker/tests/live-ledger.test.ts
+            worker/tests/live-observability.test.ts
+            worker/tests/live-order-state.test.ts
+            worker/tests/live-projection-alert-authorization.test.ts
+            worker/tests/live-queue.test.ts
+      - worker-live-test-shard:
+          name: worker-live-accounting-tests
+          test-files: >-
+            worker/tests/live-fill-accounting-reconciliation-store.test.ts
+            worker/tests/live-fill-accounting-reconciliation.test.ts
+            worker/tests/live-fill-accounting-serialization.test.ts
+            worker/tests/live-fill-accounting-service.test.ts
+            worker/tests/live-fill-accounting-store.test.ts
+            worker/tests/live-fill-accounting.test.ts
+            worker/tests/live-reconciliation.test.ts
+            worker/tests/live-reservation-settlement-store.test.ts
+            worker/tests/live-reservation-settlement.test.ts
+      - worker-live-test-shard:
+          name: worker-live-recovery-contract-tests
+          test-files: >-
+            worker/tests/live-bitget-recovery-accounting-plan.test.ts
+            worker/tests/live-recovery-accounting-approval-safety.test.ts
+            worker/tests/live-recovery-accounting-plan-integrity.test.ts
+      - worker-live-test-shard:
+          name: worker-live-legacy-provider-tests
+          test-files: >-
+            worker/tests/live-coinbase-normalizer.test.ts
+            worker/tests/live-coinbase-user-stream.test.ts
+      - worker-live-test-shard:
+          name: worker-live-transfer-tests
+          test-files: >-
+            worker/tests/live-transfer-state.test.ts
+            worker/tests/live-withdrawal-policy.test.ts
       - worker-provider-tests
       - worker-recovery-ingestion-plan-tests
       - worker-recovery-ingestion-store-tests
@@ -363,6 +419,11 @@ workflows:
           requires:
             - worker-root-contracts
             - worker-live-foundation-tests
+            - worker-live-core-tests
+            - worker-live-accounting-tests
+            - worker-live-recovery-contract-tests
+            - worker-live-legacy-provider-tests
+            - worker-live-transfer-tests
             - worker-provider-tests
             - worker-recovery-ingestion-plan-tests
             - worker-recovery-ingestion-store-tests
