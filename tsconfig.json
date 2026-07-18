@@ -17,6 +17,7 @@
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
+      "@/lib/backend": ["src/lib/backendRuntime.ts"],
       "@/*": ["src/*"]
     }
   },

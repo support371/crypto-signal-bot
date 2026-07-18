@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchBackendJson } from '@/lib/backend';
+import { PAPER_DASHBOARD_ROUTES } from '@/lib/paperDashboardRoutes';
 
 export interface PortfolioBalance {
   balances?: Record<string, number>;
@@ -120,9 +121,9 @@ export function usePortfolio(pollIntervalMs = 10000) {
   const fetch = useCallback(async () => {
     try {
       const [balData, ordData, summaryData] = await Promise.all([
-        fetchBackendJson<PortfolioBalance>('/balance'),
-        fetchBackendJson<{ orders?: BackendOrder[] }>('/orders'),
-        fetchBackendJson<PortfolioSummary>('/api/v1/portfolio'),
+        fetchBackendJson<PortfolioBalance>(PAPER_DASHBOARD_ROUTES.portfolioBalance),
+        fetchBackendJson<{ orders?: BackendOrder[] }>(PAPER_DASHBOARD_ROUTES.orders),
+        fetchBackendJson<PortfolioSummary>(PAPER_DASHBOARD_ROUTES.portfolioSummary),
       ]);
 
       const usdt = firstNumber(

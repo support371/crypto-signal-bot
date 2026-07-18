@@ -243,3 +243,16 @@ The frontend infrastructure page reads only status and metric endpoints. It must
 - show paper, testnet, mainnet-disabled, withdrawal-disabled, and guardian state prominently;
 - never submit an order from the infrastructure page;
 - never include a privileged API key in the browser bundle.
+
+The deployed paper dashboard uses the Worker's canonical legacy read paths
+until the corresponding `/v2` portfolio contracts are implemented:
+
+- health: `GET /health`;
+- runtime configuration: `GET /runtime/status`;
+- paper balance: `GET /portfolio/balance`;
+- paper portfolio: `GET /portfolio/summary`;
+- public paper market data: `GET /market/prices`;
+- display-only signal evidence: `GET /signal/latest`.
+
+Missing risk evidence must remain unavailable in the frontend. A signal response
+alone must never be converted into browser-side execution approval.

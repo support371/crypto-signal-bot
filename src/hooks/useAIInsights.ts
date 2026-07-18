@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { CryptoPrice } from '@/types/crypto';
 import { toast } from 'sonner';
 import { getConfiguredBackendUrl } from '@/lib/env';
+import { PAPER_DASHBOARD_ROUTES } from '@/lib/paperDashboardRoutes';
 
 const BACKEND_URL = getConfiguredBackendUrl();
 
@@ -18,8 +19,9 @@ interface SignalMetadata {
 
 interface SignalResponse {
   symbol: string; side: string;
-  entry_price: number; stop_loss: number; take_profit: number;
-  confidence: number; strategy_id: string;
+  entry_price?: number | null; stop_loss?: number | null; take_profit?: number | null;
+  confidence: number; strategy_id?: string; strategy?: string;
+  available?: boolean;
   metadata?: SignalMetadata;
 }
 
@@ -143,7 +145,7 @@ export function useAIInsights() {
         `${priceData.symbol.toUpperCase()}USDT`;
 
       const res = await fetchWithRetry(
-        `${BACKEND_URL}/api/v1/signals/${backendSymbol}`,
+        `${BACKEND_URL}${PAPER_DASHBOARD_ROUTES.signalLatest}?symbol=${encodeURIComponent(backendSymbol)}`,
         2,   // up to 2 retries (3 attempts total)
         12000 // 12s timeout per attempt — handles Render cold starts
       );
@@ -151,6 +153,7 @@ export function useAIInsights() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const signalData: SignalResponse = await res.json();
+      if (signalData.available === false) throw new Error('Signal unavailable');
       setInsight(buildInsight(signalData, priceData));
     } catch (err) {
       const name = err instanceof Error ? err.name : '';
