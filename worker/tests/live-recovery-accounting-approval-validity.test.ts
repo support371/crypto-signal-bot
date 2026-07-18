@@ -21,6 +21,7 @@ interface FakeStatement {
 
 class FakeD1 {
   plan: Record<string, unknown> | null = null
+  authorization: Record<string, unknown> | null = null
   approval: Record<string, unknown> | null = null
   validity: Record<string, unknown> | null = null
   batchCount = 0
@@ -54,7 +55,7 @@ class FakeD1 {
     if (sql.includes('FROM live_recovery_accounting_approval_validity')) {
       return this.validity as T | null
     }
-    if (sql.includes('FROM live_authorization_events')) return null
+    if (sql.includes('FROM live_authorization_events')) return this.authorization as T | null
     return null
   }
 
@@ -82,36 +83,62 @@ class FakeD1 {
 
   async batch(statements: D1PreparedStatement[]): Promise<D1Result[]> {
     this.batchCount += 1
-    const [planStatement, approvalStatement] = statements as unknown as FakeStatement[]
-    const planParams = planStatement.params
-    this.plan = {
-      plan_id: String(planParams[0]),
-      plan_hash: String(planParams[4]),
-      recovery_snapshot_hash: String(planParams[3]),
-      exchange_account_id: String(planParams[1]),
-      product_id: String(planParams[2]),
-      command_count: Number(planParams[5]),
-      commands_json: String(planParams[6]),
-      prepared_by_actor_id: String(planParams[7]),
-      accounting_evidence_ready: 1,
-      automatically_dispatched: 0,
-      provider_mutation_allowed: 0,
-      reservation_applied: 0,
-      execution_allowed: 0,
-    }
-    const approvalParams = approvalStatement.params
-    this.approval = {
-      approval_event_id: String(approvalParams[0]),
-      authorization_event_id: String(approvalParams[1]),
-      plan_id: String(approvalParams[2]),
-      plan_hash: String(approvalParams[3]),
-      decision: String(approvalParams[6]),
-      reasons_json: String(approvalParams[7]),
-      approval_hash: String(approvalParams[11]),
-      automatically_dispatched: 0,
-      provider_mutation_allowed: 0,
-      reservation_applied: 0,
-      execution_allowed: 0,
+    for (const statement of statements as unknown as FakeStatement[]) {
+      const params = statement.params
+      if (statement.sql.includes('INSERT INTO live_recovery_accounting_plans')) {
+        this.plan = {
+          plan_id: String(params[0]),
+          exchange_account_id: String(params[1]),
+          product_id: String(params[2]),
+          recovery_snapshot_hash: String(params[3]),
+          plan_hash: String(params[4]),
+          command_count: Number(params[5]),
+          commands_json: String(params[6]),
+          prepared_by_actor_id: String(params[7]),
+          accounting_evidence_ready: 1,
+          automatically_dispatched: 0,
+          provider_mutation_allowed: 0,
+          reservation_applied: 0,
+          execution_allowed: 0,
+        }
+      } else if (statement.sql.includes('INSERT INTO live_authorization_events')) {
+        this.authorization = {
+          authorization_event_id: String(params[0]),
+          actor_id: String(params[1]),
+          action: String(params[2]),
+          resource_type: String(params[3]),
+          resource_id: String(params[4]),
+          required_roles_json: String(params[5]),
+          actor_roles_json: String(params[6]),
+          step_up_required: Number(params[7]),
+          step_up_session_id: params[8] === null ? null : String(params[8]),
+          decision: String(params[9]),
+          reason: params[10] === null ? null : String(params[10]),
+          correlation_id: String(params[11]),
+          audit_event_hash: String(params[12]),
+          occurred_at: String(params[13]),
+        }
+      } else if (statement.sql.includes('INSERT INTO live_recovery_accounting_approval_events')) {
+        this.approval = {
+          approval_event_id: String(params[0]),
+          authorization_event_id: String(params[1]),
+          plan_id: String(params[2]),
+          plan_hash: String(params[3]),
+          actor_id: String(params[4]),
+          plan_prepared_by_actor_id: String(params[5]),
+          decision: String(params[6]),
+          reasons_json: String(params[7]),
+          authorization_allowed: Number(params[8]),
+          matched_roles_json: String(params[9]),
+          step_up_session_id: params[10] === null ? null : String(params[10]),
+          approval_hash: String(params[11]),
+          automatically_dispatched: 0,
+          provider_mutation_allowed: 0,
+          reservation_applied: 0,
+          execution_allowed: 0,
+          occurred_at: String(params[12]),
+        }
+      }
     }
     return []
   }
