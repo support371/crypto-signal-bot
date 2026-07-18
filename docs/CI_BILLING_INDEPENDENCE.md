@@ -19,7 +19,8 @@ The CircleCI context `billing-independent-release-gate` succeeds only after:
 - recovery, accounting, approval, dispatch, freshness, and validity tests;
 - every paper, candidate, accounting, recovery, certification, and CryptoOps safety verifier;
 - clean-database and upgrade migration verification through migration 024;
-- both disabled Worker dry-run bundles;
+- all three disabled Worker dry-run bundles, including the route-less Bitget
+  trade-credential quarantine;
 - committed-secret and permanent release-lock verification;
 - CI-independence verification.
 

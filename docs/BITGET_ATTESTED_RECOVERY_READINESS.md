@@ -105,7 +105,8 @@ The mandatory Worker matrix includes:
 - full and provider TypeScript compilation;
 - the complete live-foundation suite;
 - static readiness and observability safety proofs;
-- both disabled Worker dry-run bundles.
+- all three disabled Worker dry-run bundles, including the route-less Bitget
+  trade-credential quarantine.
 
 ## Activation boundary
 

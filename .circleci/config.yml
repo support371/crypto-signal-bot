@@ -302,6 +302,9 @@ jobs:
       - run:
           name: Build disabled withdrawal-candidate dry-run bundle
           command: npm --prefix worker run bundle:withdrawals-candidate
+      - run:
+          name: Build isolated Bitget trade-quarantine dry-run bundle
+          command: npm --prefix worker run bundle:bitget-trade-quarantine
 
   worker-fast-path:
     executor: node-worker

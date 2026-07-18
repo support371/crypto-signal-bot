@@ -1,0 +1,37 @@
+name = "crypto-signal-bot-bitget-trade-quarantine"
+main = "worker/src/index_bitget_trade_quarantine.ts"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+preview_urls = false
+
+# This source-only build declares the separately provisioned trade bindings so
+# their isolation can be statically verified. It is intentionally undeployed,
+# has no route or trigger, and its handler has no environment/secret access.
+
+[vars]
+TRADING_MODE = "trade-candidate-quarantine"
+NETWORK = "testnet"
+ALLOW_MAINNET = "false"
+LIVE_EXECUTION_ENABLED = "false"
+PROVIDER_MUTATION_ENABLED = "false"
+TRADE_CREDENTIAL_ACCESS_ENABLED = "false"
+TRADE_TRANSPORT_CONFIGURED = "false"
+AUTOMATIC_RETRY_ENABLED = "false"
+WITHDRAWALS_ENABLED = "false"
+RELEASE_AUTHORIZATION_PRESENT = "false"
+
+[[secrets_store_secrets]]
+binding = "BITGET_TRADE_API_KEY"
+store_id = "077d4599269544239a34ade0f64d2f48"
+secret_name = "BITGET_TRADE_API_KEY"
+
+[[secrets_store_secrets]]
+binding = "BITGET_TRADE_API_SECRET"
+store_id = "077d4599269544239a34ade0f64d2f48"
+secret_name = "BITGET_TRADE_API_SECRET"
+
+[[secrets_store_secrets]]
+binding = "BITGET_TRADE_API_PASSPHRASE"
+store_id = "077d4599269544239a34ade0f64d2f48"
+secret_name = "BITGET_TRADE_API_PASSPHRASE"

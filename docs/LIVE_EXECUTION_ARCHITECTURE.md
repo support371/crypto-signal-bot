@@ -4,7 +4,7 @@
 
 This branch contains the disabled foundation of a future real-money-capable execution system. It does not enable live trading, deposits, transfers, or withdrawals.
 
-The live-candidate Worker has no public financial-mutation route or cron trigger and always reports `liveReady: false`. No candidate exchange credential, signing secret, or execution token is provisioned.
+The live-candidate Worker has no public financial-mutation route or cron trigger and always reports `liveReady: false`. Account-level Bitget certification and trade entries have been provisioned in Cloudflare Secrets Store, but no value exists in source or browser code, no trade binding is reachable by a Worker handler, and no signing or execution token is provisioned.
 
 ## Canonical exchange policy
 
@@ -145,6 +145,32 @@ and [signature](https://www.bitget.com/api-doc/common/signature) documentation.
 This verification certifies request-evidence shape only. It does not certify an
 account, permission, credential, deployment, or live submission path.
 
+### Bitget trade-credential quarantine
+
+The operator has separately provisioned three account-level Secrets Store
+entries named `BITGET_TRADE_API_KEY`, `BITGET_TRADE_API_SECRET`, and
+`BITGET_TRADE_API_PASSPHRASE`. Their presence is configuration evidence only;
+it does not prove their values, permissions, account, environment, IP policy,
+or provider connectivity.
+
+`wrangler.bitget-trade-quarantine.toml` is a third, isolated, undeployed build.
+It declares only those trade bindings so isolation is reviewable, while setting
+`workers_dev=false`, `preview_urls=false`, and every mainnet, credential-access,
+transport, retry, mutation, execution, release, and withdrawal control to
+false. It has no route, trigger, D1, R2, KV, Queue, or Durable Object binding.
+
+Its handler does not accept an environment argument, cannot call a secret
+binding's `get()` method, has no signer or network transport, and returns only
+permanent lock evidence. Tests inject secret-like bindings and prove that they
+are never read or serialized. Static verification also prevents the trade
+binding names from entering the paper Worker or read-only certification Worker.
+
+This quarantine is not a deployment, credential certification, exchange
+connection, permission approval, or live-execution capability. A future write
+transport remains a separately reviewed release slice behind the full
+authorization, Guardian, risk, reconciliation, idempotency, and account
+serialization chain.
+
 `worker/src/live/bitget-locked-order-command.ts` binds the local preview, deterministic risk result, balanced reservation draft, unsigned provider candidate, and their hashes into one command-evidence object. A rejected assessment creates no provider candidate. A ready assessment remains `READY_BUT_EXECUTION_LOCKED`, cannot outlive its preview, is never submitted automatically, and still reports all execution capabilities as false.
 
 ### Exact financial representation
@@ -228,7 +254,7 @@ The withdrawal candidate is a separate disabled Worker with separate placeholder
 
 ## Validation
 
-Required validation is independent of GitHub Actions billing. CircleCI owns the automatic pull-request matrix and the aggregate `billing-independent-release-gate`; every GitHub Actions workflow is manual and advisory. The aggregate requires frontend and backend validation, the complete Worker fast path, clean and upgrade migration verification through migration 024, committed-secret and release-lock checks, and both disabled dry-run bundles. See `docs/CI_BILLING_INDEPENDENCE.md`.
+Required validation is independent of GitHub Actions billing. CircleCI owns the automatic pull-request matrix and the aggregate `billing-independent-release-gate`; every GitHub Actions workflow is manual and advisory. The aggregate requires frontend and backend validation, the complete Worker fast path, clean and upgrade migration verification through migration 024, committed-secret and release-lock checks, and all three disabled dry-run bundles. See `docs/CI_BILLING_INDEPENDENCE.md`.
 
 CircleCI separately validates:
 
@@ -238,7 +264,7 @@ CircleCI separately validates:
 - BTCC/Bitget provider tests, including fixture certification, immutable certification storage, source attestation, and attested recovery ingestion;
 - recovery ingestion, approval, dispatch, freshness, validity, immutable-attempt orchestration, and store tests;
 - full and provider TypeScript compilation;
-- both disabled dry-run bundles;
+- all three disabled dry-run bundles, including the Bitget trade quarantine;
 - frontend build and backend audit;
 - static safety contracts for execution locks, credential-free certification, certification persistence, source separation, attested recovery ingestion, persistence, retries, observability, accounting, settlement, recovery, approval, release certification, paper isolation, and CryptoOps read-only schemas.
 
