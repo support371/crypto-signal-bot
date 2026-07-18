@@ -15,7 +15,10 @@ const integrity = read('worker/src/live/recovery-accounting-plan-integrity.ts')
 const approval = read('worker/src/live/recovery-accounting-approval.ts')
 const service = read('worker/src/live/recovery-accounting-approval-service.ts')
 const store = read('worker/src/live/recovery-accounting-approval-store.ts')
+const dispatchService = read('worker/src/live/recovery-accounting-dispatch-service.ts')
+const freshness = read('worker/src/live/recovery-accounting-dispatch-freshness.ts')
 const migration = read('worker/migrations/018_live_recovery_accounting_approval.sql')
+const validityMigration = read('worker/migrations/019_live_recovery_accounting_approval_validity.sql')
 const packageJson = read('worker/package.json')
 const entrypoint = read('worker/src/index_live_candidate.ts')
 
@@ -76,6 +79,29 @@ for (const [token, message] of [
 ]) requireToken(store, token, message)
 
 for (const [token, message] of [
+  ['Object.defineProperty(approvedPackage, VERIFIED_APPROVAL_PACKAGE', 'verified approval brand must use defineProperty'],
+  ['enumerable: false', 'verified approval brand must be non-enumerable'],
+  ['configurable: false', 'verified approval brand must be non-configurable'],
+  ['writable: false', 'verified approval brand must be non-writable'],
+  ['sealDerivedVerifiedApprovedRecoveryAccountingPackage', 'verified derived-package sealing is missing'],
+  ['assertVerifiedApprovalBrand(source)', 'derived package must verify its branded source at runtime'],
+]) requireToken(dispatchService, token, message)
+
+for (const [token, message] of [
+  ['Object.defineProperty(approvedPackage, FRESH_APPROVAL_PACKAGE', 'fresh approval brand must use defineProperty'],
+  ['enumerable: false', 'fresh approval brand must be non-enumerable'],
+  ['configurable: false', 'fresh approval brand must be non-configurable'],
+  ['writable: false', 'fresh approval brand must be non-writable'],
+  ['sealDerivedVerifiedApprovedRecoveryAccountingPackage', 'fresh package must preserve verified approval through runtime sealing'],
+  ['row.validity_seconds > 900', 'approval validity must remain capped at fifteen minutes'],
+  ['nowMs >= expiresAtMs', 'approval expiry enforcement is missing'],
+  ['automaticallyDispatched: false', 'fresh approval must not auto-dispatch'],
+  ['providerMutationAllowed: false', 'fresh approval provider mutation lock is missing'],
+  ['reservationApplied: false', 'fresh approval reservation lock is missing'],
+  ['executionAllowed: false', 'fresh approval execution lock is missing'],
+]) requireToken(freshness, token, message)
+
+for (const [token, message] of [
   ['-- Migration 018:', 'approval migration must be sequence 018'],
   ['live_recovery_accounting_plans', 'recovery accounting plan table is missing'],
   ['live_recovery_accounting_approval_events', 'recovery approval event table is missing'],
@@ -88,11 +114,20 @@ for (const [token, message] of [
   ['live_recovery_accounting_approval_events_no_update', 'approval immutability trigger is missing'],
 ]) requireToken(migration, token, message)
 
-requireToken(
-  packageJson,
-  '018_live_recovery_accounting_approval.sql',
-  'migration 018 command is missing from worker package scripts',
-)
+for (const [token, message] of [
+  ['-- Migration 019:', 'approval validity migration must be sequence 019'],
+  ['validity_seconds >= 1 AND validity_seconds <= 900', 'approval validity database cap is missing'],
+  ['automatically_retried = 0', 'approval validity automatic-retry lock is missing'],
+  ['idx_live_recovery_one_completed_dispatch_per_plan', 'one-completed-dispatch constraint is missing'],
+  ['live_recovery_accounting_approval_validity_no_update', 'approval validity update protection is missing'],
+  ['live_recovery_accounting_approval_validity_no_delete', 'approval validity delete protection is missing'],
+]) requireToken(validityMigration, token, message)
+
+for (const [token, message] of [
+  ['018_live_recovery_accounting_approval.sql', 'migration 018 approval command is missing'],
+  ['018_live_recovery_accounting_dispatch.sql', 'migration 018 dispatch command is missing'],
+  ['019_live_recovery_accounting_approval_validity.sql', 'migration 019 validity command is missing'],
+]) requireToken(packageJson, token, message)
 
 for (const forbidden of [
   'accountSpotFillFifo(',
@@ -111,6 +146,8 @@ for (const forbidden of [
     approval.includes(forbidden)
     || service.includes(forbidden)
     || store.includes(forbidden)
+    || dispatchService.includes(forbidden)
+    || freshness.includes(forbidden)
   ) {
     failures.push(`forbidden recovery approval capability detected: ${forbidden}`)
   }
@@ -120,6 +157,7 @@ if (
   entrypoint.includes('/recovery/accounting/approve')
   || entrypoint.includes('/recovery/accounting/dispatch')
   || entrypoint.includes('/recovery-accounting-approval')
+  || entrypoint.includes('/recovery-accounting-validity')
 ) {
   failures.push('recovery accounting approval must not be publicly exposed')
 }
