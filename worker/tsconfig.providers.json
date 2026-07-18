@@ -8,6 +8,7 @@
     "src/live/bitget-read-only-certification-attestation.ts",
     "src/live/bitget-attested-recovery-ingestion.ts",
     "src/live/bitget-attested-recovery-readiness.ts",
+    "src/live/bitget-attested-recovery-readiness-observability.ts",
     "src/live/adapters/btcc/**/*.ts",
     "src/live/adapters/bitget/**/*.ts"
   ]
