@@ -20,6 +20,9 @@ function sourceFiles(directory) {
 
 const failures = []
 const modulePath = 'worker/src/live/adapters/bitget/demo-write-transport.ts'
+const allowedSourceImporters = new Set([
+  'worker/src/live/adapters/bitget/demo-rate-limit-authority.ts',
+])
 const transport = read(modulePath)
 const packageJson = read('worker/package.json')
 const configs = [
@@ -103,7 +106,7 @@ for (const [configName, config] of configs) {
 for (const sourcePath of sourceFiles('worker/src')) {
   if (sourcePath === modulePath) continue
   const content = read(sourcePath)
-  if (/demo-write-transport\.ts/.test(content)) {
+  if (/demo-write-transport\.ts/.test(content) && !allowedSourceImporters.has(sourcePath)) {
     failures.push(`${sourcePath} must not import the isolated demo write transport`)
   }
 }

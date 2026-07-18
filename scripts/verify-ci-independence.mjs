@@ -85,6 +85,9 @@ for (const contract of requiredCircleContracts) {
     throw new Error(`CircleCI is missing required billing-independent contract ${contract}`)
   }
 }
+if (!circle.includes('node worker/scripts/verify-bitget-demo-rate-limit-authority-safety.mjs')) {
+  throw new Error('CircleCI demo safety job must verify the Durable Object rate-limit authority')
+}
 
 const aggregateStart = circle.indexOf('      - billing-independent-release-gate:')
 if (aggregateStart < 0) {

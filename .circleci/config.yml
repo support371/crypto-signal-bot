@@ -203,7 +203,9 @@ jobs:
       - install-worker
       - run:
           name: Verify isolated Bitget demo write-transport safety
-          command: node worker/scripts/verify-bitget-demo-write-transport-safety.mjs
+          command: |
+            node worker/scripts/verify-bitget-demo-write-transport-safety.mjs
+            node worker/scripts/verify-bitget-demo-rate-limit-authority-safety.mjs
 
   worker-candidate-evidence-persistence-safety:
     executor: node-worker
