@@ -2,6 +2,7 @@
   "extends": "./tsconfig.json",
   "include": [
     "src/live/exchange-registry.ts",
+    "src/live/bitget-locked-order-command.ts",
     "src/live/adapters/btcc/**/*.ts",
     "src/live/adapters/bitget/**/*.ts"
   ]
