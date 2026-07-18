@@ -40,7 +40,10 @@
     "migrate:015:local": "wrangler d1 execute crypto-signal-bot-live-candidate-db --config ../wrangler.live-candidate.toml --local --file=migrations/015_live_fill_accounting.sql",
     "migrate:016:local": "wrangler d1 execute crypto-signal-bot-live-candidate-db --config ../wrangler.live-candidate.toml --local --file=migrations/016_live_reservation_settlement.sql",
     "migrate:017:local": "wrangler d1 execute crypto-signal-bot-live-candidate-db --config ../wrangler.live-candidate.toml --local --file=migrations/017_live_recovery_ingestion.sql",
-    "migrate:018:local": "wrangler d1 execute crypto-signal-bot-live-candidate-db --config ../wrangler.live-candidate.toml --local --file=migrations/018_live_recovery_accounting_approval.sql",
+    "migrate:018:approval:local": "wrangler d1 execute crypto-signal-bot-live-candidate-db --config ../wrangler.live-candidate.toml --local --file=migrations/018_live_recovery_accounting_approval.sql",
+    "migrate:018:dispatch:local": "wrangler d1 execute crypto-signal-bot-live-candidate-db --config ../wrangler.live-candidate.toml --local --file=migrations/018_live_recovery_accounting_dispatch.sql",
+    "migrate:018:local": "npm run migrate:018:approval:local && npm run migrate:018:dispatch:local",
+    "migrate:019:local": "wrangler d1 execute crypto-signal-bot-live-candidate-db --config ../wrangler.live-candidate.toml --local --file=migrations/019_live_recovery_accounting_approval_validity.sql",
     "smoke": "node scripts/smoke-check.mjs"
   },
   "dependencies": {
