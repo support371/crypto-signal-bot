@@ -259,7 +259,7 @@ export async function buildBitgetPlaceOrderCandidate(
     input.productRules,
     new Date(input.builtAt),
   )
-  if (!validation.valid) {
+  if (!validation.accepted) {
     throw new TypeError(`Bitget place candidate failed product validation: ${validation.reasons.join(',')}`)
   }
 
