@@ -67,9 +67,10 @@ test('operator key mapping accepts only actor IDs bound to SHA-256 hashes', () =
 
 test('operator secrets are hashed and compared without early character exit', async () => {
   const hash = await sha256Hex('operator-secret')
+  const differentHash = `${hash[0] === '0' ? '1' : '0'}${hash.slice(1)}`
   assert.match(hash, /^[a-f0-9]{64}$/)
   assert.equal(constantTimeHexEqual(hash, hash), true)
-  assert.equal(constantTimeHexEqual(hash, `${hash.slice(0, -1)}0`), false)
+  assert.equal(constantTimeHexEqual(hash, differentHash), false)
   assert.equal(constantTimeHexEqual(hash, 'abc'), false)
 })
 
