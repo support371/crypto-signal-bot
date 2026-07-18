@@ -25,6 +25,7 @@ for (const [token, message] of [
   ['automaticRetryAllowed: false', 'automatic retry lock is missing'],
   ['transportSelected: false', 'transport-selection lock is missing'],
   ['signingMaterialPresent: false', 'signing-material absence proof is missing'],
+  ['evidenceBindings:', 'provider request evidence bindings are missing'],
   ['mandatory_read_only_recovery', 'mandatory read-only recovery warning is missing'],
   ['split_outcome_requires_both_identity_lookups', 'cancel-replace split-outcome recovery proof is missing'],
   ["throw new CandidateExecutionLockedError('bitget.submitPlaceOrder')", 'place submission must permanently throw'],
@@ -57,6 +58,8 @@ const forbiddenPatterns = [
   /executionAllowed:\s*true/,
   /automaticRetryAllowed:\s*true/,
   /automaticallySubmitted:\s*true/,
+  /\bbody\.(?:previewHash|replacementCandidateHash)\s*=/,
+  /unsignedBody:\s*Object\.freeze\(\{[^}]{0,500}(?:previewHash|replacementCandidateHash)/,
 ]
 
 for (const pattern of forbiddenPatterns) {

@@ -35,6 +35,10 @@ export interface BitgetUnsignedMutationCandidate {
   method: 'POST_EVIDENCE_ONLY'
   endpoint: string
   unsignedBody: Readonly<Record<string, string>>
+  evidenceBindings: Readonly<{
+    previewHash: string | null
+    replacementCandidateHash: string | null
+  }>
   recoveryLookups: readonly BitgetReadOnlyLookupInstruction[]
   warnings: readonly string[]
   builtAt: string
@@ -218,6 +222,10 @@ function baseCandidateEvidence(input: {
   operation: BitgetCandidateOperation
   endpoint: string
   unsignedBody: Readonly<Record<string, string>>
+  evidenceBindings: Readonly<{
+    previewHash: string | null
+    replacementCandidateHash: string | null
+  }>
   recoveryLookups: readonly BitgetReadOnlyLookupInstruction[]
   warnings: readonly string[]
   builtAt: string
@@ -230,6 +238,7 @@ function baseCandidateEvidence(input: {
     method: 'POST_EVIDENCE_ONLY' as const,
     endpoint: input.endpoint,
     unsignedBody: input.unsignedBody,
+    evidenceBindings: input.evidenceBindings,
     recoveryLookups: input.recoveryLookups,
     warnings: input.warnings,
     builtAt: input.builtAt,
@@ -277,9 +286,10 @@ export async function buildBitgetPlaceOrderCandidate(
   return finalizeCandidate(baseCandidateEvidence({
     operation: 'PLACE',
     endpoint: BITGET_MUTATION_EVIDENCE_ENDPOINTS.placeOrder,
-    unsignedBody: Object.freeze({
-      ...placeBody(input),
+    unsignedBody: placeBody(input),
+    evidenceBindings: Object.freeze({
       previewHash: normalizeHash(input.previewHash, 'previewHash'),
+      replacementCandidateHash: null,
     }),
     recoveryLookups: Object.freeze([lookup(input.request.productId, identity)]),
     warnings: Object.freeze(warnings),
@@ -300,6 +310,7 @@ export async function buildBitgetCancelOrderCandidate(
     operation: 'CANCEL',
     endpoint: BITGET_MUTATION_EVIDENCE_ENDPOINTS.cancelOrder,
     unsignedBody: Object.freeze(body),
+    evidenceBindings: Object.freeze({ previewHash: null, replacementCandidateHash: null }),
     recoveryLookups: Object.freeze([lookup(input.productId, identity)]),
     warnings: Object.freeze([
       'execution_locked',
@@ -318,6 +329,16 @@ export async function buildBitgetCancelReplaceOrderCandidate(
   if (normalizeBitgetSymbol(input.productId) !== normalizeBitgetSymbol(input.replacement.request.productId)) {
     throw new TypeError('cancel-replace product must match replacement product')
   }
+  if (input.replacement.request.orderType !== 'LIMIT') {
+    throw new TypeError('Bitget cancel-replace requires a LIMIT replacement order')
+  }
+  if (
+    input.replacement.request.limitPrice === null
+    || input.replacement.request.baseQuantity === null
+    || input.replacement.request.quoteNotional !== null
+  ) {
+    throw new TypeError('Bitget cancel-replace requires limit price and base quantity')
+  }
   const oldIdentity = validateIdentity(input.oldIdentity, 'oldIdentity')
   const replacementCandidate = await buildBitgetPlaceOrderCandidate(input.replacement)
   const newIdentity = Object.freeze({
@@ -326,8 +347,9 @@ export async function buildBitgetCancelReplaceOrderCandidate(
   })
   const body: Record<string, string> = {
     symbol: normalizeBitgetSymbol(input.productId),
+    price: input.replacement.request.limitPrice,
+    size: input.replacement.request.baseQuantity,
     newClientOid: newIdentity.clientOrderId!,
-    replacementCandidateHash: replacementCandidate.candidateHash,
   }
   if (oldIdentity.orderId !== null) body.orderId = oldIdentity.orderId
   else body.clientOid = oldIdentity.clientOrderId!
@@ -336,6 +358,10 @@ export async function buildBitgetCancelReplaceOrderCandidate(
     operation: 'CANCEL_REPLACE',
     endpoint: BITGET_MUTATION_EVIDENCE_ENDPOINTS.cancelReplaceOrder,
     unsignedBody: Object.freeze(body),
+    evidenceBindings: Object.freeze({
+      previewHash: replacementCandidate.evidenceBindings.previewHash,
+      replacementCandidateHash: replacementCandidate.candidateHash,
+    }),
     recoveryLookups: Object.freeze([
       lookup(input.productId, oldIdentity),
       lookup(input.productId, newIdentity),

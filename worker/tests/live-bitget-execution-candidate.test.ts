@@ -43,6 +43,18 @@ function marketBuyRequest() {
   }
 }
 
+function limitBuyRequest() {
+  return {
+    productId: 'BTC-USDT',
+    side: 'BUY' as const,
+    orderType: 'LIMIT' as const,
+    baseQuantity: asDecimalString('0.002'),
+    quoteNotional: null,
+    limitPrice: asDecimalString('50000'),
+    stopPrice: null,
+  }
+}
+
 function placeInput() {
   return {
     request: marketBuyRequest(),
@@ -116,6 +128,9 @@ test('place candidate preserves market-buy quote sizing and permanent locks', as
   assert.equal(candidate.unsignedBody.orderType, 'market')
   assert.equal(candidate.unsignedBody.size, '100')
   assert.equal(candidate.unsignedBody.clientOid, 'candidate-order-0001')
+  assert.equal('previewHash' in candidate.unsignedBody, false)
+  assert.equal(candidate.evidenceBindings.previewHash, 'a'.repeat(64))
+  assert.equal(candidate.evidenceBindings.replacementCandidateHash, null)
   assert.equal(candidate.providerMutationAllowed, false)
   assert.equal(candidate.executionAllowed, false)
   assert.equal(candidate.automaticRetryAllowed, false)
@@ -160,6 +175,7 @@ test('cancel-replace candidate requires recovery for both identities', async () 
     oldIdentity: { orderId: 'provider-order-1', clientOrderId: null },
     replacement: {
       ...placeInput(),
+      request: limitBuyRequest(),
       clientOrderId: 'candidate-order-0002',
     },
     builtAt: '2026-07-17T14:05:00.000Z',
@@ -167,9 +183,34 @@ test('cancel-replace candidate requires recovery for both identities', async () 
   })
 
   assert.equal(candidate.operation, 'CANCEL_REPLACE')
+  assert.deepEqual(candidate.unsignedBody, {
+    symbol: 'BTCUSDT',
+    price: '50000',
+    size: '0.002',
+    newClientOid: 'candidate-order-0002',
+    orderId: 'provider-order-1',
+  })
+  assert.equal('replacementCandidateHash' in candidate.unsignedBody, false)
+  assert.match(candidate.evidenceBindings.replacementCandidateHash ?? '', /^[a-f0-9]{64}$/)
   assert.equal(candidate.recoveryLookups.length, 2)
   assert.ok(candidate.warnings.includes('split_outcome_requires_both_identity_lookups'))
   assert.equal(candidate.automaticRetryAllowed, false)
+})
+
+test('cancel-replace rejects market replacements before provider evidence is built', async () => {
+  await assert.rejects(
+    buildBitgetCancelReplaceOrderCandidate({
+      productId: 'BTC-USDT',
+      oldIdentity: { orderId: 'provider-order-1', clientOrderId: null },
+      replacement: {
+        ...placeInput(),
+        clientOrderId: 'candidate-order-0002',
+      },
+      builtAt: '2026-07-17T14:05:00.000Z',
+      expiresAt: '2026-07-17T14:06:00.000Z',
+    }),
+    /requires a LIMIT replacement order/,
+  )
 })
 
 test('provider outcome classification never enables automatic retry', () => {
@@ -227,7 +268,11 @@ test('locked command binds preview risk reservation and candidate hashes', async
 
   assert.equal(command.status, 'READY_BUT_EXECUTION_LOCKED')
   assert.ok(command.providerCandidate)
-  assert.equal(command.providerCandidate?.unsignedBody.previewHash, command.assessment.preview.rawResponseHash)
+  assert.equal(
+    command.providerCandidate?.evidenceBindings.previewHash,
+    command.assessment.preview.rawResponseHash,
+  )
+  assert.equal('previewHash' in (command.providerCandidate?.unsignedBody ?? {}), false)
   assert.equal(command.assessment.reservationJournalDraft?.journalId, 'reservation-journal-1')
   assert.equal(command.providerMutationAllowed, false)
   assert.equal(command.executionAllowed, false)

@@ -105,13 +105,26 @@ The candidate builder:
 
 - validates exact product rules and sizing;
 - preserves quote sizing for market buys;
+- keeps internal preview and replacement hashes in immutable evidence bindings,
+  never in the provider request body;
 - binds place evidence to a locked preview hash and client order ID;
+- restricts cancel-replace evidence to documented limit replacements with an
+  exact price, base quantity, new client order ID, and exactly one old-order
+  identity;
 - builds mandatory read-only order-lookup instructions for ambiguous results;
 - models both identities for cancel-replace split outcomes;
 - classifies authorization failures, rate limits, duplicate client IDs, transport ambiguity, identity mismatches, and terminal rejection;
 - sets `providerMutationAllowed=false`, `executionAllowed=false`, `automaticRetryAllowed=false`, `transportSelected=false`, and `signingMaterialPresent=false`.
 
 The class contains no fetcher, secret provider, HMAC signer, or callable write transport. Its submission methods permanently throw `CandidateExecutionLockedError`.
+
+The provider-body contract was rechecked on 2026-07-18 against Bitget's
+official [place-order](https://www.bitget.com/api-doc/spot/trade/Place-Order),
+[cancel-order](https://www.bitget.com/api-doc/spot/trade/Cancel-Order),
+[cancel-replace](https://www.bitget.com/api-doc/spot/trade/Cancel-Replace-Order),
+and [signature](https://www.bitget.com/api-doc/common/signature) documentation.
+This verification certifies request-evidence shape only. It does not certify an
+account, permission, credential, deployment, or live submission path.
 
 `worker/src/live/bitget-locked-order-command.ts` binds the local preview, deterministic risk result, balanced reservation draft, unsigned provider candidate, and their hashes into one command-evidence object. A rejected assessment creates no provider candidate. A ready assessment remains `READY_BUT_EXECUTION_LOCKED`, cannot outlive its preview, is never submitted automatically, and still reports all execution capabilities as false.
 
@@ -222,6 +235,10 @@ The branch must remain draft and must not merge while any required check is fail
 4. Build role-scoped frontend account, preview, risk, Guardian, reconciliation, audit, deposit, and withdrawal controls.
 5. Rehearse rollback, disaster recovery, key rotation, incident response, and provider outage handling.
 6. Complete independent security, eligibility, legal, jurisdiction, compliance, and tax review before any separate activation release.
+7. Add and independently review a bounded Bitget write transport, signed-body
+   fixtures, provider error-code manifest, account-scoped rate limiter, and
+   ambiguous-submission recovery orchestration. Keep it unreachable from public
+   routes until the separate activation release is authorized.
 
 ## Activation boundary
 
