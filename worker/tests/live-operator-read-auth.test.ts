@@ -21,8 +21,11 @@ type RoleRow = {
 
 class FakeStatement {
   private values: unknown[] = []
+  private readonly rows: readonly RoleRow[]
 
-  constructor(private readonly rows: readonly RoleRow[]) {}
+  constructor(rows: readonly RoleRow[]) {
+    this.rows = rows
+  }
 
   bind(...values: unknown[]): FakeStatement {
     this.values = values
