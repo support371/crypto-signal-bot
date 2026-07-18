@@ -3,6 +3,7 @@
   "include": [
     "src/live/exchange-registry.ts",
     "src/live/bitget-locked-order-command.ts",
+    "src/live/bitget-read-only-certification.ts",
     "src/live/adapters/btcc/**/*.ts",
     "src/live/adapters/bitget/**/*.ts"
   ]
