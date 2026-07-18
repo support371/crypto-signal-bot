@@ -19,7 +19,7 @@ Coinbase is optional public/read-only data support. It is not a default executio
 
 BTCC remains fail-closed until an official dated, SHA-256-bound endpoint and signing manifest is imported and reviewed. No BTCC API host, endpoint, signing rule, precision rule, status, or permission model may be guessed.
 
-Bitget currently has strict spot normalizers, an authenticated read-only REST transport, a local locked preview, deterministic unsigned mutation candidates, mandatory read-only recovery instructions, a credential-free certification harness, and an immutable attested-recovery ingestion bridge. No Bitget write transport or signing path exists in this branch.
+Bitget currently has strict spot normalizers, an authenticated read-only REST transport, a local locked preview, deterministic unsigned mutation candidates, mandatory read-only recovery instructions, a credential-free certification harness, an immutable attested-recovery ingestion bridge, and an isolated demo-only write-transport module. The demo module has no runtime import, deployment binding, default fetcher, credential provider, public route, persistence adapter, or live/mainnet mode. No live Bitget write transport or runtime signing path exists in this branch.
 
 ## Safety invariants
 
@@ -118,6 +118,53 @@ The candidate builder:
 
 The class contains no fetcher, secret provider, HMAC signer, or callable write transport. Its submission methods permanently throw `CandidateExecutionLockedError`.
 
+### Isolated Bitget demo write transport
+
+`worker/src/live/adapters/bitget/demo-write-transport.ts` is a testable,
+demo-only transport boundary for the three reviewed Bitget spot mutation
+contracts. It does not change the locked execution-candidate adapter and is not
+imported by any Worker entrypoint or other runtime source file.
+
+The module:
+
+- hard-binds requests to Bitget's documented `paptrading: 1` demo header;
+- accepts only the exact reviewed place, cancel, and cancel-replace paths;
+- converts a still-locked, hash-verified candidate into a POST request only
+  after a fresh, in-memory branded demo authorization is supplied;
+- makes that brand non-enumerable, so object spread and ordinary JSON
+  serialization cannot preserve it;
+- requires distinct preparer and approval actors, immutable evidence hashes, a
+  positive validity window capped at five minutes, Guardian/risk/idempotency
+  evidence, account serialization evidence, and every live capability lock;
+- requires an injected fetcher and an injected account-scoped rate-limit
+  authority, with documented ceilings of 10 place requests, 10 cancel
+  requests, and 5 cancel-replace requests per UID per second;
+- signs the exact canonical body with the documented timestamp + POST + path +
+  body HMAC-SHA256/Base64 contract;
+- enforces request bytes, streaming response bytes, timeouts, redirect denial,
+  one-shot attempt use, canonical rate-limit receipts, bounded provider text,
+  and a fail-closed provider-code manifest;
+- never retries automatically and requires read-only lookup after network,
+  timeout, malformed, oversized, server, duplicate-ID, unknown-code, or
+  cancel-replace split outcomes;
+- returns only hashes and sanitized evidence, never headers or signing material;
+- permanently reports real provider mutation, live execution, real funds,
+  mainnet, withdrawals, and automatic retry as false.
+
+Fixed signed-body fixtures independently cover place, cancel, and
+cancel-replace. Hostile tests cover authorization-brand copying, evidence
+tampering, expiry, replay, stale rate-limit claims, provider-code classes,
+streaming response limits, identity mismatch, and recovery requirements.
+
+This is not a deployed demo runner or a live execution client. There is no demo
+credential binding, no default network client, no Durable Object rate-limit
+implementation, and no public or internal runtime route. Bitget's official
+[REST demo documentation](https://www.bitget.com/api-doc/common/demotrading/restapi)
+also requires a separately created demo API key and KYC. Those external
+requirements are not satisfied by this source module. The body and header
+fixtures follow Bitget's official
+[signature contract](https://www.bitget.com/api-doc/common/signature).
+
 ### Bitget certification secret boundary
 
 The operator has provisioned three account-level Cloudflare Secrets Store
@@ -166,7 +213,8 @@ are never read or serialized. Static verification also prevents the trade
 binding names from entering the paper Worker or read-only certification Worker.
 
 This quarantine is not a deployment, credential certification, exchange
-connection, permission approval, or live-execution capability. A future write
+connection, permission approval, or live-execution capability. The isolated
+demo-only transport does not import or read these bindings. A future live write
 transport remains a separately reviewed release slice behind the full
 authorization, Guardian, risk, reconciliation, idempotency, and account
 serialization chain.
@@ -268,7 +316,7 @@ CircleCI separately validates:
 - frontend build and backend audit;
 - static safety contracts for execution locks, credential-free certification, certification persistence, source separation, attested recovery ingestion, persistence, retries, observability, accounting, settlement, recovery, approval, release certification, paper isolation, and CryptoOps read-only schemas.
 
-The safety chain enforces the absence of exchange write transport, public financial-mutation routes, automatic retries, completed-plan replay, credential persistence, fixture-to-external evidence promotion, automatic release-certification projection, automatic accounting dispatch from attested recovery, enumerable approval brands, true execution flags, and provider-mutation capability.
+The safety chain enforces the absence of runtime-reachable or live exchange write transport, public financial-mutation routes, automatic retries, completed-plan replay, credential persistence, fixture-to-external evidence promotion, automatic release-certification projection, automatic accounting dispatch from attested recovery, enumerable approval brands, true live-execution flags, and real provider-mutation capability. It separately proves that the isolated demo-only transport has no runtime import, binding, default fetcher, credential provider, persistence adapter, live/mainnet mode, or automatic retry.
 
 The branch must remain draft and must not merge while any required check is failed, pending, blocked, skipped, or unavailable.
 
@@ -280,10 +328,18 @@ The branch must remain draft and must not merge while any required check is fail
 4. Build role-scoped frontend account, preview, risk, Guardian, reconciliation, audit, deposit, and withdrawal controls.
 5. Rehearse rollback, disaster recovery, key rotation, incident response, and provider outage handling.
 6. Complete independent security, eligibility, legal, jurisdiction, compliance, and tax review before any separate activation release.
-7. Add and independently review a bounded Bitget write transport, signed-body
-   fixtures, provider error-code manifest, account-scoped rate limiter, and
-   ambiguous-submission recovery orchestration. Keep it unreachable from public
-   routes until the separate activation release is authorized.
+7. Implement the account-scoped Durable Object rate-limit authority and
+   immutable demo-dispatch receipts, then compose the reviewed demo-only
+   transport with the existing read-only recovery boundary inside a separate,
+   non-public demo certification runner. The bounded transport, fixed
+   signed-body fixtures, conservative provider-code manifest, rate-limit
+   authority contract, and fail-closed recovery requirements now exist, but no
+   runtime composition or credential binding exists.
+8. After demo certification and independent review, design the separate live
+   transport release behind the full authorization, Guardian, risk,
+   reconciliation, idempotency, deployment-identity, and account-serialization
+   chain. Keep it unreachable from public routes until that activation release
+   is explicitly authorized.
 
 ## Activation boundary
 

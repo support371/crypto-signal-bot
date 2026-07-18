@@ -197,6 +197,14 @@ jobs:
           name: Verify candidate command execution lock
           command: node worker/scripts/verify-candidate-command-lock.mjs
 
+  worker-bitget-demo-write-transport-safety:
+    executor: node-worker
+    steps:
+      - install-worker
+      - run:
+          name: Verify isolated Bitget demo write-transport safety
+          command: node worker/scripts/verify-bitget-demo-write-transport-safety.mjs
+
   worker-candidate-evidence-persistence-safety:
     executor: node-worker
     steps:
@@ -427,6 +435,7 @@ workflows:
       - worker-paper-safety
       - worker-live-candidate-safety
       - worker-candidate-command-lock-safety
+      - worker-bitget-demo-write-transport-safety
       - worker-candidate-evidence-persistence-safety
       - worker-candidate-projection-observability-safety
       - worker-fill-accounting-safety
@@ -443,6 +452,7 @@ workflows:
             - worker-paper-safety
             - worker-live-candidate-safety
             - worker-candidate-command-lock-safety
+            - worker-bitget-demo-write-transport-safety
             - worker-candidate-evidence-persistence-safety
             - worker-candidate-projection-observability-safety
             - worker-fill-accounting-safety

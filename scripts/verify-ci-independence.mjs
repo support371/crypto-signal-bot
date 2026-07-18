@@ -68,6 +68,7 @@ const requiredCircleContracts = [
   'worker-provider-typecheck:',
   'worker-paper-safety:',
   'worker-live-candidate-safety:',
+  'worker-bitget-demo-write-transport-safety:',
   'worker-regulated-safety:',
   'worker-certification-safety:',
   'worker-cryptoops-operational-safety:',
@@ -98,6 +99,18 @@ if (fastPathStart < 0 || fastPathEnd < 0) {
 const fastPath = circle.slice(fastPathStart, fastPathEnd)
 if (!fastPath.includes('- worker-recovery-accounting-fresh-dispatch-orchestrator-tests')) {
   throw new Error('Worker fast path must require fresh-dispatch orchestration tests')
+}
+if (!fastPath.includes('- worker-safety-contracts')) {
+  throw new Error('Worker fast path must require the aggregate safety contracts')
+}
+const safetyStart = circle.indexOf('      - worker-safety-contracts:')
+const safetyEnd = circle.indexOf('      - worker-dry-run-bundles', safetyStart)
+if (safetyStart < 0 || safetyEnd < 0) {
+  throw new Error('CircleCI must invoke the aggregate Worker safety contracts')
+}
+const safetyContracts = circle.slice(safetyStart, safetyEnd)
+if (!safetyContracts.includes('- worker-bitget-demo-write-transport-safety')) {
+  throw new Error('Worker safety contracts must require Bitget demo write-transport isolation')
 }
 
 for (const dependency of [
