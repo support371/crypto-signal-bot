@@ -1,5 +1,5 @@
 import { canonicalHash } from './canonical-json.ts'
-import type { DecimalString } from './decimal.ts'
+import { asDecimalString, type DecimalString } from './decimal.ts'
 import type { FillAccountingAccounts } from './fill-accounting.ts'
 import type { VerifiedSpotFillAccountingInput } from './fill-accounting-service.ts'
 import type { BitgetRestRecoveryResult } from './adapters/bitget/recovery.ts'
@@ -103,7 +103,10 @@ function feeValuationMap(
         `duplicate recovery fee valuation: ${fillId}`,
       )
     }
-    result.set(fillId, valuation.feeQuoteValue)
+    result.set(
+      fillId,
+      asDecimalString(valuation.feeQuoteValue, `feeQuoteValue:${fillId}`),
+    )
   }
   return result
 }
