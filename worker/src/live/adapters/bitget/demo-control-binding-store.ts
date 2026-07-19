@@ -1,5 +1,5 @@
 import { canonicalHash, canonicalJson, sha256Hex } from '../../canonical-json.ts'
-import type { RiskDecision } from '../../domain.ts'
+import type { RiskDecision, RiskRuleResult } from '../../domain.ts'
 import {
   bitgetDemoControlEvidenceBindingHash,
   type BitgetDemoFreshControlEvidenceInput,
@@ -31,6 +31,7 @@ const ALLOWED_GUARDIAN_SCOPES = new Set([
   'ORDER_TYPE',
 ])
 
+type FreshReloadInput = Parameters<BitgetDemoFreshControlSource['reload']>[0]
 type GuardianScopeType =
   | 'GLOBAL'
   | 'ENVIRONMENT'
@@ -76,7 +77,7 @@ export interface BitgetDemoPlaceControlBindingReceipt extends PermanentControlLo
   environment: 'BITGET_DEMO'
 }
 
-type AssessmentRow = Record<string, unknown> & {
+type AssessmentRow = {
   assessment_id: string
   exchange_account_id: string
   provider: string
@@ -88,9 +89,9 @@ type AssessmentRow = Record<string, unknown> & {
   execution_allowed: number
   risk_decision_json: string | null
   committed_at: string
-}
+} & Record<string, unknown>
 
-type IdempotencyRow = Record<string, unknown> & {
+type IdempotencyRow = {
   operation_scope: string
   idempotency_key: string
   request_hash: string
@@ -99,20 +100,18 @@ type IdempotencyRow = Record<string, unknown> & {
   status: string
   response_json: string | null
   error_code: string | null
-  created_at: string
-  updated_at: string
   expires_at: string | null
-}
+} & Record<string, unknown>
 
-type GuardianStateRow = Record<string, unknown> & {
+type GuardianStateRow = {
   scope_type: string
   scope_key: string
   status: string
   version: number
   updated_at: string
-}
+} & Record<string, unknown>
 
-type BindingRow = Record<string, unknown> & {
+type BindingRow = {
   binding_id: string
   authorization_id: string
   dispatch_attempt_id: string
@@ -145,9 +144,9 @@ type BindingRow = Record<string, unknown> & {
   automatic_retry_allowed: number
   accounting_automatically_dispatched: number
   bound_at: string
-}
+} & Record<string, unknown>
 
-interface PreparedBindingEvidence {
+interface PreparedSources {
   assessment: AssessmentRow
   riskDecision: RiskDecision
   riskDecisionHash: string
@@ -158,6 +157,30 @@ interface PreparedBindingEvidence {
   idempotency: IdempotencyRow
   idempotencyKeyHash: string
   evidence: BitgetDemoFreshControlEvidenceInput
+}
+
+interface BindingHashBase extends PermanentControlLocks {
+  bindingId: string
+  authorizationId: string
+  dispatchAttemptId: string
+  exchangeAccountId: string
+  candidateHash: string
+  operation: 'PLACE'
+  productSymbol: string
+  assessmentId: string
+  assessmentEvidenceHash: string
+  previewHash: string
+  riskDecisionId: string
+  riskConfigurationVersion: string
+  riskDecisionHash: string
+  guardianScopes: readonly BitgetDemoGuardianScope[]
+  guardianScopeSetHash: string
+  guardianReviewedStateHash: string
+  idempotencyOperationId: string
+  idempotencyOperationScope: string
+  idempotencyKeyHash: string
+  environment: 'BITGET_DEMO'
+  boundAt: string
 }
 
 export class BitgetDemoControlBindingConflictError extends Error {
@@ -203,12 +226,12 @@ function orderTypeScope(candidate: BitgetUnsignedMutationCandidate): string {
 function normalizeScopes(
   candidate: BitgetUnsignedMutationCandidate,
   authorization: VerifiedBitgetDemoDispatchAuthorization,
-  scopes: readonly BitgetDemoGuardianScope[],
+  input: readonly BitgetDemoGuardianScope[],
 ): readonly BitgetDemoGuardianScope[] {
-  if (!Array.isArray(scopes) || scopes.length < 1 || scopes.length > 8) {
+  if (!Array.isArray(input) || input.length < 1 || input.length > 8) {
     throw new BitgetDemoControlBindingConflictError('Guardian scope set must contain one through eight scopes')
   }
-  const normalized = scopes.map((scope) => {
+  const scopes = input.map((scope) => {
     const scopeType = String(scope.scopeType ?? '').trim().toUpperCase()
     if (!ALLOWED_GUARDIAN_SCOPES.has(scopeType)) {
       throw new BitgetDemoControlBindingConflictError('Guardian scope type is unsupported')
@@ -220,24 +243,71 @@ function normalizeScopes(
   }).sort((left, right) => (
     left.scopeType.localeCompare(right.scopeType) || left.scopeKey.localeCompare(right.scopeKey)
   ))
-  const keys = normalized.map((scope) => `${scope.scopeType}:${scope.scopeKey}`)
+  const keys = scopes.map((scope) => `${scope.scopeType}:${scope.scopeKey}`)
   if (new Set(keys).size !== keys.length) {
     throw new BitgetDemoControlBindingConflictError('Guardian scope set contains duplicates')
   }
-  const mandatory = new Set([
+  for (const required of [
     'GLOBAL:global',
     'ENVIRONMENT:BITGET_DEMO',
     'EXCHANGE:BITGET',
     `ACCOUNT:${authorization.exchangeAccountId}`,
     `SYMBOL:${productSymbol(candidate)}`,
     `ORDER_TYPE:${orderTypeScope(candidate)}`,
-  ])
-  for (const key of mandatory) {
-    if (!keys.includes(key)) {
-      throw new BitgetDemoControlBindingConflictError(`Guardian scope set is missing ${key}`)
+  ]) {
+    if (!keys.includes(required)) {
+      throw new BitgetDemoControlBindingConflictError(`Guardian scope set is missing ${required}`)
     }
   }
-  return Object.freeze(normalized)
+  return Object.freeze(scopes)
+}
+
+function parseRiskRule(value: unknown): RiskRuleResult {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new BitgetDemoControlBindingConflictError('risk rule is invalid')
+  }
+  const row = value as Record<string, unknown>
+  const rule = requiredIdentifier(String(row.rule ?? ''), 'risk rule')
+  if (typeof row.passed !== 'boolean') {
+    throw new BitgetDemoControlBindingConflictError('risk rule decision is invalid')
+  }
+  const reason = row.reason === null ? null : String(row.reason ?? '').trim()
+  return Object.freeze({
+    rule,
+    passed: row.passed,
+    reason: reason || null,
+    observedValue: row.observedValue as RiskRuleResult['observedValue'],
+    limitValue: row.limitValue as RiskRuleResult['limitValue'],
+  })
+}
+
+function parseApprovedRiskDecision(row: AssessmentRow): RiskDecision {
+  if (row.risk_decision_json === null) {
+    throw new BitgetDemoControlBindingConflictError('locked assessment has no risk decision')
+  }
+  let value: unknown
+  try {
+    value = JSON.parse(row.risk_decision_json) as unknown
+  } catch {
+    throw new BitgetDemoControlBindingConflictError('locked assessment risk decision is malformed')
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new BitgetDemoControlBindingConflictError('locked assessment risk decision is invalid')
+  }
+  const source = value as Record<string, unknown>
+  if (source.approved !== true || !Array.isArray(source.rules)) {
+    throw new BitgetDemoControlBindingConflictError('locked assessment risk decision is not approved')
+  }
+  return Object.freeze({
+    decisionId: requiredIdentifier(String(source.decisionId ?? ''), 'risk decision ID'),
+    approved: true,
+    rules: Object.freeze(source.rules.map(parseRiskRule)),
+    configurationVersion: requiredIdentifier(
+      String(source.configurationVersion ?? ''),
+      'risk configuration version',
+    ),
+    decidedAt: requiredIso(String(source.decidedAt ?? ''), 'risk decidedAt'),
+  })
 }
 
 async function loadAssessment(
@@ -256,46 +326,13 @@ async function loadAssessment(
   return row
 }
 
-function parseApprovedRiskDecision(row: AssessmentRow): RiskDecision {
-  if (row.risk_decision_json === null) {
-    throw new BitgetDemoControlBindingConflictError('locked assessment has no risk decision')
-  }
-  let value: unknown
-  try {
-    value = JSON.parse(row.risk_decision_json) as unknown
-  } catch {
-    throw new BitgetDemoControlBindingConflictError('locked assessment risk decision is malformed')
-  }
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new BitgetDemoControlBindingConflictError('locked assessment risk decision is invalid')
-  }
-  const decision = value as RiskDecision
-  if (
-    !requiredIdentifier(decision.decisionId, 'risk decision ID')
-    || decision.approved !== true
-    || !Array.isArray(decision.rules)
-    || !requiredIdentifier(decision.configurationVersion, 'risk configuration version')
-  ) {
-    throw new BitgetDemoControlBindingConflictError('locked assessment risk decision is not approved')
-  }
-  requiredIso(decision.decidedAt, 'risk decidedAt')
-  return Object.freeze({
-    decisionId: decision.decisionId,
-    approved: true,
-    rules: Object.freeze(decision.rules.map((rule) => Object.freeze({ ...rule }))),
-    configurationVersion: decision.configurationVersion,
-    decidedAt: decision.decidedAt,
-  })
-}
-
 async function loadIdempotency(
   env: BitgetDemoDispatchEvidenceEnv,
   operationId: string,
 ): Promise<IdempotencyRow> {
   const row = await env.DB.prepare(`
     SELECT operation_scope, idempotency_key, request_hash, operation_id,
-           exchange_account_id, status, response_json, error_code,
-           created_at, updated_at, expires_at
+           exchange_account_id, status, response_json, error_code, expires_at
       FROM idempotency_records
      WHERE operation_id = ?
      LIMIT 1
@@ -304,30 +341,20 @@ async function loadIdempotency(
   return row
 }
 
-async function loadGuardianSnapshot(
+async function loadGuardianStateHash(
   env: BitgetDemoDispatchEvidenceEnv,
   scopes: readonly BitgetDemoGuardianScope[],
-): Promise<readonly Readonly<{
-  scopeType: GuardianScopeType
-  scopeKey: string
-  status: 'CLEAR'
-  version: number
-  updatedAt: string
-}>[]> {
-  const rows = await Promise.all(scopes.map(async (scope) => {
+): Promise<string> {
+  const snapshot = await Promise.all(scopes.map(async (scope) => {
     const row = await env.DB.prepare(`
       SELECT scope_type, scope_key, status, version, updated_at
         FROM live_guardian_states
        WHERE scope_type = ? AND scope_key = ?
        LIMIT 1
     `).bind(scope.scopeType, scope.scopeKey).first<GuardianStateRow>()
-    if (!row) {
-      throw new BitgetDemoControlBindingConflictError(
-        `Guardian state is missing for ${scope.scopeType}:${scope.scopeKey}`,
-      )
-    }
     if (
-      row.scope_type !== scope.scopeType
+      !row
+      || row.scope_type !== scope.scopeType
       || row.scope_key !== scope.scopeKey
       || row.status !== 'CLEAR'
       || !Number.isSafeInteger(row.version)
@@ -346,22 +373,22 @@ async function loadGuardianSnapshot(
       updatedAt: row.updated_at,
     })
   }))
-  return Object.freeze(rows)
+  return canonicalHash(snapshot)
 }
 
-function assertAssessmentBinding(
+function assertAssessment(
   assessment: AssessmentRow,
   candidate: BitgetUnsignedMutationCandidate,
   authorization: VerifiedBitgetDemoDispatchAuthorization,
 ): void {
   if (
-    assessment.provider !== 'BITGET'
+    candidate.operation !== 'PLACE'
+    || candidate.evidenceBindings.previewHash === null
+    || assessment.provider !== 'BITGET'
     || assessment.exchange_account_id !== authorization.exchangeAccountId
     || assessment.status !== 'READY_BUT_EXECUTION_LOCKED'
     || assessment.operational_checks_passed !== 1
     || assessment.execution_allowed !== 0
-    || candidate.operation !== 'PLACE'
-    || candidate.evidenceBindings.previewHash === null
     || assessment.preview_hash !== candidate.evidenceBindings.previewHash
   ) {
     throw new BitgetDemoControlBindingConflictError(
@@ -373,7 +400,7 @@ function assertAssessmentBinding(
   requiredIso(assessment.committed_at, 'assessment committedAt')
 }
 
-function assertIdempotencyBinding(
+function assertIdempotency(
   row: IdempotencyRow,
   assessment: AssessmentRow,
   authorization: VerifiedBitgetDemoDispatchAuthorization,
@@ -391,7 +418,10 @@ function assertIdempotencyBinding(
   requiredIdentifier(row.operation_scope, 'idempotency operation scope')
   requiredIdentifier(row.operation_id, 'idempotency operation ID')
   requiredHash(row.request_hash, 'idempotency request hash')
-  if (row.expires_at !== null && Date.parse(requiredIso(row.expires_at, 'idempotency expiresAt')) <= Date.parse(evaluatedAt)) {
+  if (
+    row.expires_at !== null
+    && Date.parse(requiredIso(row.expires_at, 'idempotency expiresAt')) <= Date.parse(evaluatedAt)
+  ) {
     throw new BitgetDemoControlBindingConflictError('durable idempotency claim is expired')
   }
 }
@@ -406,7 +436,7 @@ function commonEvidence(
     environment: 'BITGET_DEMO' as const,
     exchangeAccountId: authorization.exchangeAccountId,
     candidateHash: candidate.candidateHash,
-    operation: candidate.operation,
+    operation: 'PLACE' as const,
     productSymbol: productSymbol(candidate),
     reloadedAt,
     liveExecutionAllowed: false as const,
@@ -417,62 +447,61 @@ function commonEvidence(
   }
 }
 
-async function prepareEvidence(
+async function prepareSources(
   env: BitgetDemoDispatchEvidenceEnv,
   candidate: BitgetUnsignedMutationCandidate,
   authorization: VerifiedBitgetDemoDispatchAuthorization,
   assessmentId: string,
   idempotencyOperationId: string,
-  scopes: readonly BitgetDemoGuardianScope[],
+  guardianScopes: readonly BitgetDemoGuardianScope[],
   evaluatedAt: string,
-): Promise<PreparedBindingEvidence> {
+): Promise<PreparedSources> {
   const assessment = await loadAssessment(env, assessmentId)
-  assertAssessmentBinding(assessment, candidate, authorization)
+  assertAssessment(assessment, candidate, authorization)
   const riskDecision = parseApprovedRiskDecision(assessment)
   const riskDecisionHash = await canonicalHash(riskDecision)
   const idempotency = await loadIdempotency(env, idempotencyOperationId)
-  assertIdempotencyBinding(idempotency, assessment, authorization, evaluatedAt)
-  const normalizedScopes = normalizeScopes(candidate, authorization, scopes)
-  const guardianSnapshot = await loadGuardianSnapshot(env, normalizedScopes)
-  const guardianStateHash = await canonicalHash(guardianSnapshot)
-  const scopesJson = canonicalJson(normalizedScopes)
-  const scopeSetHash = await canonicalHash(normalizedScopes)
+  assertIdempotency(idempotency, assessment, authorization, evaluatedAt)
+  const scopes = normalizeScopes(candidate, authorization, guardianScopes)
+  const scopesJson = canonicalJson(scopes)
+  const scopeSetHash = await canonicalHash(scopes)
+  const guardianStateHash = await loadGuardianStateHash(env, scopes)
   const idempotencyKeyHash = await sha256Hex(idempotency.idempotency_key)
   const common = commonEvidence(candidate, authorization, evaluatedAt)
-  const evidence = Object.freeze({
+  const evidence: BitgetDemoFreshControlEvidenceInput = Object.freeze({
     guardian: Object.freeze({
       ...common,
-      evidenceType: 'GUARDIAN' as const,
-      status: 'CLEAR' as const,
-      actionAllowed: true as const,
+      evidenceType: 'GUARDIAN',
+      status: 'CLEAR',
+      actionAllowed: true,
       stateVersionHash: guardianStateHash,
     }),
     risk: Object.freeze({
       ...common,
-      evidenceType: 'RISK' as const,
+      evidenceType: 'RISK',
       decisionId: riskDecision.decisionId,
       configurationVersion: riskDecision.configurationVersion,
-      approved: true as const,
+      approved: true,
     }),
     idempotency: Object.freeze({
       ...common,
-      evidenceType: 'IDEMPOTENCY' as const,
+      evidenceType: 'IDEMPOTENCY',
       authorizationId: authorization.authorizationId,
       dispatchAttemptId: authorization.dispatchAttemptId,
       claimId: idempotency.operation_id,
       idempotencyKeyHash,
-      status: 'CLAIMED' as const,
+      status: 'CLAIMED',
     }),
   })
-  const [guardianEvidenceHash, riskEvidenceHash, idempotencyEvidenceHash] = await Promise.all([
+  const [guardianHash, riskHash, idempotencyHash] = await Promise.all([
     bitgetDemoControlEvidenceBindingHash(evidence.guardian),
     bitgetDemoControlEvidenceBindingHash(evidence.risk),
     bitgetDemoControlEvidenceBindingHash(evidence.idempotency),
   ])
   if (
-    guardianEvidenceHash !== authorization.guardianEvidenceHash
-    || riskEvidenceHash !== authorization.riskEvidenceHash
-    || idempotencyEvidenceHash !== authorization.idempotencyEvidenceHash
+    guardianHash !== authorization.guardianEvidenceHash
+    || riskHash !== authorization.riskEvidenceHash
+    || idempotencyHash !== authorization.idempotencyEvidenceHash
   ) {
     throw new BitgetDemoControlBindingConflictError(
       'current control sources do not match the reviewed authorization evidence',
@@ -482,13 +511,140 @@ async function prepareEvidence(
     assessment,
     riskDecision,
     riskDecisionHash,
-    scopes: normalizedScopes,
+    scopes,
     scopesJson,
     scopeSetHash,
     guardianStateHash,
     idempotency,
     idempotencyKeyHash,
     evidence,
+  }
+}
+
+function bindingBase(input: {
+  bindingId: string
+  authorization: VerifiedBitgetDemoDispatchAuthorization
+  candidate: BitgetUnsignedMutationCandidate
+  prepared: PreparedSources
+  boundAt: string
+}): BindingHashBase {
+  return Object.freeze({
+    bindingId: input.bindingId,
+    authorizationId: input.authorization.authorizationId,
+    dispatchAttemptId: input.authorization.dispatchAttemptId,
+    exchangeAccountId: input.authorization.exchangeAccountId,
+    candidateHash: input.candidate.candidateHash,
+    operation: 'PLACE',
+    productSymbol: productSymbol(input.candidate),
+    assessmentId: input.prepared.assessment.assessment_id,
+    assessmentEvidenceHash: input.prepared.assessment.evidence_hash,
+    previewHash: input.prepared.assessment.preview_hash,
+    riskDecisionId: input.prepared.riskDecision.decisionId,
+    riskConfigurationVersion: input.prepared.riskDecision.configurationVersion,
+    riskDecisionHash: input.prepared.riskDecisionHash,
+    guardianScopes: input.prepared.scopes,
+    guardianScopeSetHash: input.prepared.scopeSetHash,
+    guardianReviewedStateHash: input.prepared.guardianStateHash,
+    idempotencyOperationId: input.prepared.idempotency.operation_id,
+    idempotencyOperationScope: input.prepared.idempotency.operation_scope,
+    idempotencyKeyHash: input.prepared.idempotencyKeyHash,
+    environment: 'BITGET_DEMO',
+    sourceOnly: true,
+    providerMutationAllowed: false,
+    executionAllowed: false,
+    liveExecutionAllowed: false,
+    realFundsAllowed: false,
+    mainnetAllowed: false,
+    withdrawalsAllowed: false,
+    automaticRetryAllowed: false,
+    accountingAutomaticallyDispatched: false,
+    boundAt: input.boundAt,
+  })
+}
+
+function parseStoredScopes(json: string): readonly BitgetDemoGuardianScope[] {
+  let value: unknown
+  try {
+    value = JSON.parse(json) as unknown
+  } catch {
+    throw new BitgetDemoControlBindingConflictError('stored Guardian scope set is malformed')
+  }
+  if (!Array.isArray(value)) {
+    throw new BitgetDemoControlBindingConflictError('stored Guardian scope set is invalid')
+  }
+  return Object.freeze(value.map((scope) => {
+    if (!scope || typeof scope !== 'object' || Array.isArray(scope)) {
+      throw new BitgetDemoControlBindingConflictError('stored Guardian scope entry is invalid')
+    }
+    const row = scope as Record<string, unknown>
+    return Object.freeze({
+      scopeType: String(row.scopeType ?? '') as GuardianScopeType,
+      scopeKey: String(row.scopeKey ?? ''),
+    })
+  }))
+}
+
+function baseFromRow(row: BindingRow): BindingHashBase {
+  return Object.freeze({
+    bindingId: row.binding_id,
+    authorizationId: row.authorization_id,
+    dispatchAttemptId: row.dispatch_attempt_id,
+    exchangeAccountId: row.exchange_account_id,
+    candidateHash: row.candidate_hash,
+    operation: 'PLACE',
+    productSymbol: row.product_symbol,
+    assessmentId: row.assessment_id,
+    assessmentEvidenceHash: row.assessment_evidence_hash,
+    previewHash: row.preview_hash,
+    riskDecisionId: row.risk_decision_id,
+    riskConfigurationVersion: row.risk_configuration_version,
+    riskDecisionHash: row.risk_decision_hash,
+    guardianScopes: parseStoredScopes(row.guardian_scopes_json),
+    guardianScopeSetHash: row.guardian_scope_set_hash,
+    guardianReviewedStateHash: row.guardian_reviewed_state_hash,
+    idempotencyOperationId: row.idempotency_operation_id,
+    idempotencyOperationScope: row.idempotency_operation_scope,
+    idempotencyKeyHash: row.idempotency_key_hash,
+    environment: 'BITGET_DEMO',
+    sourceOnly: true,
+    providerMutationAllowed: false,
+    executionAllowed: false,
+    liveExecutionAllowed: false,
+    realFundsAllowed: false,
+    mainnetAllowed: false,
+    withdrawalsAllowed: false,
+    automaticRetryAllowed: false,
+    accountingAutomaticallyDispatched: false,
+    boundAt: row.bound_at,
+  })
+}
+
+function assertRowLocks(row: BindingRow): void {
+  if (
+    row.environment !== 'BITGET_DEMO'
+    || row.operation !== 'PLACE'
+    || row.source_only !== 1
+    || row.provider_mutation_allowed !== 0
+    || row.execution_allowed !== 0
+    || row.live_execution_allowed !== 0
+    || row.real_funds_allowed !== 0
+    || row.mainnet_allowed !== 0
+    || row.withdrawals_allowed !== 0
+    || row.automatic_retry_allowed !== 0
+    || row.accounting_automatically_dispatched !== 0
+  ) {
+    throw new BitgetDemoControlBindingConflictError('stored control binding capability locks are invalid')
+  }
+}
+
+async function assertStoredRow(row: BindingRow, expected?: BindingHashBase): Promise<void> {
+  assertRowLocks(row)
+  const base = baseFromRow(row)
+  if (await canonicalHash(base) !== requiredHash(row.control_binding_hash, 'control binding hash')) {
+    throw new BitgetDemoControlBindingConflictError('stored control binding hash is invalid')
+  }
+  if (expected !== undefined && canonicalJson(base) !== canonicalJson(expected)) {
+    throw new BitgetDemoControlBindingConflictError('stored control binding conflicts with reviewed sources')
   }
 }
 
@@ -528,106 +684,13 @@ async function loadBindingRow(
   ).first<BindingRow>()
 }
 
-function assertRowCapabilities(row: BindingRow): void {
-  if (
-    row.environment !== 'BITGET_DEMO'
-    || row.operation !== 'PLACE'
-    || row.source_only !== 1
-    || row.provider_mutation_allowed !== 0
-    || row.execution_allowed !== 0
-    || row.live_execution_allowed !== 0
-    || row.real_funds_allowed !== 0
-    || row.mainnet_allowed !== 0
-    || row.withdrawals_allowed !== 0
-    || row.automatic_retry_allowed !== 0
-    || row.accounting_automatically_dispatched !== 0
-  ) {
-    throw new BitgetDemoControlBindingConflictError('stored control binding capability locks are invalid')
-  }
-}
-
-function bindingBase(input: {
-  bindingId: string
-  authorization: VerifiedBitgetDemoDispatchAuthorization
-  candidate: BitgetUnsignedMutationCandidate
-  prepared: PreparedBindingEvidence
-  boundAt: string
-}) {
-  return Object.freeze({
-    bindingId: input.bindingId,
-    authorizationId: input.authorization.authorizationId,
-    dispatchAttemptId: input.authorization.dispatchAttemptId,
-    exchangeAccountId: input.authorization.exchangeAccountId,
-    candidateHash: input.candidate.candidateHash,
-    operation: 'PLACE' as const,
-    productSymbol: productSymbol(input.candidate),
-    assessmentId: input.prepared.assessment.assessment_id,
-    assessmentEvidenceHash: input.prepared.assessment.evidence_hash,
-    previewHash: input.prepared.assessment.preview_hash,
-    riskDecisionId: input.prepared.riskDecision.decisionId,
-    riskConfigurationVersion: input.prepared.riskDecision.configurationVersion,
-    riskDecisionHash: input.prepared.riskDecisionHash,
-    guardianScopes: input.prepared.scopes,
-    guardianScopeSetHash: input.prepared.scopeSetHash,
-    guardianReviewedStateHash: input.prepared.guardianStateHash,
-    idempotencyOperationId: input.prepared.idempotency.operation_id,
-    idempotencyOperationScope: input.prepared.idempotency.operation_scope,
-    idempotencyKeyHash: input.prepared.idempotencyKeyHash,
-    environment: 'BITGET_DEMO' as const,
-    sourceOnly: true as const,
-    providerMutationAllowed: false as const,
-    executionAllowed: false as const,
-    liveExecutionAllowed: false as const,
-    realFundsAllowed: false as const,
-    mainnetAllowed: false as const,
-    withdrawalsAllowed: false as const,
-    automaticRetryAllowed: false as const,
-    accountingAutomaticallyDispatched: false as const,
-    boundAt: input.boundAt,
-  })
-}
-
-function assertBindingRow(
-  row: BindingRow,
-  base: ReturnType<typeof bindingBase>,
-  controlBindingHash: string,
-  scopesJson: string,
-): void {
-  assertRowCapabilities(row)
-  if (
-    row.binding_id !== base.bindingId
-    || row.authorization_id !== base.authorizationId
-    || row.dispatch_attempt_id !== base.dispatchAttemptId
-    || row.exchange_account_id !== base.exchangeAccountId
-    || row.candidate_hash !== base.candidateHash
-    || row.product_symbol !== base.productSymbol
-    || row.assessment_id !== base.assessmentId
-    || row.assessment_evidence_hash !== base.assessmentEvidenceHash
-    || row.preview_hash !== base.previewHash
-    || row.risk_decision_id !== base.riskDecisionId
-    || row.risk_configuration_version !== base.riskConfigurationVersion
-    || row.risk_decision_hash !== base.riskDecisionHash
-    || row.guardian_scopes_json !== scopesJson
-    || row.guardian_scope_count !== base.guardianScopes.length
-    || row.guardian_scope_set_hash !== base.guardianScopeSetHash
-    || row.guardian_reviewed_state_hash !== base.guardianReviewedStateHash
-    || row.idempotency_operation_id !== base.idempotencyOperationId
-    || row.idempotency_operation_scope !== base.idempotencyOperationScope
-    || row.idempotency_key_hash !== base.idempotencyKeyHash
-    || row.control_binding_hash !== controlBindingHash
-    || row.bound_at !== base.boundAt
-  ) {
-    throw new BitgetDemoControlBindingConflictError('stored control binding conflicts with reviewed sources')
-  }
-}
-
-function projectionReceipt(
-  status: 'PROJECTED' | 'REPLAYED',
-  base: ReturnType<typeof bindingBase>,
+function receipt(
+  projectionStatus: 'PROJECTED' | 'REPLAYED',
+  base: BindingHashBase,
   controlBindingHash: string,
 ): BitgetDemoPlaceControlBindingReceipt {
   return Object.freeze({
-    projectionStatus: status,
+    projectionStatus,
     bindingId: base.bindingId,
     authorizationId: base.authorizationId,
     dispatchAttemptId: base.dispatchAttemptId,
@@ -666,7 +729,7 @@ export async function recordBitgetDemoPlaceControlBinding(
     authorization.dispatchAttemptId,
     boundAt,
   )
-  const prepared = await prepareEvidence(
+  const prepared = await prepareSources(
     env,
     candidate,
     authorization,
@@ -685,10 +748,9 @@ export async function recordBitgetDemoPlaceControlBinding(
     controlBindingHash,
   })
   if (existing) {
-    assertBindingRow(existing, base, controlBindingHash, prepared.scopesJson)
-    return projectionReceipt('REPLAYED', base, controlBindingHash)
+    await assertStoredRow(existing, base)
+    return receipt('REPLAYED', base, controlBindingHash)
   }
-
   try {
     await env.DB.prepare(`
       INSERT INTO live_bitget_demo_place_control_bindings (
@@ -741,37 +803,15 @@ export async function recordBitgetDemoPlaceControlBinding(
     controlBindingHash,
   })
   if (!stored) throw new Error('control binding is missing after immutable insert')
-  assertBindingRow(stored, base, controlBindingHash, prepared.scopesJson)
-  return projectionReceipt('PROJECTED', base, controlBindingHash)
-}
-
-function parseStoredScopes(row: BindingRow): readonly BitgetDemoGuardianScope[] {
-  let value: unknown
-  try {
-    value = JSON.parse(row.guardian_scopes_json) as unknown
-  } catch {
-    throw new BitgetDemoControlBindingConflictError('stored Guardian scope set is malformed')
-  }
-  if (!Array.isArray(value)) {
-    throw new BitgetDemoControlBindingConflictError('stored Guardian scope set is invalid')
-  }
-  return Object.freeze(value.map((scope) => {
-    if (!scope || typeof scope !== 'object' || Array.isArray(scope)) {
-      throw new BitgetDemoControlBindingConflictError('stored Guardian scope entry is invalid')
-    }
-    const record = scope as Record<string, unknown>
-    return Object.freeze({
-      scopeType: String(record.scopeType ?? '') as GuardianScopeType,
-      scopeKey: String(record.scopeKey ?? ''),
-    })
-  }))
+  await assertStoredRow(stored, base)
+  return receipt('PROJECTED', base, controlBindingHash)
 }
 
 export function createD1BitgetDemoFreshControlSource(
   env: BitgetDemoDispatchEvidenceEnv,
 ): BitgetDemoFreshControlSource {
-  return Object.freeze({
-    async reload(input): Promise<BitgetDemoFreshControlEvidenceInput> {
+  const source: BitgetDemoFreshControlSource = {
+    async reload(input: FreshReloadInput): Promise<BitgetDemoFreshControlEvidenceInput> {
       assertBitgetDemoDispatchAuthorizationVerified(input.authorization)
       await assertBitgetDemoCandidateIntegrity(input.candidate)
       const evaluatedAt = requiredIso(input.evaluatedAt, 'evaluatedAt')
@@ -782,7 +822,7 @@ export function createD1BitgetDemoFreshControlSource(
         candidateHash: input.candidate.candidateHash,
       })
       if (!row) throw new BitgetDemoControlBindingConflictError('immutable place control binding is missing')
-      assertRowCapabilities(row)
+      await assertStoredRow(row)
       if (
         row.authorization_id !== input.authorization.authorizationId
         || row.dispatch_attempt_id !== input.authorization.dispatchAttemptId
@@ -793,33 +833,30 @@ export function createD1BitgetDemoFreshControlSource(
       ) {
         throw new BitgetDemoControlBindingConflictError('immutable place control binding identity mismatch')
       }
-      const scopes = parseStoredScopes(row)
-      const prepared = await prepareEvidence(
+      const prepared = await prepareSources(
         env,
         input.candidate,
         input.authorization,
         row.assessment_id,
         row.idempotency_operation_id,
-        scopes,
+        parseStoredScopes(row.guardian_scopes_json),
         evaluatedAt,
       )
-      const decidedAtMs = Date.parse(prepared.riskDecision.decidedAt)
       const evaluatedAtMs = Date.parse(evaluatedAt)
+      const decidedAtMs = Date.parse(prepared.riskDecision.decidedAt)
       if (decidedAtMs > evaluatedAtMs || evaluatedAtMs - decidedAtMs > MAX_FRESH_RISK_AGE_MS) {
         throw new BitgetDemoControlBindingConflictError('risk decision is too old for demo certification')
       }
-      const base = bindingBase({
-        bindingId: row.binding_id,
-        authorization: input.authorization,
-        candidate: input.candidate,
-        prepared,
-        boundAt: row.bound_at,
-      })
-      assertBindingRow(row, base, await canonicalHash(base), prepared.scopesJson)
-      if (prepared.guardianStateHash !== row.guardian_reviewed_state_hash) {
-        throw new BitgetDemoControlBindingConflictError('Guardian state changed after review')
+      if (
+        prepared.guardianStateHash !== row.guardian_reviewed_state_hash
+        || prepared.riskDecisionHash !== row.risk_decision_hash
+        || prepared.idempotency.operation_scope !== row.idempotency_operation_scope
+        || prepared.idempotencyKeyHash !== row.idempotency_key_hash
+      ) {
+        throw new BitgetDemoControlBindingConflictError('fresh control source changed after review')
       }
       return prepared.evidence
     },
-  })
+  }
+  return Object.freeze(source)
 }
