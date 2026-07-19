@@ -37,13 +37,13 @@ for (const [token, message] of [
   if (!source.includes(token)) failures.push(message)
 }
 
-const reviewedPosition = source.indexOf('loadReviewedBitgetDemoDispatchAuthorization(')
-const bindingPosition = source.indexOf('recordBitgetDemoPlaceControlBinding(')
-const freshPosition = source.indexOf('createD1BitgetDemoFreshControlSource(env)')
-const credentialPosition = source.indexOf('createBitgetDemoCallbackCredentialProvider(')
-const ratePosition = source.indexOf('createBitgetDemoDurableRateLimitAuthorityProvider(')
-const recoveryPosition = source.indexOf('createBitgetDemoGetOnlyRecoveryBoundary(')
-const runnerPosition = source.indexOf('runReviewedBitgetDemoCertification(')
+const reviewedPosition = source.lastIndexOf('loadReviewedBitgetDemoDispatchAuthorization(')
+const bindingPosition = source.lastIndexOf('recordBitgetDemoPlaceControlBinding(')
+const freshPosition = source.lastIndexOf('createD1BitgetDemoFreshControlSource(env)')
+const credentialPosition = source.lastIndexOf('createBitgetDemoCallbackCredentialProvider(')
+const ratePosition = source.lastIndexOf('createBitgetDemoDurableRateLimitAuthorityProvider(')
+const recoveryPosition = source.lastIndexOf('createBitgetDemoGetOnlyRecoveryBoundary(')
+const runnerPosition = source.lastIndexOf('runReviewedBitgetDemoCertification(')
 if (
   reviewedPosition < 0
   || bindingPosition < 0
