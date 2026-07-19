@@ -2,7 +2,7 @@
 
 ## Status
 
-This API exposes sanitized operational evidence from the disabled live-candidate Worker. It does not enable trading, cancellation, deposits, transfers, withdrawals, reconciliation execution, accounting dispatch, reservation settlement, Guardian mutation, credential provisioning, deployment, demo requests, or release activation.
+This API exposes sanitized operational evidence from the disabled live-candidate Worker. It does not enable trading, cancellation, deposits, transfers, withdrawals, reconciliation execution, accounting dispatch, reservation settlement, Guardian mutation, credential provisioning, deployment, demo requests, rehearsal execution, or release activation.
 
 Every operator route accepts only `GET`, `HEAD`, and CORS `OPTIONS`. Other methods return HTTP 403.
 
@@ -22,6 +22,8 @@ Authentication fails closed:
 - HTTP 403 when the actor has no active allowed role in global, Bitget exchange, or requested account scope.
 
 Roles are loaded from `live_actor_roles`. Expired and revoked assignments are rejected.
+
+The browser does not call these Worker routes directly. A future same-origin gateway must satisfy `OPERATOR_IDENTITY_GATEWAY_CONTRACT.md`; until then, `/api/operator/readiness` remains HTTP 503.
 
 ## Routes
 
@@ -51,6 +53,23 @@ Returns the latest sanitized migration-028 Bitget demo deployment-readiness summ
 - permanent false deployment, demo-request, credential-read, provider-mutation, execution, mainnet, withdrawal, retry, and automatic-accounting capabilities.
 
 It does not expose manifest IDs, attestation IDs, preparer IDs, resource evidence hashes, secret names, provider payloads, or callable adapters. Corrupt stored capability flags force the response to `BLOCKED` with `stored_capability_lock_violation`.
+
+### `GET /v1/operator/operational-readiness`
+
+Requires a global `RISK_ADMIN`, `AUDITOR`, or `RELEASE_ADMIN` role.
+
+Returns the latest sanitized migration-029 operational-rehearsal summary:
+
+- `BLOCKED` or `READY_FOR_INDEPENDENT_REVIEW` status;
+- total, passed, and blocked counts;
+- five fixed scenario names;
+- pass and evidence-presence booleans;
+- observation timestamps;
+- bounded blockers;
+- exact Git SHA and preparation timestamps;
+- permanent false deployment, request, credential, mutation, execution, mainnet, withdrawal, retry, and accounting capabilities.
+
+It does not expose pack IDs, preparer IDs, evidence hashes, raw scenario JSON, secret references, provider payloads, or executable procedures. Stored capability corruption forces `BLOCKED` with `stored_capability_lock_violation`.
 
 ### `GET /v1/operator/certification?account_id=...&product_id=...`
 
@@ -86,14 +105,14 @@ Returns only the latest audit-chain identity, predecessor hash, event hash, reso
 
 The production Worker delegates operator requests to `operator-read-http.ts`; tests call that same router with real `Request` and `Response` objects. Required validation covers:
 
-- all seven GET routes;
+- all eight GET routes;
 - `HEAD` response-body suppression;
 - exact-origin CORS and a `GET, HEAD, OPTIONS` allowlist;
 - HTTP 503, 401, 403, 400, and 404 fail-closed cases;
 - global, exchange, and account role boundaries;
 - mutation denial before any provider or evidence action;
 - permanent non-live capability flags;
-- deployment-readiness response minimization.
+- deployment-readiness and operational-rehearsal response minimization.
 
 ## Data minimization
 
@@ -104,6 +123,7 @@ The operator read model does not query or expose:
 - raw balance snapshots;
 - raw exchange order or fill JSON;
 - audit before/after JSON;
+- rehearsal evidence hashes, pack IDs, or executable procedures;
 - browser-stored authority;
 - callable exchange transport.
 
@@ -115,8 +135,12 @@ CI fails if the operator modules acquire:
 - exchange fetch or signing code;
 - non-GET operator methods;
 - direct Guardian halt/reset calls;
-- provider mutation, execution, withdrawal, deployment, demo-request, credential-read, or activation flags set to true;
+- provider mutation, execution, withdrawal, deployment, demo-request, credential-read, retry, accounting-dispatch, or activation flags set to true;
 - raw financial or audit payload queries;
 - divergence between the Worker entrypoint and the tested production router.
+
+## Migration and release status
+
+The verified evidence sequence now runs through migration 029. Migration 029 adds append-only operational-rehearsal packs and does not alter deployment or execution capability.
 
 The live-candidate PR must remain draft until all independent engineering, deployment, security, eligibility, legal, compliance, and release-certification gates are satisfied by authorized parties.
