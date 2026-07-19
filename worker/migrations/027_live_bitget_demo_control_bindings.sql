@@ -2,8 +2,8 @@
 --
 -- This table does not authorize or dispatch a provider request. It binds one
 -- reviewed PLACE candidate to the existing locked assessment, exact Guardian
--- scope set, and durable idempotency record that a later source-only loader must
--- re-read immediately before demo certification.
+-- scope set, reviewed Guardian state, and durable idempotency record that a
+-- later source-only loader must re-read immediately before demo certification.
 
 CREATE TABLE IF NOT EXISTS live_bitget_demo_place_control_bindings (
   binding_id TEXT PRIMARY KEY,
@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS live_bitget_demo_place_control_bindings (
   ),
   guardian_scope_count INTEGER NOT NULL CHECK (guardian_scope_count BETWEEN 1 AND 8),
   guardian_scope_set_hash TEXT NOT NULL CHECK (length(guardian_scope_set_hash) = 64),
+  guardian_reviewed_state_hash TEXT NOT NULL CHECK (length(guardian_reviewed_state_hash) = 64),
   CHECK (json_array_length(guardian_scopes_json) = guardian_scope_count),
 
   idempotency_operation_id TEXT NOT NULL UNIQUE,
