@@ -109,7 +109,7 @@ export function createBitgetDemoCallbackCredentialProvider(
       }
       const accountId = requiredIdentifier(request.exchangeAccountId, 'exchangeAccountId')
       let callbackCount = 0
-      return source.withLease(accountId, async (material) => {
+      const value = await source.withLease(accountId, async (material) => {
         callbackCount += 1
         if (callbackCount !== 1) {
           throw new BitgetDemoRuntimeAdapterError('CREDENTIAL_LEASE_REUSED', 'demo credential lease is one-shot')
@@ -124,6 +124,10 @@ export function createBitgetDemoCallbackCredentialProvider(
         }
         return use(frozen)
       })
+      if (callbackCount !== 1) {
+        throw new BitgetDemoRuntimeAdapterError('CREDENTIAL_LEASE_UNUSED', 'demo credential lease must invoke its callback once')
+      }
+      return value
     },
   })
 }
@@ -185,10 +189,14 @@ async function boundedJson(request: Request): Promise<unknown> {
   }
 }
 
-export class BitgetDemoRateLimitDurableObject {
-  private readonly state: DurableObjectState
+export interface BitgetDemoRateLimitObjectState {
+  storage: DurableObjectStorage
+}
 
-  constructor(state: DurableObjectState) {
+export class BitgetDemoRateLimitDurableObject {
+  private readonly state: BitgetDemoRateLimitObjectState
+
+  constructor(state: BitgetDemoRateLimitObjectState) {
     this.state = state
   }
 
@@ -202,7 +210,7 @@ export class BitgetDemoRateLimitDurableObject {
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
         throw new BitgetDemoRuntimeAdapterError('RATE_REQUEST_INVALID', 'rate claim request must be an object')
       }
-      const input = raw as BitgetDemoRateLimitClaimInput
+      const input = raw as unknown as BitgetDemoRateLimitClaimInput
       const accountId = requiredIdentifier(input.exchangeAccountId, 'exchangeAccountId')
       const storedAccountId = await this.state.storage.get<string>(RATE_ACCOUNT_STORAGE_KEY)
       if (storedAccountId === undefined) {
@@ -231,7 +239,7 @@ function assertRateClaimResponse(
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new BitgetDemoRuntimeAdapterError('RATE_RESPONSE_INVALID', 'rate-limit response is invalid')
   }
-  const result = value as BitgetDemoRateLimitClaim
+  const result = value as unknown as BitgetDemoRateLimitClaim
   if (
     typeof result.allowed !== 'boolean'
     || result.exchangeAccountId !== input.exchangeAccountId
@@ -245,11 +253,20 @@ function assertRateClaimResponse(
   ) {
     throw new BitgetDemoRuntimeAdapterError('RATE_RESPONSE_INVALID', 'rate-limit response conflicts with the claim')
   }
-  return Object.freeze(result)
+  return Object.freeze({ ...result })
 }
 
-export function createBitgetDemoDurableRateLimitAuthorityProvider(
-  namespace: DurableObjectNamespace,
+export interface BitgetDemoRateLimitStub {
+  fetch(request: Request): Promise<Response>
+}
+
+export interface BitgetDemoRateLimitNamespace<Id> {
+  idFromName(name: string): Id
+  get(id: Id): BitgetDemoRateLimitStub
+}
+
+export function createBitgetDemoDurableRateLimitAuthorityProvider<Id>(
+  namespace: BitgetDemoRateLimitNamespace<Id>,
 ): BitgetDemoAccountRateLimitAuthorityProvider {
   if (!namespace || typeof namespace.idFromName !== 'function' || typeof namespace.get !== 'function') {
     throw new BitgetDemoRuntimeAdapterError('RATE_NAMESPACE_REQUIRED', 'Durable Object namespace is required')
@@ -263,11 +280,11 @@ export function createBitgetDemoDurableRateLimitAuthorityProvider(
           if (input.exchangeAccountId !== accountId) {
             throw new BitgetDemoRuntimeAdapterError('RATE_ACCOUNT_MISMATCH', 'rate claim account does not match provider scope')
           }
-          const response = await stub.fetch('https://bitget-demo-rate.internal/claim', {
+          const response = await stub.fetch(new Request('https://bitget-demo-rate.internal/claim', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(input),
-          })
+          }))
           if (!response.ok) {
             throw new BitgetDemoRuntimeAdapterError('RATE_CLAIM_REJECTED', 'Durable rate-limit claim was rejected')
           }
@@ -357,10 +374,8 @@ export function createBitgetDemoGetOnlyRecoveryBoundary(
         ))
       }
       const recovered = observations.every((observation) => observation.status === 'FOUND')
-      const observedAt = observations
-        .map((observation) => observation.observedAt)
-        .sort()
-        .at(-1)!
+      const observedTimes = observations.map((observation) => observation.observedAt).sort()
+      const observedAt = observedTimes[observedTimes.length - 1]!
       const snapshotHash = recovered
         ? await canonicalHash({
           resultHash: input.resultHash,
@@ -368,6 +383,7 @@ export function createBitgetDemoGetOnlyRecoveryBoundary(
           observations,
         })
         : null
+      const status: 'RECOVERED' | 'INCOMPLETE' = recovered ? 'RECOVERED' : 'INCOMPLETE'
       const base = Object.freeze({
         schemaVersion: 1 as const,
         recoveryId: `bitget-demo-recovery:${requiredIdentifier(input.result.dispatchAttemptId, 'dispatchAttemptId')}`,
@@ -378,7 +394,7 @@ export function createBitgetDemoGetOnlyRecoveryBoundary(
         resultHash: input.resultHash,
         lookupPlanHash: input.lookupPlanHash,
         lookupCount: input.lookups.length,
-        status: recovered ? 'RECOVERED' as const : 'INCOMPLETE' as const,
+        status,
         snapshotHash,
         observedAt,
         readOnly: true as const,
