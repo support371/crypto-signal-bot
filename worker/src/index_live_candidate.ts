@@ -9,6 +9,7 @@ import {
   type OperatorReadAuthEnv,
   type OperatorReadResource,
 } from './live/operator-read-auth'
+import { readLatestBitgetDemoDeploymentReadiness } from './live/operator-deployment-readiness-read-model'
 import {
   readActiveAlerts,
   readAuditHead,
@@ -127,9 +128,10 @@ async function authorizeOperator(
   resource: OperatorReadResource,
   exchangeAccountId: string | null,
 ): Promise<Response | { actorId: string; matchedRoles: readonly string[] }> {
+  const globalResource = resource === 'ACTIVATION_GATE' || resource === 'DEPLOYMENT_READINESS'
   const result = await authenticateOperatorRead(env, request, {
     resource,
-    exchangeName: resource === 'ACTIVATION_GATE' ? null : 'BITGET',
+    exchangeName: globalResource ? null : 'BITGET',
     exchangeAccountId,
   })
 
@@ -173,6 +175,25 @@ async function handleOperatorRead(
         realMoneyMovementAllowed: false,
         operator: principal,
       }, 503)
+    }
+
+    if (pathname === '/v1/operator/deployment-readiness') {
+      const principal = await authorizeOperator(request, env, 'DEPLOYMENT_READINESS', null)
+      if (principal instanceof Response) return principal
+      const evidence = await readLatestBitgetDemoDeploymentReadiness(env)
+      return json(request, env, {
+        environment: 'live-candidate',
+        readOnly: true,
+        resource: 'DEPLOYMENT_READINESS',
+        operator: principal,
+        evidence,
+        deploymentAllowed: false,
+        demoRequestAllowed: false,
+        credentialsRead: false,
+        providerMutationAllowed: false,
+        executionAllowed: false,
+        withdrawalsAllowed: false,
+      })
     }
 
     const resourceByPath: Readonly<Record<string, OperatorReadResource>> = {
@@ -267,6 +288,7 @@ export default {
         exact_decimal_arithmetic: true,
         readiness_endpoint: '/v1/live/readiness',
         operator_read_prefix: OPERATOR_PREFIX,
+        operator_deployment_readiness_endpoint: '/v1/operator/deployment-readiness',
         reason: 'Candidate entrypoint is intentionally read-only',
       })
     }
