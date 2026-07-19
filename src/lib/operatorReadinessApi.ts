@@ -11,6 +11,7 @@ export type OperatorGatewayStatus =
 export type OperatorResource =
   | 'ACTIVATION_GATE'
   | 'DEPLOYMENT_READINESS'
+  | 'OPERATIONAL_REHEARSAL'
   | 'CERTIFICATION'
   | 'RECOVERY_READINESS'
   | 'RECONCILIATION'
@@ -61,6 +62,27 @@ export interface OperatorDeploymentSummary {
   preparedAt: string | null;
 }
 
+export interface OperatorOperationalScenarioSummary {
+  name: string;
+  passed: boolean;
+  evidencePresent: boolean;
+  observedAt: string | null;
+}
+
+export interface OperatorOperationalSummary {
+  status: 'BLOCKED' | 'READY_FOR_INDEPENDENT_REVIEW';
+  readyForIndependentReview: boolean;
+  checks: {
+    total: number;
+    passed: number;
+    blocked: number;
+  };
+  scenarios: readonly OperatorOperationalScenarioSummary[];
+  blockers: readonly string[];
+  gitSha: string | null;
+  preparedAt: string | null;
+}
+
 export interface OperatorAccountSummary {
   accountId: string;
   productId: string | null;
@@ -80,6 +102,7 @@ export interface OperatorReadinessSnapshot {
   visibleResources: readonly OperatorResource[];
   activation: OperatorActivationSummary | null;
   deployment: OperatorDeploymentSummary | null;
+  operational: OperatorOperationalSummary | null;
   account: OperatorAccountSummary | null;
   locks: OperatorCapabilityLocks;
   error: string | null;
@@ -107,6 +130,7 @@ const LOCKS: OperatorCapabilityLocks = Object.freeze({
 const RESOURCE_SET = new Set<OperatorResource>([
   'ACTIVATION_GATE',
   'DEPLOYMENT_READINESS',
+  'OPERATIONAL_REHEARSAL',
   'CERTIFICATION',
   'RECOVERY_READINESS',
   'RECONCILIATION',
@@ -142,6 +166,26 @@ function hasPermanentFalseLocks(record: JsonRecord): boolean {
   return Object.keys(LOCKS).every((key) => record[key] === false);
 }
 
+function checks(value: unknown): { total: number; passed: number; blocked: number } {
+  const record = asRecord(value);
+  const total = safeInteger(record.total) ?? 0;
+  const passed = Math.min(total, safeInteger(record.passed) ?? 0);
+  return Object.freeze({ total, passed, blocked: Math.max(0, total - passed) });
+}
+
+function operationalScenarios(value: unknown): OperatorOperationalScenarioSummary[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 5).map((item) => {
+    const record = asRecord(item);
+    return Object.freeze({
+      name: stringValue(record.name) ?? 'INVALID_SCENARIO',
+      passed: record.passed === true,
+      evidencePresent: record.evidencePresent === true,
+      observedAt: stringValue(record.observedAt),
+    });
+  });
+}
+
 export function createUnavailableOperatorSnapshot(
   gatewayStatus: Exclude<OperatorGatewayStatus, 'available'>,
   error: string,
@@ -155,6 +199,7 @@ export function createUnavailableOperatorSnapshot(
     visibleResources: Object.freeze([]) as readonly OperatorResource[],
     activation: null,
     deployment: null,
+    operational: null,
     account: null,
     locks: LOCKS,
     error,
@@ -166,6 +211,7 @@ export function normalizeOperatorReadinessSnapshot(value: unknown): OperatorRead
   const operatorRecord = asRecord(root.operator);
   const activationRecord = asRecord(root.activation);
   const deploymentRecord = asRecord(root.deployment);
+  const operationalRecord = asRecord(root.operational);
   const accountRecord = asRecord(root.account);
   const lockRecord = asRecord(root.locks);
 
@@ -192,13 +238,15 @@ export function normalizeOperatorReadinessSnapshot(value: unknown): OperatorRead
     );
   }
 
-  const visibleResources = stringArray(root.visibleResources, 7)
+  const visibleResources = stringArray(root.visibleResources, 8)
     .filter((item): item is OperatorResource => RESOURCE_SET.has(item as OperatorResource));
-  const total = safeInteger(asRecord(deploymentRecord.checks).total) ?? 0;
-  const passed = Math.min(total, safeInteger(asRecord(deploymentRecord.checks).passed) ?? 0);
-  const blocked = Math.max(0, total - passed);
+  const deploymentChecks = checks(deploymentRecord.checks);
   const deploymentStatus = deploymentRecord.status === 'READY_FOR_NON_LIVE_DEPLOYMENT_REVIEW'
     ? 'READY_FOR_NON_LIVE_DEPLOYMENT_REVIEW'
+    : 'BLOCKED';
+  const operationalChecks = checks(operationalRecord.checks);
+  const operationalStatus = operationalRecord.status === 'READY_FOR_INDEPENDENT_REVIEW'
+    ? 'READY_FOR_INDEPENDENT_REVIEW'
     : 'BLOCKED';
 
   return Object.freeze({
@@ -222,12 +270,25 @@ export function normalizeOperatorReadinessSnapshot(value: unknown): OperatorRead
           readyForNonLiveDeploymentReview:
             deploymentStatus === 'READY_FOR_NON_LIVE_DEPLOYMENT_REVIEW'
             && deploymentRecord.readyForNonLiveDeploymentReview === true,
-          checks: Object.freeze({ total, passed, blocked }),
+          checks: deploymentChecks,
           blockers: Object.freeze(stringArray(deploymentRecord.blockers, 14)),
           externalReadOnlyAttestationPresent:
             deploymentRecord.externalReadOnlyAttestationPresent === true,
           gitSha: stringValue(deploymentRecord.gitSha),
           preparedAt: stringValue(deploymentRecord.preparedAt),
+        })
+      : null,
+    operational: visibleResources.includes('OPERATIONAL_REHEARSAL')
+      ? Object.freeze({
+          status: operationalStatus,
+          readyForIndependentReview:
+            operationalStatus === 'READY_FOR_INDEPENDENT_REVIEW'
+            && operationalRecord.readyForIndependentReview === true,
+          checks: operationalChecks,
+          scenarios: Object.freeze(operationalScenarios(operationalRecord.scenarios)),
+          blockers: Object.freeze(stringArray(operationalRecord.blockers, 5)),
+          gitSha: stringValue(operationalRecord.gitSha),
+          preparedAt: stringValue(operationalRecord.preparedAt),
         })
       : null,
     account: stringValue(accountRecord.accountId)
