@@ -55,7 +55,9 @@ export default {
 
     if (method === 'OPTIONS') return liveCandidatePreflight(request, env)
 
-    const operatorResponse = await routeOperatorReadRequest(request, env)
+    const operatorResponse = await routeOperatorReadRequest(request, env, {
+      evaluateLiveCandidateReadiness,
+    })
     if (operatorResponse !== null) return operatorResponse
 
     if (method === 'GET' && pathname === '/v1/live/readiness') {
