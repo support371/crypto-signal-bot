@@ -26,6 +26,7 @@ const allowedSourceImporters = new Set([
   'worker/src/live/adapters/bitget/demo-dispatch-orchestrator.ts',
   'worker/src/live/adapters/bitget/demo-certification-evidence-store.ts',
   'worker/src/live/adapters/bitget/demo-certification-runner.ts',
+  'worker/src/live/adapters/bitget/demo-runtime-adapters.ts',
 ])
 const transport = read(modulePath)
 const packageJson = read('worker/package.json')
