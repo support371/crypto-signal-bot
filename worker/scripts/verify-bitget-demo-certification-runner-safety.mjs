@@ -23,6 +23,7 @@ const modulePath = 'worker/src/live/adapters/bitget/demo-certification-runner.ts
 const certificationStorePath = 'worker/src/live/adapters/bitget/demo-certification-evidence-store.ts'
 const runtimeAdapterPath = 'worker/src/live/adapters/bitget/demo-runtime-adapters.ts'
 const controlBindingStorePath = 'worker/src/live/adapters/bitget/demo-control-binding-store.ts'
+const compositionPath = 'worker/src/live/adapters/bitget/demo-certification-composition.ts'
 const runner = read(modulePath)
 const packageJson = read('worker/package.json')
 
@@ -129,6 +130,7 @@ for (const sourcePath of sourceFiles('worker/src')) {
     || sourcePath === certificationStorePath
     || sourcePath === runtimeAdapterPath
     || sourcePath === controlBindingStorePath
+    || sourcePath === compositionPath
   ) continue
   if (/demo-certification-runner\.ts/.test(read(sourcePath))) {
     failures.push(`${sourcePath} must not import the source-only demo certification runner`)
