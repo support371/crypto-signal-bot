@@ -11,6 +11,9 @@
     "src/live/bitget-attested-recovery-readiness-observability.ts",
     "src/live/operator-read-auth.ts",
     "src/live/operator-read-model.ts",
+    "src/live/operator-deployment-readiness-read-model.ts",
+    "src/live/live-candidate-response.ts",
+    "src/live/operator-read-http.ts",
     "src/live/adapters/btcc/**/*.ts",
     "src/live/adapters/bitget/**/*.ts"
   ]
