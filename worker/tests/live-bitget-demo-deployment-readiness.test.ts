@@ -155,12 +155,14 @@ test('complete evidence becomes review-ready but never permits deployment or a d
 
 test('missing evidence creates an immutable blocked manifest', async () => {
   const database = new FakeD1(null)
-  const evidence = completeEvidence() as Record<string, string | null>
-  evidence.isolatedD1 = null
-  evidence.credentialLeaseAdapter = null
+  const evidence = Object.freeze({
+    ...completeEvidence(),
+    isolatedD1: null,
+    credentialLeaseAdapter: null,
+  }) as BitgetDemoDeploymentEvidenceHashes
   const manifest = await evaluateAndRecordBitgetDemoDeploymentReadiness(database.env(), input({
     externalAttestationId: null,
-    evidenceHashes: Object.freeze(evidence) as BitgetDemoDeploymentEvidenceHashes,
+    evidenceHashes: evidence,
   }))
   assert.equal(manifest.status, 'BLOCKED')
   assert.equal(manifest.readyForNonLiveDeploymentReview, false)
@@ -191,10 +193,10 @@ test('exact evidence replays and changed evidence conflicts', async () => {
   assert.equal(replay.manifestHash, first.manifestHash)
   assert.equal(database.manifests.length, 1)
 
-  const changed = { ...completeEvidence(), trustedClockPolicy: 'f'.repeat(64) }
+  const changed = Object.freeze({ ...completeEvidence(), trustedClockPolicy: 'f'.repeat(64) })
   await assert.rejects(
     evaluateAndRecordBitgetDemoDeploymentReadiness(database.env(), input({
-      evidenceHashes: Object.freeze(changed),
+      evidenceHashes: changed,
     })),
     BitgetDemoDeploymentReadinessConflictError,
   )
