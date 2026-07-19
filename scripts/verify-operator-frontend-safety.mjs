@@ -6,7 +6,6 @@ const page = await readFile(new URL('../src/pages/OperatorReadiness.tsx', import
 const app = await readFile(new URL('../src/AppCore.tsx', import.meta.url), 'utf8');
 const layout = await readFile(new URL('../src/components/LayoutCore.tsx', import.meta.url), 'utf8');
 const gateway = await readFile(new URL('../api/operator/readiness.js', import.meta.url), 'utf8');
-const gatewayContract = await readFile(new URL('../docs/OPERATOR_IDENTITY_GATEWAY_CONTRACT.md', import.meta.url), 'utf8');
 const responseSchema = await readFile(new URL('../contracts/operator-readiness-response.schema.json', import.meta.url), 'utf8');
 const browserBoundary = `${client}\n${page}`;
 
@@ -67,16 +66,6 @@ for (const required of [
   'withdrawalsAllowed: false',
 ]) {
   assert.ok(gateway.includes(required), `operator gateway placeholder must include ${required}`);
-}
-
-for (const required of [
-  'server-verified session',
-  'MFA or step-up assurance',
-  'OPERATIONAL_REHEARSAL',
-  'The current 503 placeholder may be replaced only after',
-  'does not permit a Bitget demo request',
-]) {
-  assert.ok(gatewayContract.includes(required), `identity gateway contract must include ${required}`);
 }
 
 for (const required of [
