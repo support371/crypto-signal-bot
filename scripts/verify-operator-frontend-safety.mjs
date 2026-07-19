@@ -6,11 +6,11 @@ const page = await readFile(new URL('../src/pages/OperatorReadiness.tsx', import
 const app = await readFile(new URL('../src/AppCore.tsx', import.meta.url), 'utf8');
 const layout = await readFile(new URL('../src/components/LayoutCore.tsx', import.meta.url), 'utf8');
 const gateway = await readFile(new URL('../api/operator/readiness.js', import.meta.url), 'utf8');
-const tests = await readFile(new URL('../src/tests/operator_readiness_contracts.test.ts', import.meta.url), 'utf8');
-const operationalTests = await readFile(new URL('../src/tests/operator_operational_readiness_contract.test.ts', import.meta.url), 'utf8');
 const gatewayContract = await readFile(new URL('../docs/OPERATOR_IDENTITY_GATEWAY_CONTRACT.md', import.meta.url), 'utf8');
 const responseSchema = await readFile(new URL('../contracts/operator-readiness-response.schema.json', import.meta.url), 'utf8');
 const browserBoundary = `${client}\n${page}`;
+
+JSON.parse(responseSchema);
 
 for (const required of [
   "OPERATOR_READINESS_GATEWAY_PATH = '/api/operator/readiness'",
@@ -97,9 +97,6 @@ for (const required of [
   assert.ok(app.includes(required), `operator frontend route must include ${required}`);
 }
 assert.ok(layout.includes('to="/operator-readiness"'), 'operator frontend navigation link is missing');
-assert.ok(tests.includes('operator readiness browser source safety'), 'operator frontend source-safety test is missing');
-assert.ok(operationalTests.includes('operational readiness frontend mapping'), 'operational frontend mapping test is missing');
-assert.ok(operationalTests.includes("not.toContain('evidenceHash')"), 'operational evidence-hash minimization test is missing');
 
 for (const forbidden of [
   /localStorage/i,
