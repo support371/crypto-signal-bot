@@ -125,7 +125,7 @@ export default function OperatorReadiness() {
           )}
         </section>
 
-        <section className="grid gap-4 md:grid-cols-3">
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-xl border border-secondary-200 bg-white p-5 shadow-sm">
             <p className="text-xs font-medium uppercase tracking-wide text-secondary-500">Activation</p>
             <p className="mt-2 text-xl font-bold text-secondary-900">
@@ -139,6 +139,13 @@ export default function OperatorReadiness() {
               {snapshot.deployment?.status.replaceAll('_', ' ') ?? 'Unavailable'}
             </p>
             <p className="mt-1 text-xs text-secondary-500">Review-ready does not authorize deployment.</p>
+          </div>
+          <div className="rounded-xl border border-secondary-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-secondary-500">Operations rehearsal</p>
+            <p className="mt-2 text-xl font-bold text-secondary-900">
+              {snapshot.operational?.status.replaceAll('_', ' ') ?? 'Unavailable'}
+            </p>
+            <p className="mt-1 text-xs text-secondary-500">Evidence is review-only and cannot run an operation.</p>
           </div>
           <div className="rounded-xl border border-secondary-200 bg-white p-5 shadow-sm">
             <p className="text-xs font-medium uppercase tracking-wide text-secondary-500">Permanent locks</p>
@@ -207,39 +214,19 @@ export default function OperatorReadiness() {
             {snapshot.deployment ? (
               <div className="mt-4 space-y-4">
                 <div className="grid grid-cols-3 gap-3">
-                  <div className="rounded-lg bg-secondary-50 p-3 text-center">
-                    <p className="text-xs text-secondary-500">Total</p>
-                    <p className="mt-1 text-lg font-bold text-secondary-900">{snapshot.deployment.checks.total}</p>
-                  </div>
-                  <div className="rounded-lg bg-secondary-50 p-3 text-center">
-                    <p className="text-xs text-secondary-500">Passed</p>
-                    <p className="mt-1 text-lg font-bold text-secondary-900">{snapshot.deployment.checks.passed}</p>
-                  </div>
-                  <div className="rounded-lg bg-secondary-50 p-3 text-center">
-                    <p className="text-xs text-secondary-500">Blocked</p>
-                    <p className="mt-1 text-lg font-bold text-secondary-900">{snapshot.deployment.checks.blocked}</p>
-                  </div>
+                  <div className="rounded-lg bg-secondary-50 p-3 text-center"><p className="text-xs text-secondary-500">Total</p><p className="mt-1 text-lg font-bold text-secondary-900">{snapshot.deployment.checks.total}</p></div>
+                  <div className="rounded-lg bg-secondary-50 p-3 text-center"><p className="text-xs text-secondary-500">Passed</p><p className="mt-1 text-lg font-bold text-secondary-900">{snapshot.deployment.checks.passed}</p></div>
+                  <div className="rounded-lg bg-secondary-50 p-3 text-center"><p className="text-xs text-secondary-500">Blocked</p><p className="mt-1 text-lg font-bold text-secondary-900">{snapshot.deployment.checks.blocked}</p></div>
                 </div>
                 <dl className="space-y-3">
-                  <div className="flex items-center justify-between gap-4">
-                    <dt className="text-sm text-secondary-600">External read-only attestation</dt>
-                    <dd><TextState value={snapshot.deployment.externalReadOnlyAttestationPresent ? 'Present' : 'Missing'} /></dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-4">
-                    <dt className="text-sm text-secondary-600">Git SHA</dt>
-                    <dd className="max-w-[60%] truncate"><TextState value={snapshot.deployment.gitSha} /></dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-4">
-                    <dt className="text-sm text-secondary-600">Prepared</dt>
-                    <dd><TextState value={formatTime(snapshot.deployment.preparedAt)} /></dd>
-                  </div>
+                  <div className="flex items-center justify-between gap-4"><dt className="text-sm text-secondary-600">External read-only attestation</dt><dd><TextState value={snapshot.deployment.externalReadOnlyAttestationPresent ? 'Present' : 'Missing'} /></dd></div>
+                  <div className="flex items-center justify-between gap-4"><dt className="text-sm text-secondary-600">Git SHA</dt><dd className="max-w-[60%] truncate"><TextState value={snapshot.deployment.gitSha} /></dd></div>
+                  <div className="flex items-center justify-between gap-4"><dt className="text-sm text-secondary-600">Prepared</dt><dd><TextState value={formatTime(snapshot.deployment.preparedAt)} /></dd></div>
                 </dl>
                 {snapshot.deployment.blockers.length > 0 && (
                   <ul className="space-y-2">
                     {snapshot.deployment.blockers.map((blocker) => (
-                      <li key={blocker} className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                        {blocker}
-                      </li>
+                      <li key={blocker} className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{blocker}</li>
                     ))}
                   </ul>
                 )}
@@ -252,23 +239,64 @@ export default function OperatorReadiness() {
           </div>
 
           <div className="rounded-xl border border-secondary-200 bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-semibold text-secondary-900">Account evidence summary</h2>
-            {snapshot.account ? (
-              <dl className="mt-4 space-y-3">
-                <div className="flex items-center justify-between gap-4"><dt className="text-sm text-secondary-600">Account</dt><dd><TextState value={snapshot.account.accountId} /></dd></div>
-                <div className="flex items-center justify-between gap-4"><dt className="text-sm text-secondary-600">Product</dt><dd><TextState value={snapshot.account.productId} /></dd></div>
-                <div className="flex items-center justify-between gap-4"><dt className="text-sm text-secondary-600">Certification</dt><dd><TextState value={snapshot.account.certificationStatus} /></dd></div>
-                <div className="flex items-center justify-between gap-4"><dt className="text-sm text-secondary-600">Recovery readiness</dt><dd><TextState value={snapshot.account.recoveryReadinessStatus} /></dd></div>
-                <div className="flex items-center justify-between gap-4"><dt className="text-sm text-secondary-600">Reconciliation</dt><dd><TextState value={snapshot.account.reconciliationStatus} /></dd></div>
-                <div className="flex items-center justify-between gap-4"><dt className="text-sm text-secondary-600">Active alerts</dt><dd><TextState value={snapshot.account.activeAlertCount?.toString() ?? null} /></dd></div>
-                <div className="flex items-center justify-between gap-4"><dt className="text-sm text-secondary-600">Audit head</dt><dd><TextState value={formatTime(snapshot.account.auditHeadAt)} /></dd></div>
-              </dl>
+            <h2 className="text-lg font-semibold text-secondary-900">Operational rehearsal evidence</h2>
+            {snapshot.operational ? (
+              <div className="mt-4 space-y-4">
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="rounded-lg bg-secondary-50 p-3 text-center"><p className="text-xs text-secondary-500">Total</p><p className="mt-1 text-lg font-bold text-secondary-900">{snapshot.operational.checks.total}</p></div>
+                  <div className="rounded-lg bg-secondary-50 p-3 text-center"><p className="text-xs text-secondary-500">Passed</p><p className="mt-1 text-lg font-bold text-secondary-900">{snapshot.operational.checks.passed}</p></div>
+                  <div className="rounded-lg bg-secondary-50 p-3 text-center"><p className="text-xs text-secondary-500">Blocked</p><p className="mt-1 text-lg font-bold text-secondary-900">{snapshot.operational.checks.blocked}</p></div>
+                </div>
+                <div className="space-y-2">
+                  {snapshot.operational.scenarios.map((scenario) => (
+                    <div key={scenario.name} className="flex items-center justify-between gap-4 rounded-lg border border-secondary-200 p-3">
+                      <div>
+                        <p className="text-sm font-semibold text-secondary-900">{scenario.name.replaceAll('_', ' ')}</p>
+                        <p className="text-xs text-secondary-500">Observed {formatTime(scenario.observedAt)}</p>
+                      </div>
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${scenario.passed && scenario.evidencePresent ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                        {scenario.passed && scenario.evidencePresent ? 'evidence passed' : 'blocked'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <dl className="space-y-3">
+                  <div className="flex items-center justify-between gap-4"><dt className="text-sm text-secondary-600">Git SHA</dt><dd className="max-w-[60%] truncate"><TextState value={snapshot.operational.gitSha} /></dd></div>
+                  <div className="flex items-center justify-between gap-4"><dt className="text-sm text-secondary-600">Prepared</dt><dd><TextState value={formatTime(snapshot.operational.preparedAt)} /></dd></div>
+                </dl>
+                {snapshot.operational.blockers.length > 0 && (
+                  <ul className="space-y-2">
+                    {snapshot.operational.blockers.map((blocker) => (
+                      <li key={blocker} className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{blocker}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             ) : (
               <p className="mt-4 rounded-lg border border-dashed border-secondary-300 p-4 text-sm text-secondary-600">
-                No account-scoped evidence was provided by the trusted gateway.
+                Operational rehearsal evidence is not visible to the current server-side role.
               </p>
             )}
           </div>
+        </section>
+
+        <section className="rounded-xl border border-secondary-200 bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-semibold text-secondary-900">Account evidence summary</h2>
+          {snapshot.account ? (
+            <dl className="mt-4 grid gap-3 md:grid-cols-2">
+              <div className="flex items-center justify-between gap-4"><dt className="text-sm text-secondary-600">Account</dt><dd><TextState value={snapshot.account.accountId} /></dd></div>
+              <div className="flex items-center justify-between gap-4"><dt className="text-sm text-secondary-600">Product</dt><dd><TextState value={snapshot.account.productId} /></dd></div>
+              <div className="flex items-center justify-between gap-4"><dt className="text-sm text-secondary-600">Certification</dt><dd><TextState value={snapshot.account.certificationStatus} /></dd></div>
+              <div className="flex items-center justify-between gap-4"><dt className="text-sm text-secondary-600">Recovery readiness</dt><dd><TextState value={snapshot.account.recoveryReadinessStatus} /></dd></div>
+              <div className="flex items-center justify-between gap-4"><dt className="text-sm text-secondary-600">Reconciliation</dt><dd><TextState value={snapshot.account.reconciliationStatus} /></dd></div>
+              <div className="flex items-center justify-between gap-4"><dt className="text-sm text-secondary-600">Active alerts</dt><dd><TextState value={snapshot.account.activeAlertCount?.toString() ?? null} /></dd></div>
+              <div className="flex items-center justify-between gap-4"><dt className="text-sm text-secondary-600">Audit head</dt><dd><TextState value={formatTime(snapshot.account.auditHeadAt)} /></dd></div>
+            </dl>
+          ) : (
+            <p className="mt-4 rounded-lg border border-dashed border-secondary-300 p-4 text-sm text-secondary-600">
+              No account-scoped evidence was provided by the trusted gateway.
+            </p>
+          )}
         </section>
       </div>
     </main>
