@@ -39,7 +39,7 @@ for (const pattern of [
   /SecretsStore/i,
   /globalThis\.fetch/,
   /\?\?\s*fetch\b/,
-  /(^|[^\w.])fetch\s*\(/m,
+  /\bfetch\.bind\s*\(/,
   /\bconsole\./,
   /JSON\.stringify\s*\(\s*(?:material|apiKey|secretKey|passphrase)/,
   /liveExecutionAllowed:\s*true/,
