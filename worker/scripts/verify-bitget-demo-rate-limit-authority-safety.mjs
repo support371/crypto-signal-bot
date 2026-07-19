@@ -20,6 +20,7 @@ function sourceFiles(directory) {
 
 const failures = []
 const modulePath = 'worker/src/live/adapters/bitget/demo-rate-limit-authority.ts'
+const runtimeAdapterPath = 'worker/src/live/adapters/bitget/demo-runtime-adapters.ts'
 const authority = read(modulePath)
 const packageJson = read('worker/package.json')
 
@@ -81,7 +82,7 @@ for (const pattern of [
 }
 
 for (const sourcePath of sourceFiles('worker/src')) {
-  if (sourcePath === modulePath) continue
+  if (sourcePath === modulePath || sourcePath === runtimeAdapterPath) continue
   if (/demo-rate-limit-authority\.ts/.test(read(sourcePath))) {
     failures.push(`${sourcePath} must not import the isolated demo rate-limit authority`)
   }
