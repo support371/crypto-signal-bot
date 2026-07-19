@@ -7,8 +7,12 @@ const deploymentModel = await readFile(
   new URL('../src/live/operator-deployment-readiness-read-model.ts', import.meta.url),
   'utf8',
 )
+const response = await readFile(new URL('../src/live/live-candidate-response.ts', import.meta.url), 'utf8')
+const operatorHttp = await readFile(new URL('../src/live/operator-read-http.ts', import.meta.url), 'utf8')
 const entrypoint = await readFile(new URL('../src/index_live_candidate.ts', import.meta.url), 'utf8')
-const combined = `${auth}\n${model}\n${deploymentModel}`
+const packageJson = await readFile(new URL('../package.json', import.meta.url), 'utf8')
+const combinedReadBoundary = `${auth}\n${model}\n${deploymentModel}\n${response}\n${operatorHttp}`
+const combinedHttpBoundary = `${response}\n${operatorHttp}\n${entrypoint}`
 
 for (const required of [
   'OPERATOR_API_KEY_HASHES',
@@ -93,8 +97,33 @@ for (const required of [
   'executionAllowed: false',
   'withdrawalsAllowed: false',
 ]) {
-  assert.ok(entrypoint.includes(required), `live candidate operator routes must include ${required}`)
+  assert.ok(operatorHttp.includes(required), `operator HTTP router must include ${required}`)
 }
+
+for (const required of [
+  "'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS'",
+  "headers.delete('Access-Control-Allow-Credentials')",
+  "headers.set('Cache-Control', 'no-store')",
+  "headers.set('X-Live-Candidate', 'read-only')",
+  "request.method === 'HEAD' ? null : response.body",
+]) {
+  assert.ok(response.includes(required), `live-candidate response boundary must include ${required}`)
+}
+
+for (const required of [
+  'routeOperatorReadRequest(request, env)',
+  'liveCandidatePreflight(request, env)',
+  'withLiveCandidateSecurityHeaders(request, env',
+  "operator_read_prefix: '/v1/operator/'",
+  "operator_deployment_readiness_endpoint: '/v1/operator/deployment-readiness'",
+]) {
+  assert.ok(entrypoint.includes(required), `live candidate entrypoint must delegate through ${required}`)
+}
+
+assert.ok(
+  packageJson.includes('tests/live-operator-read-http.test.ts'),
+  'operator HTTP contract test must be wired into provider validation',
+)
 
 for (const forbidden of [
   /\bINSERT\s+INTO\b/i,
@@ -114,7 +143,7 @@ for (const forbidden of [
   /live_balance_snapshots/i,
   /guardian.*(?:halt|reset)\s*\(/i,
 ]) {
-  assert.doesNotMatch(combined, forbidden, `operator read modules must not match ${forbidden}`)
+  assert.doesNotMatch(combinedReadBoundary, forbidden, `operator read modules must not match ${forbidden}`)
 }
 
 for (const forbidden of [
@@ -126,8 +155,9 @@ for (const forbidden of [
   'demoRequestAllowed: true',
   'credentialsRead: true',
   "'Access-Control-Allow-Methods': 'GET, POST",
+  "'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS, POST'",
 ]) {
-  assert.ok(!entrypoint.includes(forbidden), `live candidate operator routes must forbid ${forbidden}`)
+  assert.ok(!combinedHttpBoundary.includes(forbidden), `operator HTTP boundary must forbid ${forbidden}`)
 }
 
 console.log('operator read-only safety verified')
