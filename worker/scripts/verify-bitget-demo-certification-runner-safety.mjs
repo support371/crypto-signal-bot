@@ -153,4 +153,5 @@ if (failures.length > 0) {
   process.exit(1)
 }
 
+await import('./verify-bitget-demo-runtime-adapters-safety.mjs')
 console.log('Bitget demo certification-runner safety verification passed.')
