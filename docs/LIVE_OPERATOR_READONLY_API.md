@@ -2,7 +2,7 @@
 
 ## Status
 
-This API exposes sanitized operational evidence from the disabled live-candidate Worker. It does not enable trading, cancellation, deposits, transfers, withdrawals, reconciliation execution, accounting dispatch, reservation settlement, Guardian mutation, credential provisioning, or release activation.
+This API exposes sanitized operational evidence from the disabled live-candidate Worker. It does not enable trading, cancellation, deposits, transfers, withdrawals, reconciliation execution, accounting dispatch, reservation settlement, Guardian mutation, credential provisioning, deployment, demo requests, or release activation.
 
 Every operator route accepts only `GET`, `HEAD`, and CORS `OPTIONS`. Other methods return HTTP 403.
 
@@ -37,6 +37,21 @@ Returns release-readiness evidence plus permanent candidate flags:
 
 The response cannot activate the candidate.
 
+### `GET /v1/operator/deployment-readiness`
+
+Requires a global `RISK_ADMIN`, `AUDITOR`, or `RELEASE_ADMIN` role.
+
+Returns the latest sanitized migration-028 Bitget demo deployment-readiness summary:
+
+- status and review-readiness boolean;
+- total, passed, and blocked check counts;
+- bounded blocker reasons;
+- external read-only attestation presence;
+- exact Git SHA and preparation timestamps;
+- permanent false deployment, demo-request, credential-read, provider-mutation, execution, mainnet, withdrawal, retry, and automatic-accounting capabilities.
+
+It does not expose manifest IDs, attestation IDs, preparer IDs, resource evidence hashes, secret names, provider payloads, or callable adapters. Corrupt stored capability flags force the response to `BLOCKED` with `stored_capability_lock_violation`.
+
 ### `GET /v1/operator/certification?account_id=...&product_id=...`
 
 Returns the latest sanitized Bitget read-only certification run, all mandatory check statuses, counts, evidence hashes, and source attestation summary.
@@ -67,6 +82,19 @@ Requires `RISK_ADMIN`, `AUDITOR`, or `RELEASE_ADMIN` authority in scope.
 
 Returns only the latest audit-chain identity, predecessor hash, event hash, resource identity, outcome, and timestamp. Audit before/after payloads are intentionally excluded.
 
+## HTTP contract
+
+The production Worker delegates operator requests to `operator-read-http.ts`; tests call that same router with real `Request` and `Response` objects. Required validation covers:
+
+- all seven GET routes;
+- `HEAD` response-body suppression;
+- exact-origin CORS and a `GET, HEAD, OPTIONS` allowlist;
+- HTTP 503, 401, 403, 400, and 404 fail-closed cases;
+- global, exchange, and account role boundaries;
+- mutation denial before any provider or evidence action;
+- permanent non-live capability flags;
+- deployment-readiness response minimization.
+
 ## Data minimization
 
 The operator read model does not query or expose:
@@ -87,7 +115,8 @@ CI fails if the operator modules acquire:
 - exchange fetch or signing code;
 - non-GET operator methods;
 - direct Guardian halt/reset calls;
-- provider mutation, execution, withdrawal, or activation flags set to true;
-- raw financial or audit payload queries.
+- provider mutation, execution, withdrawal, deployment, demo-request, credential-read, or activation flags set to true;
+- raw financial or audit payload queries;
+- divergence between the Worker entrypoint and the tested production router.
 
 The live-candidate PR must remain draft until all independent engineering, deployment, security, eligibility, legal, compliance, and release-certification gates are satisfied by authorized parties.
