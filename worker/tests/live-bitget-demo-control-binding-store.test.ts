@@ -1,35 +1,21 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { canonicalHash, sha256Hex } from '../src/live/canonical-json.ts'
+import { canonicalHash, canonicalJson, sha256Hex } from '../src/live/canonical-json.ts'
 import { asDecimalString } from '../src/live/decimal.ts'
 import type { ProductRules } from '../src/live/domain.ts'
-import {
-  bitgetDemoControlEvidenceBindingHash,
-} from '../src/live/adapters/bitget/demo-certification-runner.ts'
+import { bitgetDemoControlEvidenceBindingHash } from '../src/live/adapters/bitget/demo-certification-runner.ts'
 import {
   BitgetDemoControlBindingConflictError,
   createD1BitgetDemoFreshControlSource,
-  recordBitgetDemoPlaceControlBinding,
   type BitgetDemoGuardianScope,
 } from '../src/live/adapters/bitget/demo-control-binding-store.ts'
+import { verifyBitgetDemoDispatchAuthorization } from '../src/live/adapters/bitget/demo-write-transport.ts'
 import {
-  recordReviewedBitgetDemoDispatchAuthorization,
-} from '../src/live/adapters/bitget/demo-dispatch-evidence-store.ts'
-import {
-  verifyBitgetDemoDispatchAuthorization,
-  type BitgetDemoDispatchAuthorizationInput,
-} from '../src/live/adapters/bitget/demo-write-transport.ts'
-import {
-  buildBitgetCancelOrderCandidate,
   buildBitgetPlaceOrderCandidate,
   type BitgetUnsignedMutationCandidate,
 } from '../src/live/adapters/bitget/execution-candidate.ts'
 
-const BUILT_AT = '2026-07-19T10:00:00.000Z'
-const BOUND_AT = '2026-07-19T10:00:29.000Z'
-const RELOAD_AT = '2026-07-19T10:00:30.000Z'
-const EXPIRES_AT = '2026-07-19T10:02:00.000Z'
 const ACCOUNT_ID = 'bitget-demo-account-0001'
 const ASSESSMENT_ID = 'assessment-demo-place-0001'
 const OPERATION_ID = 'idempotency-operation-0001'
@@ -37,199 +23,16 @@ const IDEMPOTENCY_KEY = 'demo-place-idempotency-0001'
 const PREVIEW_HASH = '1'.repeat(64)
 const ASSESSMENT_HASH = '2'.repeat(64)
 const REQUEST_HASH = '3'.repeat(64)
-const AUTHORIZATION_EVENT_HASH = '4'.repeat(64)
-const STEP_UP_HASH = '5'.repeat(64)
+const RELOAD_AT = '2026-07-19T10:00:30.000Z'
+const BOUND_AT = '2026-07-19T10:00:29.000Z'
 
-interface FakeStatement {
-  sql: string
-  params: unknown[]
-  bind(...params: unknown[]): FakeStatement
-  first<T>(): Promise<T | null>
-  all<T>(): Promise<D1Result<T>>
-  run(): Promise<D1Result>
-}
-
-class FakeD1 {
-  context: Record<string, unknown>
-  authorizations: Record<string, unknown>[] = []
-  bindings: Record<string, unknown>[] = []
-  assessment: Record<string, unknown>
-  idempotency: Record<string, unknown>
-  guardians = new Map<string, Record<string, unknown>>()
-
-  constructor(riskDecision: Readonly<Record<string, unknown>>) {
-    this.context = {
-      authorization_event_id: 'demo-authorization-0001',
-      actor_id: 'risk-approver-0001',
-      action: 'BITGET_DEMO_DISPATCH',
-      resource_type: 'BITGET_DEMO_CANDIDATE',
-      resource_id: '',
-      required_roles_json: JSON.stringify(['RISK_OPERATOR']),
-      actor_roles_json: JSON.stringify(['RISK_OPERATOR']),
-      step_up_required: 1,
-      step_up_session_id: 'step-up-session-0001',
-      decision: 'ALLOW',
-      audit_event_hash: AUTHORIZATION_EVENT_HASH,
-      occurred_at: '2026-07-19T10:00:05.000Z',
-      step_up_actor_id: 'risk-approver-0001',
-      assurance_level: 'AAL2',
-      audience: 'BITGET_DEMO_DISPATCH',
-      issued_at: '2026-07-19T10:00:00.000Z',
-      step_up_expires_at: '2026-07-19T10:03:00.000Z',
-      revoked_at: null,
-      session_hash: STEP_UP_HASH,
-    }
-    this.assessment = {
-      assessment_id: ASSESSMENT_ID,
-      exchange_account_id: ACCOUNT_ID,
-      provider: 'BITGET',
-      idempotency_key: IDEMPOTENCY_KEY,
-      preview_hash: PREVIEW_HASH,
-      evidence_hash: ASSESSMENT_HASH,
-      status: 'READY_BUT_EXECUTION_LOCKED',
-      operational_checks_passed: 1,
-      execution_allowed: 0,
-      risk_decision_json: JSON.stringify(riskDecision),
-      committed_at: '2026-07-19T10:00:27.000Z',
-    }
-    this.idempotency = {
-      operation_scope: 'BITGET_DEMO_PLACE',
-      idempotency_key: IDEMPOTENCY_KEY,
-      request_hash: REQUEST_HASH,
-      operation_id: OPERATION_ID,
-      exchange_account_id: ACCOUNT_ID,
-      status: 'CLAIMED',
-      response_json: null,
-      error_code: null,
-      expires_at: '2026-07-19T10:02:00.000Z',
-    }
-  }
-
-  prepare(sql: string): D1PreparedStatement {
-    const database = this
-    const statement = (params: unknown[] = []): FakeStatement => ({
-      sql,
-      params,
-      bind: (...next: unknown[]) => statement(next),
-      first: async <T>() => database.first<T>(sql, params),
-      all: async <T>() => ({ results: [] } as D1Result<T>),
-      run: async () => database.run(sql, params),
-    })
-    return statement() as unknown as D1PreparedStatement
-  }
-
-  async first<T>(sql: string, params: unknown[]): Promise<T | null> {
-    if (sql.includes('FROM live_authorization_events authorization')) return this.context as T
-    if (sql.includes('FROM live_bitget_demo_dispatch_authorizations')) {
-      const [authorizationId, attemptId, candidateHash, authorizationHash] = params.map(String)
-      return (this.authorizations.find((row) => (
-        row.authorization_id === authorizationId
-        || row.dispatch_attempt_id === attemptId
-        || row.candidate_hash === candidateHash
-        || row.authorization_hash === authorizationHash
-      )) ?? null) as T | null
-    }
-    if (sql.includes('FROM live_candidate_assessments')) {
-      return String(params[0]) === this.assessment.assessment_id ? this.assessment as T : null
-    }
-    if (sql.includes('FROM idempotency_records')) {
-      return String(params[0]) === this.idempotency.operation_id ? this.idempotency as T : null
-    }
-    if (sql.includes('FROM live_guardian_states')) {
-      return (this.guardians.get(`${String(params[0])}:${String(params[1])}`) ?? null) as T | null
-    }
-    if (sql.includes('FROM live_bitget_demo_place_control_bindings')) {
-      const [bindingId, authorizationId, attemptId, candidateHash, bindingHash] = params.map(String)
-      return (this.bindings.find((row) => (
-        row.binding_id === bindingId
-        || row.authorization_id === authorizationId
-        || row.dispatch_attempt_id === attemptId
-        || row.candidate_hash === candidateHash
-        || row.control_binding_hash === bindingHash
-      )) ?? null) as T | null
-    }
-    return null
-  }
-
-  async run(sql: string, params: unknown[]): Promise<D1Result> {
-    if (sql.includes('INSERT INTO live_bitget_demo_dispatch_authorizations')) {
-      if (this.authorizations.length > 0) throw new Error('authorization uniqueness conflict')
-      this.authorizations.push({
-        authorization_id: String(params[0]),
-        dispatch_attempt_id: String(params[1]),
-        exchange_account_id: String(params[2]),
-        candidate_hash: String(params[3]),
-        operation: String(params[4]),
-        endpoint: String(params[5]),
-        product_symbol: String(params[6]),
-        actor_id: String(params[7]),
-        preparer_id: String(params[8]),
-        authorization_evidence_hash: String(params[9]),
-        step_up_evidence_hash: String(params[10]),
-        risk_evidence_hash: String(params[11]),
-        guardian_evidence_hash: String(params[12]),
-        idempotency_evidence_hash: String(params[13]),
-        valid_from: String(params[14]),
-        expires_at: String(params[15]),
-        validity_seconds: Number(params[16]),
-        authorization_hash: String(params[17]),
-        environment: 'BITGET_DEMO',
-        account_coordinator_serialized: 1,
-        guardian_clear: 1,
-        risk_approved: 1,
-        idempotency_claimed: 1,
-        demo_mutation_reviewed: 1,
-        live_release_present: 0,
-        live_execution_allowed: 0,
-        real_funds_allowed: 0,
-        mainnet_allowed: 0,
-        withdrawals_allowed: 0,
-        automatically_retried: 0,
-        reviewed_at: String(params[18]),
-      })
-    }
-    if (sql.includes('INSERT INTO live_bitget_demo_place_control_bindings')) {
-      if (this.bindings.length > 0) throw new Error('binding uniqueness conflict')
-      this.bindings.push({
-        binding_id: String(params[0]),
-        authorization_id: String(params[1]),
-        dispatch_attempt_id: String(params[2]),
-        exchange_account_id: String(params[3]),
-        candidate_hash: String(params[4]),
-        operation: 'PLACE',
-        product_symbol: String(params[5]),
-        assessment_id: String(params[6]),
-        assessment_evidence_hash: String(params[7]),
-        preview_hash: String(params[8]),
-        risk_decision_id: String(params[9]),
-        risk_configuration_version: String(params[10]),
-        risk_decision_hash: String(params[11]),
-        guardian_scopes_json: String(params[12]),
-        guardian_scope_count: Number(params[13]),
-        guardian_scope_set_hash: String(params[14]),
-        guardian_reviewed_state_hash: String(params[15]),
-        idempotency_operation_id: String(params[16]),
-        idempotency_operation_scope: String(params[17]),
-        idempotency_key_hash: String(params[18]),
-        control_binding_hash: String(params[19]),
-        environment: 'BITGET_DEMO',
-        source_only: 1,
-        provider_mutation_allowed: 0,
-        execution_allowed: 0,
-        live_execution_allowed: 0,
-        real_funds_allowed: 0,
-        mainnet_allowed: 0,
-        withdrawals_allowed: 0,
-        automatic_retry_allowed: 0,
-        accounting_automatically_dispatched: 0,
-        bound_at: String(params[20]),
-      })
-    }
-    return {} as D1Result
-  }
-
-  env() {
-    return { DB: this as unknown as D1Database }
+function locks() {
+  return {
+    liveExecutionAllowed: false as const,
+    realFundsAllowed: false as const,
+    mainnetAllowed: false as const,
+    withdrawalsAllowed: false as const,
+    automaticRetryAllowed: false as const,
   }
 }
 
@@ -247,12 +50,87 @@ function productRules(): ProductRules {
     tradingEnabled: true,
     supportedOrderTypes: ['MARKET', 'LIMIT'],
     observedAt: '2026-07-19T09:59:00.000Z',
-    expiresAt: EXPIRES_AT,
+    expiresAt: '2026-07-19T10:02:00.000Z',
   }
 }
 
-async function placeCandidate(): Promise<BitgetUnsignedMutationCandidate> {
-  return buildBitgetPlaceOrderCandidate({
+function guardianScopes(): readonly BitgetDemoGuardianScope[] {
+  return Object.freeze([
+    { scopeType: 'GLOBAL', scopeKey: 'global' },
+    { scopeType: 'ENVIRONMENT', scopeKey: 'BITGET_DEMO' },
+    { scopeType: 'EXCHANGE', scopeKey: 'BITGET' },
+    { scopeType: 'ACCOUNT', scopeKey: ACCOUNT_ID },
+    { scopeType: 'SYMBOL', scopeKey: 'BTCUSDT' },
+    { scopeType: 'ORDER_TYPE', scopeKey: 'MARKET' },
+  ].sort((a, b) => a.scopeType.localeCompare(b.scopeType) || a.scopeKey.localeCompare(b.scopeKey)))
+}
+
+class FakeD1 {
+  assessment: Record<string, unknown>
+  idempotency: Record<string, unknown>
+  binding: Record<string, unknown>
+  guardians = new Map<string, Record<string, unknown>>()
+
+  constructor(input: {
+    assessment: Record<string, unknown>
+    idempotency: Record<string, unknown>
+    binding: Record<string, unknown>
+    guardians: readonly Record<string, unknown>[]
+  }) {
+    this.assessment = input.assessment
+    this.idempotency = input.idempotency
+    this.binding = input.binding
+    for (const row of input.guardians) {
+      this.guardians.set(`${String(row.scope_type)}:${String(row.scope_key)}`, row)
+    }
+  }
+
+  prepare(sql: string): D1PreparedStatement {
+    const database = this
+    let values: unknown[] = []
+    const statement = {
+      bind(...next: unknown[]) {
+        values = next
+        return statement
+      },
+      async first<T>(): Promise<T | null> {
+        if (sql.includes('FROM live_bitget_demo_place_control_bindings')) {
+          const keys = values.map(String)
+          const row = database.binding
+          return (keys.includes(String(row.binding_id))
+            || keys.includes(String(row.authorization_id))
+            || keys.includes(String(row.dispatch_attempt_id))
+            || keys.includes(String(row.candidate_hash))
+            || keys.includes(String(row.control_binding_hash))) ? row as T : null
+        }
+        if (sql.includes('FROM live_candidate_assessments')) {
+          return String(values[0]) === database.assessment.assessment_id ? database.assessment as T : null
+        }
+        if (sql.includes('FROM idempotency_records')) {
+          return String(values[0]) === database.idempotency.operation_id ? database.idempotency as T : null
+        }
+        if (sql.includes('FROM live_guardian_states')) {
+          return (database.guardians.get(`${String(values[0])}:${String(values[1])}`) ?? null) as T | null
+        }
+        return null
+      },
+      async all<T>(): Promise<D1Result<T>> {
+        return { results: [] } as D1Result<T>
+      },
+      async run(): Promise<D1Result> {
+        return {} as D1Result
+      },
+    }
+    return statement as unknown as D1PreparedStatement
+  }
+
+  env() {
+    return { DB: this as unknown as D1Database }
+  }
+}
+
+async function fixture(decidedAt = '2026-07-19T10:00:28.500Z') {
+  const candidate: BitgetUnsignedMutationCandidate = await buildBitgetPlaceOrderCandidate({
     request: {
       productId: 'BTC-USDT',
       side: 'BUY',
@@ -266,73 +144,48 @@ async function placeCandidate(): Promise<BitgetUnsignedMutationCandidate> {
     clientOrderId: 'demo-place-control-0001',
     previewHash: PREVIEW_HASH,
     force: 'gtc',
-    builtAt: BUILT_AT,
-    expiresAt: EXPIRES_AT,
+    builtAt: '2026-07-19T10:00:00.000Z',
+    expiresAt: '2026-07-19T10:02:00.000Z',
   })
-}
 
-function scopes(): readonly BitgetDemoGuardianScope[] {
-  return Object.freeze([
-    { scopeType: 'GLOBAL', scopeKey: 'global' },
-    { scopeType: 'ENVIRONMENT', scopeKey: 'BITGET_DEMO' },
-    { scopeType: 'EXCHANGE', scopeKey: 'BITGET' },
-    { scopeType: 'ACCOUNT', scopeKey: ACCOUNT_ID },
-    { scopeType: 'SYMBOL', scopeKey: 'BTCUSDT' },
-    { scopeType: 'ORDER_TYPE', scopeKey: 'MARKET' },
-  ])
-}
-
-function riskDecision(decidedAt = '2026-07-19T10:00:28.500Z') {
-  return Object.freeze({
+  const scopes = guardianScopes()
+  const guardianRows = scopes.map((scope) => ({
+    scope_type: scope.scopeType,
+    scope_key: scope.scopeKey,
+    status: 'CLEAR',
+    version: 1,
+    updated_at: '2026-07-19T10:00:28.000Z',
+  }))
+  const guardianSnapshot = guardianRows.map((row) => ({
+    scopeType: row.scope_type,
+    scopeKey: row.scope_key,
+    status: 'CLEAR' as const,
+    version: row.version,
+    updatedAt: row.updated_at,
+  }))
+  const guardianStateHash = await canonicalHash(guardianSnapshot)
+  const scopeSetHash = await canonicalHash(scopes)
+  const idempotencyKeyHash = await sha256Hex(IDEMPOTENCY_KEY)
+  const risk = Object.freeze({
     decisionId: 'risk-decision-control-0001',
     approved: true,
     rules: Object.freeze([]),
     configurationVersion: 'risk-v1',
     decidedAt,
   })
-}
+  const riskHash = await canonicalHash(risk)
 
-async function prepared(decidedAt?: string) {
-  const current = await placeCandidate()
-  const database = new FakeD1(riskDecision(decidedAt))
-  database.context.resource_id = current.candidateHash
-  const normalizedScopes = [...scopes()].sort((a, b) => (
-    a.scopeType.localeCompare(b.scopeType) || a.scopeKey.localeCompare(b.scopeKey)
-  ))
-  const guardianSnapshot = normalizedScopes.map((scope) => {
-    const row = {
-      scope_type: scope.scopeType,
-      scope_key: scope.scopeKey,
-      status: 'CLEAR',
-      version: 1,
-      updated_at: '2026-07-19T10:00:28.000Z',
-    }
-    database.guardians.set(`${scope.scopeType}:${scope.scopeKey}`, row)
-    return {
-      scopeType: scope.scopeType,
-      scopeKey: scope.scopeKey,
-      status: 'CLEAR' as const,
-      version: 1,
-      updatedAt: row.updated_at,
-    }
-  })
-  const guardianStateHash = await canonicalHash(guardianSnapshot)
-  const idempotencyKeyHash = await sha256Hex(IDEMPOTENCY_KEY)
   const common = {
     schemaVersion: 1 as const,
     environment: 'BITGET_DEMO' as const,
     exchangeAccountId: ACCOUNT_ID,
-    candidateHash: current.candidateHash,
+    candidateHash: candidate.candidateHash,
     operation: 'PLACE' as const,
     productSymbol: 'BTCUSDT',
-    reloadedAt: BOUND_AT,
-    liveExecutionAllowed: false as const,
-    realFundsAllowed: false as const,
-    mainnetAllowed: false as const,
-    withdrawalsAllowed: false as const,
-    automaticRetryAllowed: false as const,
+    reloadedAt: RELOAD_AT,
+    ...locks(),
   }
-  const evidence = {
+  const controlEvidence = {
     guardian: Object.freeze({
       ...common,
       evidenceType: 'GUARDIAN' as const,
@@ -343,8 +196,8 @@ async function prepared(decidedAt?: string) {
     risk: Object.freeze({
       ...common,
       evidenceType: 'RISK' as const,
-      decisionId: 'risk-decision-control-0001',
-      configurationVersion: 'risk-v1',
+      decisionId: risk.decisionId,
+      configurationVersion: risk.configurationVersion,
       approved: true as const,
     }),
     idempotency: Object.freeze({
@@ -357,18 +210,18 @@ async function prepared(decidedAt?: string) {
       status: 'CLAIMED' as const,
     }),
   }
-  const input: BitgetDemoDispatchAuthorizationInput = {
+  const authorization = verifyBitgetDemoDispatchAuthorization({
     authorizationId: 'demo-authorization-0001',
     dispatchAttemptId: 'demo-attempt-0001',
     exchangeAccountId: ACCOUNT_ID,
     actorId: 'risk-approver-0001',
     preparerId: 'candidate-preparer-0001',
-    candidateHash: current.candidateHash,
-    authorizationEvidenceHash: AUTHORIZATION_EVENT_HASH,
-    stepUpEvidenceHash: STEP_UP_HASH,
-    riskEvidenceHash: await bitgetDemoControlEvidenceBindingHash(evidence.risk),
-    guardianEvidenceHash: await bitgetDemoControlEvidenceBindingHash(evidence.guardian),
-    idempotencyEvidenceHash: await bitgetDemoControlEvidenceBindingHash(evidence.idempotency),
+    candidateHash: candidate.candidateHash,
+    authorizationEvidenceHash: '4'.repeat(64),
+    stepUpEvidenceHash: '5'.repeat(64),
+    riskEvidenceHash: await bitgetDemoControlEvidenceBindingHash(controlEvidence.risk),
+    guardianEvidenceHash: await bitgetDemoControlEvidenceBindingHash(controlEvidence.guardian),
+    idempotencyEvidenceHash: await bitgetDemoControlEvidenceBindingHash(controlEvidence.idempotency),
     validFrom: '2026-07-19T10:00:10.000Z',
     expiresAt: '2026-07-19T10:01:10.000Z',
     environment: 'BITGET_DEMO',
@@ -378,108 +231,164 @@ async function prepared(decidedAt?: string) {
     idempotencyClaimed: true,
     demoMutationReviewed: true,
     liveReleasePresent: false,
-    liveExecutionAllowed: false,
-    realFundsAllowed: false,
-    mainnetAllowed: false,
-    withdrawalsAllowed: false,
-    automaticRetryAllowed: false,
-  }
-  await recordReviewedBitgetDemoDispatchAuthorization(database.env(), current, input, '2026-07-19T10:00:06.000Z')
-  return {
-    database,
-    current,
-    authorization: verifyBitgetDemoDispatchAuthorization(input),
-  }
+    ...locks(),
+  })
+
+  const bindingBase = Object.freeze({
+    bindingId: 'demo-control-binding-0001',
+    authorizationId: authorization.authorizationId,
+    dispatchAttemptId: authorization.dispatchAttemptId,
+    exchangeAccountId: ACCOUNT_ID,
+    candidateHash: candidate.candidateHash,
+    operation: 'PLACE' as const,
+    productSymbol: 'BTCUSDT',
+    assessmentId: ASSESSMENT_ID,
+    assessmentEvidenceHash: ASSESSMENT_HASH,
+    previewHash: PREVIEW_HASH,
+    riskDecisionId: risk.decisionId,
+    riskConfigurationVersion: risk.configurationVersion,
+    riskDecisionHash: riskHash,
+    guardianScopes: scopes,
+    guardianScopeSetHash: scopeSetHash,
+    guardianReviewedStateHash: guardianStateHash,
+    idempotencyOperationId: OPERATION_ID,
+    idempotencyOperationScope: 'BITGET_DEMO_PLACE',
+    idempotencyKeyHash,
+    environment: 'BITGET_DEMO' as const,
+    sourceOnly: true as const,
+    providerMutationAllowed: false as const,
+    executionAllowed: false as const,
+    liveExecutionAllowed: false as const,
+    realFundsAllowed: false as const,
+    mainnetAllowed: false as const,
+    withdrawalsAllowed: false as const,
+    automaticRetryAllowed: false as const,
+    accountingAutomaticallyDispatched: false as const,
+    boundAt: BOUND_AT,
+  })
+
+  const database = new FakeD1({
+    assessment: {
+      assessment_id: ASSESSMENT_ID,
+      exchange_account_id: ACCOUNT_ID,
+      provider: 'BITGET',
+      idempotency_key: IDEMPOTENCY_KEY,
+      preview_hash: PREVIEW_HASH,
+      evidence_hash: ASSESSMENT_HASH,
+      status: 'READY_BUT_EXECUTION_LOCKED',
+      operational_checks_passed: 1,
+      execution_allowed: 0,
+      risk_decision_json: JSON.stringify(risk),
+      committed_at: '2026-07-19T10:00:27.000Z',
+    },
+    idempotency: {
+      operation_scope: 'BITGET_DEMO_PLACE',
+      idempotency_key: IDEMPOTENCY_KEY,
+      request_hash: REQUEST_HASH,
+      operation_id: OPERATION_ID,
+      exchange_account_id: ACCOUNT_ID,
+      status: 'CLAIMED',
+      response_json: null,
+      error_code: null,
+      expires_at: '2026-07-19T10:02:00.000Z',
+    },
+    guardians: guardianRows,
+    binding: {
+      binding_id: bindingBase.bindingId,
+      authorization_id: bindingBase.authorizationId,
+      dispatch_attempt_id: bindingBase.dispatchAttemptId,
+      exchange_account_id: bindingBase.exchangeAccountId,
+      candidate_hash: bindingBase.candidateHash,
+      operation: 'PLACE',
+      product_symbol: bindingBase.productSymbol,
+      assessment_id: bindingBase.assessmentId,
+      assessment_evidence_hash: bindingBase.assessmentEvidenceHash,
+      preview_hash: bindingBase.previewHash,
+      risk_decision_id: bindingBase.riskDecisionId,
+      risk_configuration_version: bindingBase.riskConfigurationVersion,
+      risk_decision_hash: bindingBase.riskDecisionHash,
+      guardian_scopes_json: canonicalJson(scopes),
+      guardian_scope_count: scopes.length,
+      guardian_scope_set_hash: bindingBase.guardianScopeSetHash,
+      guardian_reviewed_state_hash: bindingBase.guardianReviewedStateHash,
+      idempotency_operation_id: bindingBase.idempotencyOperationId,
+      idempotency_operation_scope: bindingBase.idempotencyOperationScope,
+      idempotency_key_hash: bindingBase.idempotencyKeyHash,
+      control_binding_hash: await canonicalHash(bindingBase),
+      environment: 'BITGET_DEMO',
+      source_only: 1,
+      provider_mutation_allowed: 0,
+      execution_allowed: 0,
+      live_execution_allowed: 0,
+      real_funds_allowed: 0,
+      mainnet_allowed: 0,
+      withdrawals_allowed: 0,
+      automatic_retry_allowed: 0,
+      accounting_automatically_dispatched: 0,
+      bound_at: BOUND_AT,
+    },
+  })
+  return { database, candidate, authorization }
 }
 
-const bindingInput = Object.freeze({
-  bindingId: 'demo-control-binding-0001',
-  assessmentId: ASSESSMENT_ID,
-  idempotencyOperationId: OPERATION_ID,
-  guardianScopes: scopes(),
-  boundAt: BOUND_AT,
-})
-
-test('projects and exactly replays one immutable place-control binding', async () => {
-  const { database, current, authorization } = await prepared()
-  const projected = await recordBitgetDemoPlaceControlBinding(database.env(), current, authorization, bindingInput)
-  const replayed = await recordBitgetDemoPlaceControlBinding(database.env(), current, authorization, bindingInput)
-
-  assert.equal(projected.projectionStatus, 'PROJECTED')
-  assert.equal(replayed.projectionStatus, 'REPLAYED')
-  assert.equal(replayed.controlBindingHash, projected.controlBindingHash)
-  assert.equal(database.bindings.length, 1)
-  assert.equal(database.bindings[0]?.execution_allowed, 0)
-  assert.equal(database.bindings[0]?.automatic_retry_allowed, 0)
-})
-
-test('requires every mandatory Guardian scope', async () => {
-  const { database, current, authorization } = await prepared()
-  const incomplete = scopes().filter((scope) => scope.scopeType !== 'SYMBOL')
-  await assert.rejects(
-    recordBitgetDemoPlaceControlBinding(database.env(), current, authorization, {
-      ...bindingInput,
-      guardianScopes: incomplete,
-    }),
-    /Guardian scope set is missing SYMBOL:BTCUSDT/,
-  )
-  assert.equal(database.bindings.length, 0)
-})
-
-test('rejects cancel candidates because no authoritative place assessment can bind them', async () => {
-  const { database, authorization } = await prepared()
-  const cancel = await buildBitgetCancelOrderCandidate({
-    productId: 'BTC-USDT',
-    identity: { orderId: 'demo-order-0001', clientOrderId: null },
-    builtAt: BUILT_AT,
-    expiresAt: EXPIRES_AT,
+test('reloads the exact immutable Guardian, risk and idempotency controls', async () => {
+  const { database, candidate, authorization } = await fixture()
+  const evidence = await createD1BitgetDemoFreshControlSource(database.env()).reload({
+    candidate,
+    authorization,
+    evaluatedAt: RELOAD_AT,
   })
-  await assert.rejects(
-    recordBitgetDemoPlaceControlBinding(database.env(), cancel, authorization, bindingInput),
-    BitgetDemoControlBindingConflictError,
-  )
+  assert.equal(evidence.guardian.status, 'CLEAR')
+  assert.equal(evidence.risk.approved, true)
+  assert.equal(evidence.idempotency.status, 'CLAIMED')
+  assert.equal(evidence.liveExecutionAllowed, undefined)
 })
 
-test('fresh D1 source reloads matching controls and rejects Guardian drift', async () => {
-  const { database, current, authorization } = await prepared()
-  await recordBitgetDemoPlaceControlBinding(database.env(), current, authorization, bindingInput)
-  const source = createD1BitgetDemoFreshControlSource(database.env())
-  const evidence = await source.reload({ current: undefined } as never).catch(() => null)
-  assert.equal(evidence, null)
-
-  const currentEvidence = await source.reload({ candidate: current, authorization, evaluatedAt: RELOAD_AT })
-  assert.equal(currentEvidence.guardian.status, 'CLEAR')
-  assert.equal(currentEvidence.idempotency.status, 'CLAIMED')
-
-  const accountGuardian = database.guardians.get(`ACCOUNT:${ACCOUNT_ID}`)!
-  accountGuardian.version = 2
+test('rejects Guardian drift after the reviewed binding', async () => {
+  const { database, candidate, authorization } = await fixture()
+  database.guardians.get(`ACCOUNT:${ACCOUNT_ID}`)!.version = 2
   await assert.rejects(
-    source.reload({ candidate: current, authorization, evaluatedAt: RELOAD_AT }),
+    createD1BitgetDemoFreshControlSource(database.env()).reload({
+      candidate,
+      authorization,
+      evaluatedAt: RELOAD_AT,
+    }),
     /current controls do not match|changed after review/,
   )
 })
 
-test('fresh D1 source rejects stale risk and completed idempotency', async () => {
-  const stale = await prepared('2026-07-19T10:00:20.000Z')
-  await recordBitgetDemoPlaceControlBinding(stale.database.env(), stale.current, stale.authorization, bindingInput)
+test('rejects stale risk decisions', async () => {
+  const { database, candidate, authorization } = await fixture('2026-07-19T10:00:20.000Z')
   await assert.rejects(
-    createD1BitgetDemoFreshControlSource(stale.database.env()).reload({
-      candidate: stale.current,
-      authorization: stale.authorization,
+    createD1BitgetDemoFreshControlSource(database.env()).reload({
+      candidate,
+      authorization,
       evaluatedAt: RELOAD_AT,
     }),
     /risk decision is too old/,
   )
+})
 
-  const completed = await prepared()
-  await recordBitgetDemoPlaceControlBinding(completed.database.env(), completed.current, completed.authorization, bindingInput)
+test('rejects completed idempotency and corrupted capability locks', async () => {
+  const completed = await fixture()
   completed.database.idempotency.status = 'SUCCEEDED'
   await assert.rejects(
     createD1BitgetDemoFreshControlSource(completed.database.env()).reload({
-      candidate: completed.current,
+      candidate: completed.candidate,
       authorization: completed.authorization,
       evaluatedAt: RELOAD_AT,
     }),
     /not an active claim/,
+  )
+
+  const corrupted = await fixture()
+  corrupted.database.binding.execution_allowed = 1
+  await assert.rejects(
+    createD1BitgetDemoFreshControlSource(corrupted.database.env()).reload({
+      candidate: corrupted.candidate,
+      authorization: corrupted.authorization,
+      evaluatedAt: RELOAD_AT,
+    }),
+    BitgetDemoControlBindingConflictError,
   )
 })
