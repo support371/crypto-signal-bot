@@ -7,11 +7,15 @@ const deploymentModel = await readFile(
   new URL('../src/live/operator-deployment-readiness-read-model.ts', import.meta.url),
   'utf8',
 )
+const operationalModel = await readFile(
+  new URL('../src/live/operator-operational-rehearsal-read-model.ts', import.meta.url),
+  'utf8',
+)
 const response = await readFile(new URL('../src/live/live-candidate-response.ts', import.meta.url), 'utf8')
 const operatorHttp = await readFile(new URL('../src/live/operator-read-http.ts', import.meta.url), 'utf8')
 const entrypoint = await readFile(new URL('../src/index_live_candidate.ts', import.meta.url), 'utf8')
 const packageJson = await readFile(new URL('../package.json', import.meta.url), 'utf8')
-const combinedReadBoundary = `${auth}\n${model}\n${deploymentModel}\n${response}\n${operatorHttp}`
+const combinedReadBoundary = `${auth}\n${model}\n${deploymentModel}\n${operationalModel}\n${response}\n${operatorHttp}`
 const combinedHttpBoundary = `${response}\n${operatorHttp}\n${entrypoint}`
 
 for (const required of [
@@ -24,6 +28,8 @@ for (const required of [
   "scopeType === 'EXCHANGE'",
   'exchangeAccountId',
   "'DEPLOYMENT_READINESS'",
+  "'OPERATIONAL_REHEARSAL'",
+  "OPERATIONAL_REHEARSAL: ['RISK_ADMIN', 'AUDITOR', 'RELEASE_ADMIN']",
   "status: 'NOT_CONFIGURED'",
   "status: 'UNAUTHENTICATED'",
   "status: 'FORBIDDEN'",
@@ -62,6 +68,26 @@ for (const required of [
   )
 }
 
+for (const required of [
+  'live_bitget_demo_operational_rehearsal_packs',
+  'ORDER BY prepared_at DESC, created_at DESC',
+  'stored_capability_lock_violation',
+  'readyForIndependentReview',
+  'evidencePresent',
+  'deploymentAllowed: false',
+  'demoRequestAllowed: false',
+  'credentialsRead: false',
+  'providerMutationAllowed: false',
+  'executionAllowed: false',
+  'automaticRetryAllowed: false',
+  'accountingAutomaticallyDispatched: false',
+]) {
+  assert.ok(
+    operationalModel.includes(required),
+    `operational rehearsal read model must include ${required}`,
+  )
+}
+
 for (const forbidden of [
   'manifestId:',
   'manifestHash:',
@@ -75,16 +101,32 @@ for (const forbidden of [
   )
 }
 
+for (const forbidden of [
+  'packId:',
+  'packHash:',
+  'evidenceHash:',
+  'preparedBy:',
+  'scenariosJson:',
+]) {
+  assert.ok(
+    !operationalModel.includes(forbidden),
+    `operational rehearsal response must not expose ${forbidden}`,
+  )
+}
+
 for (const required of [
   '/v1/operator/activation-gate',
   '/v1/operator/deployment-readiness',
+  '/v1/operator/operational-readiness',
   '/v1/operator/certification',
   '/v1/operator/recovery-readiness',
   '/v1/operator/reconciliation',
   '/v1/operator/alerts',
   '/v1/operator/audit-head',
   "resource === 'DEPLOYMENT_READINESS'",
+  "resource === 'OPERATIONAL_REHEARSAL'",
   'readLatestBitgetDemoDeploymentReadiness',
+  'readLatestOperationalRehearsal',
   "method !== 'GET' && method !== 'HEAD'",
   'Operator mutation routes are disabled',
   'activationEnabled: false',
@@ -96,6 +138,8 @@ for (const required of [
   'providerMutationAllowed: false',
   'executionAllowed: false',
   'withdrawalsAllowed: false',
+  'automaticRetryAllowed: false',
+  'accountingAutomaticallyDispatched: false',
   'LOCKED_OPERATOR_READ_HTTP_DEPENDENCIES',
   'readiness_evaluator_not_injected',
 ]) {
@@ -123,10 +167,15 @@ for (const required of [
   assert.ok(entrypoint.includes(required), `live candidate entrypoint must delegate through ${required}`)
 }
 
-assert.ok(
-  packageJson.includes('tests/live-operator-read-http.test.ts'),
-  'operator HTTP contract test must be wired into provider validation',
-)
+for (const testPath of [
+  'tests/live-operator-read-http.test.ts',
+  'tests/live-operator-operational-readiness-http.test.ts',
+]) {
+  assert.ok(
+    packageJson.includes(testPath),
+    `${testPath} must be wired into provider validation`,
+  )
+}
 
 for (const forbidden of [
   /\bINSERT\s+INTO\b/i,
@@ -153,6 +202,8 @@ for (const forbidden of [
   'providerMutationAllowed: true',
   'executionAllowed: true',
   'withdrawalsAllowed: true',
+  'automaticRetryAllowed: true',
+  'accountingAutomaticallyDispatched: true',
   'activationEnabled: true',
   'deploymentAllowed: true',
   'demoRequestAllowed: true',
