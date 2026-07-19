@@ -8,6 +8,10 @@ import {
   type OperatorDeploymentReadinessEnv,
 } from './operator-deployment-readiness-read-model.ts'
 import {
+  readLatestOperationalRehearsal,
+  type OperatorOperationalRehearsalEnv,
+} from './operator-operational-rehearsal-read-model.ts'
+import {
   readActiveAlerts,
   readAuditHead,
   readLatestAttestedRecoveryReadiness,
@@ -24,6 +28,7 @@ export const OPERATOR_READ_PREFIX = '/v1/operator/'
 
 export type OperatorReadHttpEnv = OperatorReadAuthEnv
   & OperatorDeploymentReadinessEnv
+  & OperatorOperationalRehearsalEnv
   & OperatorReadModelEnv
   & LiveCandidateResponseEnv
 
@@ -58,7 +63,9 @@ async function authorizeOperator(
   resource: OperatorReadResource,
   exchangeAccountId: string | null,
 ): Promise<Response | { actorId: string; matchedRoles: readonly string[] }> {
-  const globalResource = resource === 'ACTIVATION_GATE' || resource === 'DEPLOYMENT_READINESS'
+  const globalResource = resource === 'ACTIVATION_GATE'
+    || resource === 'DEPLOYMENT_READINESS'
+    || resource === 'OPERATIONAL_REHEARSAL'
   const result = await authenticateOperatorRead(env, request, {
     resource,
     exchangeName: globalResource ? null : 'BITGET',
@@ -130,6 +137,27 @@ async function handleOperatorRead(
         providerMutationAllowed: false,
         executionAllowed: false,
         withdrawalsAllowed: false,
+      })
+    }
+
+    if (pathname === '/v1/operator/operational-readiness') {
+      const principal = await authorizeOperator(request, env, 'OPERATIONAL_REHEARSAL', null)
+      if (principal instanceof Response) return principal
+      const evidence = await readLatestOperationalRehearsal(env)
+      return liveCandidateJson(request, env, {
+        environment: 'live-candidate',
+        readOnly: true,
+        resource: 'OPERATIONAL_REHEARSAL',
+        operator: principal,
+        evidence,
+        deploymentAllowed: false,
+        demoRequestAllowed: false,
+        credentialsRead: false,
+        providerMutationAllowed: false,
+        executionAllowed: false,
+        withdrawalsAllowed: false,
+        automaticRetryAllowed: false,
+        accountingAutomaticallyDispatched: false,
       })
     }
 
