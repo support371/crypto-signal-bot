@@ -25,10 +25,12 @@ CREATE TABLE IF NOT EXISTS live_bitget_demo_place_control_bindings (
     json_valid(guardian_scopes_json)
     AND json_type(guardian_scopes_json) = 'array'
   ),
-  guardian_scope_count INTEGER NOT NULL CHECK (guardian_scope_count BETWEEN 1 AND 8),
+  guardian_scope_count INTEGER NOT NULL CHECK (
+    guardian_scope_count BETWEEN 1 AND 8
+    AND json_array_length(guardian_scopes_json) = guardian_scope_count
+  ),
   guardian_scope_set_hash TEXT NOT NULL CHECK (length(guardian_scope_set_hash) = 64),
   guardian_reviewed_state_hash TEXT NOT NULL CHECK (length(guardian_reviewed_state_hash) = 64),
-  CHECK (json_array_length(guardian_scopes_json) = guardian_scope_count),
 
   idempotency_operation_id TEXT NOT NULL UNIQUE,
   idempotency_operation_scope TEXT NOT NULL,
