@@ -11,6 +11,7 @@ import {
   createBitgetDemoDurableRateLimitAuthorityProvider,
   createBitgetDemoGetOnlyRecoveryBoundary,
   createVerifiedBitgetDemoFreshControlLoader,
+  type BitgetDemoRateLimitNamespace,
 } from '../src/live/adapters/bitget/demo-runtime-adapters.ts'
 import {
   verifyBitgetDemoDispatchAuthorization,
@@ -114,7 +115,7 @@ async function fixture(): Promise<{
   return { candidate, evidence, authorization }
 }
 
-test('callback credential adapter leases frozen demo material once without changing capability locks', async () => {
+test('callback credential adapter leases frozen demo material exactly once', async () => {
   const events: string[] = []
   const provider = createBitgetDemoCallbackCredentialProvider({
     async withLease(accountId, use) {
@@ -122,7 +123,7 @@ test('callback credential adapter leases frozen demo material once without chang
       return use(Object.freeze({ apiKey: 'demo-key', secretKey: 'demo-secret', passphrase: 'demo-pass' }))
     },
   })
-  const value = await provider.withDemoSigningMaterial({
+  const result = await provider.withDemoSigningMaterial({
     environment: 'BITGET_DEMO',
     exchangeAccountId: 'bitget-demo-account-0001',
     candidateHash: '5'.repeat(64),
@@ -135,22 +136,41 @@ test('callback credential adapter leases frozen demo material once without chang
     assert.equal(material.apiKey, 'demo-key')
     return 'used'
   })
-  assert.equal(value, 'used')
+  assert.equal(result, 'used')
   assert.deepEqual(events, ['lease:bitget-demo-account-0001', 'callback'])
 })
 
-test('Durable Object rate provider scopes claims to one account and validates the receipt', async () => {
+test('credential adapter rejects a lease source that never invokes its callback', async () => {
+  const provider = createBitgetDemoCallbackCredentialProvider({
+    async withLease<T>() {
+      return 'unused' as T
+    },
+  })
+  await assert.rejects(
+    () => provider.withDemoSigningMaterial({
+      environment: 'BITGET_DEMO',
+      exchangeAccountId: 'bitget-demo-account-0001',
+      candidateHash: '5'.repeat(64),
+      authorizationId: 'demo-authorization-0001',
+      dispatchAttemptId: 'demo-attempt-0001',
+      ...locks(),
+    }, async () => 'used'),
+    /must invoke its callback once/,
+  )
+})
+
+test('Durable Object rate provider scopes a Request-based claim to one account', async () => {
   let requestedName = ''
   let requestBody: BitgetDemoRateLimitClaimInput | null = null
-  const namespace = {
-    idFromName(name: string) {
+  const namespace: BitgetDemoRateLimitNamespace<string> = {
+    idFromName(name) {
       requestedName = name
-      return {} as DurableObjectId
+      return name
     },
     get() {
       return {
-        async fetch(_url: string, init?: RequestInit) {
-          requestBody = JSON.parse(String(init?.body)) as BitgetDemoRateLimitClaimInput
+        async fetch(request: Request) {
+          requestBody = await request.json() as BitgetDemoRateLimitClaimInput
           return new Response(JSON.stringify({
             allowed: true,
             exchangeAccountId: requestBody.exchangeAccountId,
@@ -163,9 +183,9 @@ test('Durable Object rate provider scopes claims to one account and validates th
             receiptHash: '6'.repeat(64),
           }), { status: 200 })
         },
-      } as unknown as DurableObjectStub
+      }
     },
-  } as unknown as DurableObjectNamespace
+  }
   const provider = createBitgetDemoDurableRateLimitAuthorityProvider(namespace)
   const authority = await provider.forAccount('bitget-demo-account-0001')
   const claim = await authority.claim({
@@ -184,17 +204,10 @@ test('Durable Object rate provider scopes claims to one account and validates th
   assert.equal(claim.receiptHash, '6'.repeat(64))
 })
 
-test('fresh-control adapter revalidates source evidence against candidate and authorization hashes', async () => {
+test('fresh-control adapter revalidates evidence hashes before returning it', async () => {
   const { candidate, evidence, authorization } = await fixture()
-  const loader = createVerifiedBitgetDemoFreshControlLoader({
-    async reload() {
-      return evidence
-    },
-  })
-  assert.equal(
-    (await loader.load({ candidate, authorization, evaluatedAt: EVALUATED_AT })).risk.approved,
-    true,
-  )
+  const loader = createVerifiedBitgetDemoFreshControlLoader({ async reload() { return evidence } })
+  assert.equal((await loader.load({ candidate, authorization, evaluatedAt: EVALUATED_AT })).risk.approved, true)
 
   const mismatched = createVerifiedBitgetDemoFreshControlLoader({
     async reload() {
@@ -238,11 +251,9 @@ function ambiguousResult(candidate: BitgetUnsignedMutationCandidate): BitgetDemo
   })
 }
 
-test('GET-only recovery boundary produces deterministic recovered evidence for matching identities', async () => {
+test('GET-only recovery creates deterministic recovered evidence for a matching identity', async () => {
   const { candidate } = await fixture()
   const result = ambiguousResult(candidate)
-  const resultHash = await canonicalHash(result)
-  const lookupPlanHash = await canonicalHash(candidate.recoveryLookups)
   const boundary = createBitgetDemoGetOnlyRecoveryBoundary({
     async lookup(instruction) {
       return Object.freeze({
@@ -260,9 +271,9 @@ test('GET-only recovery boundary produces deterministic recovered evidence for m
   })
   const receipt = await boundary.recover({
     result,
-    resultHash,
+    resultHash: await canonicalHash(result),
     lookups: candidate.recoveryLookups,
-    lookupPlanHash,
+    lookupPlanHash: await canonicalHash(candidate.recoveryLookups),
     requestedAt: EVALUATED_AT,
   })
   assert.equal(receipt.status, 'RECOVERED')
@@ -271,7 +282,7 @@ test('GET-only recovery boundary produces deterministic recovered evidence for m
   assert.equal(receipt.automaticRetryAllowed, false)
 })
 
-test('GET-only recovery boundary remains incomplete when the provider identity is not found', async () => {
+test('GET-only recovery remains incomplete when the provider identity is absent', async () => {
   const { candidate } = await fixture()
   const result = ambiguousResult(candidate)
   const boundary = createBitgetDemoGetOnlyRecoveryBoundary({
