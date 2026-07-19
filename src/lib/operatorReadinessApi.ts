@@ -35,7 +35,7 @@ export interface OperatorCapabilityLocks {
 
 export interface OperatorIdentitySummary {
   actorId: string;
-  matchedRoles: string[];
+  matchedRoles: readonly string[];
 }
 
 export interface OperatorActivationSummary {
@@ -43,7 +43,7 @@ export interface OperatorActivationSummary {
   activationEnabled: false;
   activationBlocked: true;
   realMoneyMovementAllowed: false;
-  reasons: string[];
+  reasons: readonly string[];
   evaluatedAt: string | null;
 }
 
@@ -55,7 +55,7 @@ export interface OperatorDeploymentSummary {
     passed: number;
     blocked: number;
   };
-  blockers: string[];
+  blockers: readonly string[];
   externalReadOnlyAttestationPresent: boolean;
   gitSha: string | null;
   preparedAt: string | null;
@@ -77,7 +77,7 @@ export interface OperatorReadinessSnapshot {
   environment: 'live-candidate' | 'unavailable';
   readOnly: true;
   operator: OperatorIdentitySummary | null;
-  visibleResources: OperatorResource[];
+  visibleResources: readonly OperatorResource[];
   activation: OperatorActivationSummary | null;
   deployment: OperatorDeploymentSummary | null;
   account: OperatorAccountSummary | null;
@@ -152,7 +152,7 @@ export function createUnavailableOperatorSnapshot(
     environment: 'unavailable',
     readOnly: true,
     operator: null,
-    visibleResources: Object.freeze([]) as OperatorResource[],
+    visibleResources: Object.freeze([]) as readonly OperatorResource[],
     activation: null,
     deployment: null,
     account: null,
@@ -206,14 +206,14 @@ export function normalizeOperatorReadinessSnapshot(value: unknown): OperatorRead
     generatedAt: stringValue(root.generatedAt) ?? new Date().toISOString(),
     environment: 'live-candidate',
     readOnly: true,
-    operator: Object.freeze({ actorId, matchedRoles: Object.freeze(matchedRoles) as string[] }),
+    operator: Object.freeze({ actorId, matchedRoles: Object.freeze(matchedRoles) }),
     visibleResources: Object.freeze(visibleResources),
     activation: Object.freeze({
       liveReady: false,
       activationEnabled: false,
       activationBlocked: true,
       realMoneyMovementAllowed: false,
-      reasons: Object.freeze(stringArray(activationRecord.reasons, 30)) as string[],
+      reasons: Object.freeze(stringArray(activationRecord.reasons, 30)),
       evaluatedAt: stringValue(activationRecord.evaluatedAt),
     }),
     deployment: visibleResources.includes('DEPLOYMENT_READINESS')
@@ -223,7 +223,7 @@ export function normalizeOperatorReadinessSnapshot(value: unknown): OperatorRead
             deploymentStatus === 'READY_FOR_NON_LIVE_DEPLOYMENT_REVIEW'
             && deploymentRecord.readyForNonLiveDeploymentReview === true,
           checks: Object.freeze({ total, passed, blocked }),
-          blockers: Object.freeze(stringArray(deploymentRecord.blockers, 14)) as string[],
+          blockers: Object.freeze(stringArray(deploymentRecord.blockers, 14)),
           externalReadOnlyAttestationPresent:
             deploymentRecord.externalReadOnlyAttestationPresent === true,
           gitSha: stringValue(deploymentRecord.gitSha),
