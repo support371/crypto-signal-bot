@@ -27,6 +27,9 @@ const SHA256_PATTERN = /^[a-f0-9]{64}$/
 const RATE_ACCOUNT_STORAGE_KEY = 'bitget-demo-runtime-rate-account'
 const MAX_RATE_REQUEST_BYTES = 4_096
 
+type FreshControlLoadInput = Parameters<BitgetDemoFreshControlEvidenceLoader['load']>[0]
+type RecoveryBoundaryInput = Parameters<BitgetDemoReadOnlyRecoveryBoundary['recover']>[0]
+
 interface PermanentDemoLocks {
   liveExecutionAllowed: false
   realFundsAllowed: false
@@ -147,7 +150,7 @@ export function createVerifiedBitgetDemoFreshControlLoader(
     throw new BitgetDemoRuntimeAdapterError('CONTROL_SOURCE_REQUIRED', 'fresh control source is required')
   }
   return Object.freeze({
-    async load(input) {
+    async load(input: FreshControlLoadInput): Promise<BitgetDemoFreshControlEvidenceInput> {
       const evidence = await source.reload(input)
       await verifyFreshBitgetDemoControlEvidence(
         evidence,
@@ -353,7 +356,7 @@ export function createBitgetDemoGetOnlyRecoveryBoundary(
     throw new BitgetDemoRuntimeAdapterError('RECOVERY_SOURCE_REQUIRED', 'GET-only recovery source is required')
   }
   return Object.freeze({
-    async recover(input): Promise<BitgetDemoReadOnlyRecoveryReceipt> {
+    async recover(input: RecoveryBoundaryInput): Promise<BitgetDemoReadOnlyRecoveryReceipt> {
       const requestedAt = canonicalTimestamp(input.requestedAt, 'requestedAt')
       requiredHash(input.resultHash, 'resultHash')
       requiredHash(input.lookupPlanHash, 'lookupPlanHash')
