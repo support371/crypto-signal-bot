@@ -19,10 +19,14 @@ function role(overrides: Partial<ScopedRole> = {}): ScopedRole {
 }
 
 class FakeStatement {
-  constructor(private readonly row: Record<string, unknown> | null) {}
+  private readonly storedRow: Record<string, unknown> | null
+
+  constructor(row: Record<string, unknown> | null) {
+    this.storedRow = row
+  }
 
   async first<T>(): Promise<T | null> {
-    return this.row as T | null
+    return this.storedRow as T | null
   }
 }
 
