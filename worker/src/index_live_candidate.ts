@@ -78,6 +78,7 @@ export default {
         readiness_endpoint: '/v1/live/readiness',
         operator_read_prefix: '/v1/operator/',
         operator_deployment_readiness_endpoint: '/v1/operator/deployment-readiness',
+        operator_operational_readiness_endpoint: '/v1/operator/operational-readiness',
         reason: 'Candidate entrypoint is intentionally read-only',
       })
     }
