@@ -7,6 +7,9 @@ const app = await readFile(new URL('../src/AppCore.tsx', import.meta.url), 'utf8
 const layout = await readFile(new URL('../src/components/LayoutCore.tsx', import.meta.url), 'utf8');
 const gateway = await readFile(new URL('../api/operator/readiness.js', import.meta.url), 'utf8');
 const tests = await readFile(new URL('../src/tests/operator_readiness_contracts.test.ts', import.meta.url), 'utf8');
+const operationalTests = await readFile(new URL('../src/tests/operator_operational_readiness_contract.test.ts', import.meta.url), 'utf8');
+const gatewayContract = await readFile(new URL('../docs/OPERATOR_IDENTITY_GATEWAY_CONTRACT.md', import.meta.url), 'utf8');
+const responseSchema = await readFile(new URL('../contracts/operator-readiness-response.schema.json', import.meta.url), 'utf8');
 const browserBoundary = `${client}\n${page}`;
 
 for (const required of [
@@ -19,6 +22,8 @@ for (const required of [
   'hasPermanentFalseLocks',
   "gatewayStatus: 'available'",
   "'invalid_response'",
+  "'OPERATIONAL_REHEARSAL'",
+  'operationalScenarios',
   'activationEnabled: false',
   'activationBlocked: true',
   'realMoneyMovementAllowed: false',
@@ -42,6 +47,8 @@ for (const required of [
   'This page cannot submit orders',
   'The browser cannot supply one.',
   'Review-ready does not authorize deployment.',
+  'Operational rehearsal evidence',
+  'Evidence is review-only and cannot run an operation.',
 ]) {
   assert.ok(page.includes(required), `operator frontend page must include ${required}`);
 }
@@ -63,6 +70,27 @@ for (const required of [
 }
 
 for (const required of [
+  'server-verified session',
+  'MFA or step-up assurance',
+  'OPERATIONAL_REHEARSAL',
+  'The current 503 placeholder may be replaced only after',
+  'does not permit a Bitget demo request',
+]) {
+  assert.ok(gatewayContract.includes(required), `identity gateway contract must include ${required}`);
+}
+
+for (const required of [
+  '"additionalProperties": false',
+  '"OPERATIONAL_REHEARSAL"',
+  '"READY_FOR_INDEPENDENT_REVIEW"',
+  '"deploymentAllowed": { "const": false }',
+  '"executionAllowed": { "const": false }',
+  '"withdrawalsAllowed": { "const": false }',
+]) {
+  assert.ok(responseSchema.includes(required), `operator response schema must include ${required}`);
+}
+
+for (const required of [
   'path="/operator-readiness"',
   '<ProtectedPage>',
 ]) {
@@ -70,6 +98,8 @@ for (const required of [
 }
 assert.ok(layout.includes('to="/operator-readiness"'), 'operator frontend navigation link is missing');
 assert.ok(tests.includes('operator readiness browser source safety'), 'operator frontend source-safety test is missing');
+assert.ok(operationalTests.includes('operational readiness frontend mapping'), 'operational frontend mapping test is missing');
+assert.ok(operationalTests.includes("not.toContain('evidenceHash')"), 'operational evidence-hash minimization test is missing');
 
 for (const forbidden of [
   /localStorage/i,
