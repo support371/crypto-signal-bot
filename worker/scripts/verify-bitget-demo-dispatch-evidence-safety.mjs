@@ -24,12 +24,14 @@ const orchestratorPath = 'worker/src/live/adapters/bitget/demo-dispatch-orchestr
 const runnerPath = 'worker/src/live/adapters/bitget/demo-certification-runner.ts'
 const certificationStorePath = 'worker/src/live/adapters/bitget/demo-certification-evidence-store.ts'
 const controlBindingStorePath = 'worker/src/live/adapters/bitget/demo-control-binding-store.ts'
+const compositionPath = 'worker/src/live/adapters/bitget/demo-certification-composition.ts'
 const migrationPath = 'worker/migrations/025_live_bitget_demo_dispatch_evidence.sql'
 const allowedSourceImporters = new Set([
   orchestratorPath,
   runnerPath,
   certificationStorePath,
   controlBindingStorePath,
+  compositionPath,
 ])
 const store = read(storePath)
 const orchestrator = read(orchestratorPath)
