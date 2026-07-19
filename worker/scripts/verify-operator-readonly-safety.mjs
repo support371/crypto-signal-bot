@@ -96,6 +96,8 @@ for (const required of [
   'providerMutationAllowed: false',
   'executionAllowed: false',
   'withdrawalsAllowed: false',
+  'LOCKED_OPERATOR_READ_HTTP_DEPENDENCIES',
+  'readiness_evaluator_not_injected',
 ]) {
   assert.ok(operatorHttp.includes(required), `operator HTTP router must include ${required}`)
 }
@@ -111,7 +113,8 @@ for (const required of [
 }
 
 for (const required of [
-  'routeOperatorReadRequest(request, env)',
+  'routeOperatorReadRequest(request, env, {',
+  'evaluateLiveCandidateReadiness,',
   'liveCandidatePreflight(request, env)',
   'withLiveCandidateSecurityHeaders(request, env',
   "operator_read_prefix: '/v1/operator/'",
