@@ -11,6 +11,7 @@ const Index = lazy(() => import('./pages/Index'));
 const Infrastructure = lazy(() => import('./pages/Infrastructure'));
 const IntegrationsStatus = lazy(() => import('./pages/IntegrationsStatus'));
 const NotFound = lazy(() => import('./pages/NotFound'));
+const OperatorReadiness = lazy(() => import('./pages/OperatorReadiness'));
 const Portfolio = lazy(() => import('./pages/Portfolio'));
 const PublicHome = lazy(() => import('./pages/PublicHome'));
 const Settings = lazy(() => import('./pages/Settings'));
@@ -102,6 +103,14 @@ export default function AppCore() {
               element={
                 <ProtectedPage>
                   <Infrastructure />
+                </ProtectedPage>
+              }
+            />
+            <Route
+              path="/operator-readiness"
+              element={
+                <ProtectedPage>
+                  <OperatorReadiness />
                 </ProtectedPage>
               }
             />
