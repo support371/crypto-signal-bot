@@ -28,10 +28,24 @@ export type OperatorReadHttpEnv = OperatorReadAuthEnv
   & LiveCandidateResponseEnv
 
 export interface OperatorReadHttpDependencies {
-  evaluateLiveCandidateReadiness(
-    env: OperatorReadHttpEnv,
-  ): Promise<Readonly<Record<string, unknown>>>
+  evaluateLiveCandidateReadiness(env: OperatorReadHttpEnv): Promise<object>
 }
+
+const LOCKED_OPERATOR_READ_HTTP_DEPENDENCIES: OperatorReadHttpDependencies = Object.freeze({
+  async evaluateLiveCandidateReadiness(): Promise<object> {
+    return Object.freeze({
+      liveReady: false,
+      withdrawalsReady: false,
+      environment: 'live-candidate',
+      reasons: Object.freeze(['readiness_evaluator_not_injected']),
+      checks: Object.freeze({ candidate_execution_path_locked: true }),
+      releaseId: null,
+      gitSha: '',
+      evaluatedAt: new Date().toISOString(),
+      authorizationEvidenceSatisfied: false,
+    })
+  },
+})
 
 function requiredQuery(url: URL, name: string): string | null {
   const value = url.searchParams.get(name)?.trim() ?? ''
@@ -182,7 +196,7 @@ async function handleOperatorRead(
 export async function routeOperatorReadRequest(
   request: Request,
   env: OperatorReadHttpEnv,
-  dependencies: OperatorReadHttpDependencies,
+  dependencies: OperatorReadHttpDependencies = LOCKED_OPERATOR_READ_HTTP_DEPENDENCIES,
 ): Promise<Response | null> {
   const url = new URL(request.url)
   if (!url.pathname.startsWith(OPERATOR_READ_PREFIX)) return null
