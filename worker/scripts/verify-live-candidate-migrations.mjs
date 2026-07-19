@@ -11,24 +11,23 @@ const migrations = fs.readdirSync(migrationsRoot)
     const match = /^(\d{3})_.*\.sql$/.exec(name)
     if (!match) return false
     const sequence = Number(match[1])
-    return sequence >= 3 && sequence <= 26
+    return sequence >= 3 && sequence <= 27
   })
   .sort()
 
 if (migrations[0] !== '003_live_release_authorizations.sql') {
   throw new Error('live-candidate migration sequence must start at 003')
 }
-if (migrations.at(-1) !== '026_live_bitget_demo_certification_evidence.sql') {
-  throw new Error('live-candidate migration sequence must end at 026')
+if (migrations.at(-1) !== '027_live_bitget_demo_control_bindings.sql') {
+  throw new Error('live-candidate migration sequence must end at 027')
 }
-if (!migrations.includes('020_live_recovery_accounting_dispatch_attempts.sql')) {
-  throw new Error('migration 020 dispatch-attempt boundary is missing')
-}
-if (!migrations.includes('025_live_bitget_demo_dispatch_evidence.sql')) {
-  throw new Error('migration 025 Bitget demo evidence boundary is missing')
-}
-if (!migrations.includes('026_live_bitget_demo_certification_evidence.sql')) {
-  throw new Error('migration 026 Bitget demo certification evidence boundary is missing')
+for (const required of [
+  '020_live_recovery_accounting_dispatch_attempts.sql',
+  '025_live_bitget_demo_dispatch_evidence.sql',
+  '026_live_bitget_demo_certification_evidence.sql',
+  '027_live_bitget_demo_control_bindings.sql',
+]) {
+  if (!migrations.includes(required)) throw new Error(`required live migration is missing: ${required}`)
 }
 
 const upgradeMigrations = migrations.filter((name) => Number(name.slice(0, 3)) >= 20)
@@ -134,28 +133,60 @@ function verifyBitgetDemoEvidenceConstraints(db) {
       'migration_verifier_pre_send_block', '${hash('3')}', 0, '{}',
       '${hash('4')}', 0, 0, 0, 0, '2026-07-18T03:00:31.000Z'
     );
+
+    INSERT INTO live_candidate_assessments (
+      assessment_id, internal_order_id, exchange_account_id, provider,
+      idempotency_key, request_hash, preview_hash, evidence_hash, status,
+      operational_checks_passed, execution_allowed, preview_json,
+      risk_decision_json, reasons_json, coordinator_id,
+      coordinator_sequence, committed_at
+    ) VALUES (
+      'migration-027-assessment', 'migration-027-order',
+      'migration-025-account', 'BITGET', 'migration-027-idempotency-key',
+      '${hash('5')}', '${hash('6')}', '${hash('7')}',
+      'READY_BUT_EXECUTION_LOCKED', 1, 0, '{}',
+      '{"decisionId":"migration-027-risk","approved":true,"rules":[],"configurationVersion":"v1","decidedAt":"2026-07-18T03:00:29.000Z"}',
+      '[]', 'migration-027-coordinator', 1, '2026-07-18T03:00:29.000Z'
+    );
+    INSERT INTO idempotency_records (
+      operation_scope, idempotency_key, request_hash, operation_id,
+      exchange_account_id, actor_id, status, expires_at
+    ) VALUES (
+      'BITGET_DEMO_PLACE', 'migration-027-idempotency-key', '${hash('8')}',
+      'migration-027-operation', 'migration-025-account',
+      'migration-025-reviewer', 'CLAIMED', '2026-07-18T03:02:00.000Z'
+    );
+    INSERT INTO live_bitget_demo_place_control_bindings (
+      binding_id, authorization_id, dispatch_attempt_id,
+      exchange_account_id, candidate_hash, operation, product_symbol,
+      assessment_id, assessment_evidence_hash, preview_hash,
+      risk_decision_id, risk_configuration_version, risk_decision_hash,
+      guardian_scopes_json, guardian_scope_count, guardian_scope_set_hash,
+      guardian_reviewed_state_hash, idempotency_operation_id,
+      idempotency_operation_scope, idempotency_key_hash,
+      control_binding_hash, bound_at
+    ) VALUES (
+      'migration-027-binding', 'migration-025-authorization',
+      'migration-025-attempt', 'migration-025-account', '${hash('b')}',
+      'PLACE', 'BTCUSDT', 'migration-027-assessment', '${hash('7')}',
+      '${hash('6')}', 'migration-027-risk', 'v1', '${hash('9')}',
+      '[{"scopeType":"GLOBAL","scopeKey":"global"}]', 1,
+      '${hash('0')}', '${hash('a')}', 'migration-027-operation',
+      'BITGET_DEMO_PLACE', '${hash('b')}', '${hash('c')}',
+      '2026-07-18T03:00:30.000Z'
+    );
   `)
 
-  expectRejected(
-    db,
-    "UPDATE live_bitget_demo_dispatch_authorizations SET mainnet_allowed = 1 WHERE authorization_id = 'migration-025-authorization';",
-    'immutable Bitget demo authorization update',
-  )
-  expectRejected(
-    db,
-    "UPDATE live_bitget_demo_dispatch_claims SET automatically_retried = 1 WHERE dispatch_attempt_id = 'migration-025-attempt';",
-    'immutable Bitget demo claim update',
-  )
-  expectRejected(
-    db,
-    "DELETE FROM live_bitget_demo_dispatch_results WHERE dispatch_attempt_id = 'migration-025-attempt';",
-    'immutable Bitget demo result deletion',
-  )
-  expectRejected(
-    db,
-    "UPDATE live_bitget_demo_control_verifications SET automatically_retried = 1 WHERE dispatch_attempt_id = 'migration-025-attempt';",
-    'immutable Bitget demo fresh-control verification update',
-  )
+  for (const [sql, label] of [
+    ["UPDATE live_bitget_demo_dispatch_authorizations SET mainnet_allowed = 1 WHERE authorization_id = 'migration-025-authorization';", 'immutable Bitget demo authorization update'],
+    ["UPDATE live_bitget_demo_dispatch_claims SET automatically_retried = 1 WHERE dispatch_attempt_id = 'migration-025-attempt';", 'immutable Bitget demo claim update'],
+    ["DELETE FROM live_bitget_demo_dispatch_results WHERE dispatch_attempt_id = 'migration-025-attempt';", 'immutable Bitget demo result deletion'],
+    ["UPDATE live_bitget_demo_control_verifications SET automatically_retried = 1 WHERE dispatch_attempt_id = 'migration-025-attempt';", 'immutable Bitget demo fresh-control verification update'],
+    ["UPDATE live_bitget_demo_place_control_bindings SET execution_allowed = 1 WHERE binding_id = 'migration-027-binding';", 'immutable Bitget demo control-binding update'],
+    ["DELETE FROM live_bitget_demo_place_control_bindings WHERE binding_id = 'migration-027-binding';", 'immutable Bitget demo control-binding deletion'],
+  ]) {
+    expectRejected(db, sql, label)
+  }
 }
 
 const emptyDatabase = database()
@@ -169,12 +200,12 @@ try {
 const upgradeDatabase = database()
 try {
   apply(upgradeDatabase, baselineMigrations, 'upgrade baseline through migration 019')
-  apply(upgradeDatabase, upgradeMigrations, 'upgrade from migration 019 through migration 026')
-  apply(upgradeDatabase, upgradeMigrations, 'idempotent replay of migrations 020 through 026')
+  apply(upgradeDatabase, upgradeMigrations, 'upgrade from migration 019 through migration 027')
+  apply(upgradeDatabase, upgradeMigrations, 'idempotent replay of migrations 020 through 027')
 } finally {
   upgradeDatabase.close()
 }
 
 console.log(
-  `Live-candidate empty and upgrade paths verified (${migrations.length} files; migrations 020-026 replayed).`,
+  `Live-candidate empty and upgrade paths verified (${migrations.length} files; migrations 020-027 replayed).`,
 )
