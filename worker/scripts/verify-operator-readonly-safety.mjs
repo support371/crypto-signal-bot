@@ -3,8 +3,12 @@ import { readFile } from 'node:fs/promises'
 
 const auth = await readFile(new URL('../src/live/operator-read-auth.ts', import.meta.url), 'utf8')
 const model = await readFile(new URL('../src/live/operator-read-model.ts', import.meta.url), 'utf8')
+const deploymentModel = await readFile(
+  new URL('../src/live/operator-deployment-readiness-read-model.ts', import.meta.url),
+  'utf8',
+)
 const entrypoint = await readFile(new URL('../src/index_live_candidate.ts', import.meta.url), 'utf8')
-const combined = `${auth}\n${model}`
+const combined = `${auth}\n${model}\n${deploymentModel}`
 
 for (const required of [
   'OPERATOR_API_KEY_HASHES',
@@ -15,6 +19,7 @@ for (const required of [
   "scopeType === 'GLOBAL'",
   "scopeType === 'EXCHANGE'",
   'exchangeAccountId',
+  "'DEPLOYMENT_READINESS'",
   "status: 'NOT_CONFIGURED'",
   "status: 'UNAUTHENTICATED'",
   "status: 'FORBIDDEN'",
@@ -35,17 +40,55 @@ for (const required of [
 }
 
 for (const required of [
+  'live_bitget_demo_deployment_readiness_manifests',
+  'ORDER BY prepared_at DESC, created_at DESC',
+  'capabilityLocksValid',
+  'stored_capability_lock_violation',
+  'externalReadOnlyAttestationPresent',
+  'readyForNonLiveDeploymentReview',
+  'deploymentAllowed: false',
+  'demoRequestAllowed: false',
+  'credentialsRead: false',
+  'providerMutationAllowed: false',
+  'executionAllowed: false',
+]) {
+  assert.ok(
+    deploymentModel.includes(required),
+    `deployment readiness read model must include ${required}`,
+  )
+}
+
+for (const forbidden of [
+  'manifest_id:',
+  'manifest_hash:',
+  'external_attestation_id:',
+  'evidence_hashes_json:',
+  'prepared_by:',
+]) {
+  assert.ok(
+    !deploymentModel.includes(forbidden),
+    `deployment readiness response must not expose ${forbidden}`,
+  )
+}
+
+for (const required of [
   '/v1/operator/activation-gate',
+  '/v1/operator/deployment-readiness',
   '/v1/operator/certification',
   '/v1/operator/recovery-readiness',
   '/v1/operator/reconciliation',
   '/v1/operator/alerts',
   '/v1/operator/audit-head',
+  "resource === 'DEPLOYMENT_READINESS'",
+  'readLatestBitgetDemoDeploymentReadiness',
   "method !== 'GET' && method !== 'HEAD'",
   'Operator mutation routes are disabled',
   'activationEnabled: false',
   'activationBlocked: true',
   'realMoneyMovementAllowed: false',
+  'deploymentAllowed: false',
+  'demoRequestAllowed: false',
+  'credentialsRead: false',
   'providerMutationAllowed: false',
   'executionAllowed: false',
   'withdrawalsAllowed: false',
@@ -79,6 +122,9 @@ for (const forbidden of [
   'executionAllowed: true',
   'withdrawalsAllowed: true',
   'activationEnabled: true',
+  'deploymentAllowed: true',
+  'demoRequestAllowed: true',
+  'credentialsRead: true',
   "'Access-Control-Allow-Methods': 'GET, POST",
 ]) {
   assert.ok(!entrypoint.includes(forbidden), `live candidate operator routes must forbid ${forbidden}`)
