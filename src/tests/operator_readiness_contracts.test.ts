@@ -170,11 +170,12 @@ describe('operator readiness gateway transport', () => {
 
 describe('operator readiness browser source safety', () => {
   it('contains no browser credential storage or direct operator Worker transport', async () => {
-    const [client, page, app, layout] = await Promise.all([
+    const [client, page, app, layout, gateway] = await Promise.all([
       readFile(new URL('../lib/operatorReadinessApi.ts', import.meta.url), 'utf8'),
       readFile(new URL('../pages/OperatorReadiness.tsx', import.meta.url), 'utf8'),
       readFile(new URL('../AppCore.tsx', import.meta.url), 'utf8'),
       readFile(new URL('../components/LayoutCore.tsx', import.meta.url), 'utf8'),
+      readFile(new URL('../../api/operator/readiness.js', import.meta.url), 'utf8'),
     ]);
     const browserBoundary = `${client}\n${page}`;
 
@@ -193,8 +194,28 @@ describe('operator readiness browser source safety', () => {
       expect(browserBoundary).not.toMatch(forbidden);
     }
 
+    for (const forbidden of [
+      /request\.headers/i,
+      /request\.body/i,
+      /process\.env/i,
+      /fetch\s*\(/i,
+      /Authorization/i,
+      /X-API-Key/i,
+      /X-Operator-Id/i,
+      /secret/i,
+      /credential/i,
+      /providerMutationAllowed:\s*true/i,
+      /executionAllowed:\s*true/i,
+      /withdrawalsAllowed:\s*true/i,
+    ]) {
+      expect(gateway).not.toMatch(forbidden);
+    }
+
     expect(client).toContain("credentials: 'same-origin'");
     expect(client).toContain("OPERATOR_READINESS_GATEWAY_PATH = '/api/operator/readiness'");
+    expect(gateway).toContain("code: 'OPERATOR_IDENTITY_GATEWAY_NOT_CONFIGURED'");
+    expect(gateway).toContain('sendJson(response, 503');
+    expect(gateway).toContain("response.setHeader('Allow', 'GET, HEAD, OPTIONS')");
     expect(app).toContain('path="/operator-readiness"');
     expect(app).toContain('<ProtectedPage>');
     expect(layout).toContain('to="/operator-readiness"');
