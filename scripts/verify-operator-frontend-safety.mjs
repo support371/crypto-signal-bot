@@ -5,8 +5,9 @@ const client = await readFile(new URL('../src/lib/operatorReadinessApi.ts', impo
 const page = await readFile(new URL('../src/pages/OperatorReadiness.tsx', import.meta.url), 'utf8');
 const app = await readFile(new URL('../src/AppCore.tsx', import.meta.url), 'utf8');
 const layout = await readFile(new URL('../src/components/LayoutCore.tsx', import.meta.url), 'utf8');
+const gateway = await readFile(new URL('../api/operator/readiness.js', import.meta.url), 'utf8');
 const tests = await readFile(new URL('../src/tests/operator_readiness_contracts.test.ts', import.meta.url), 'utf8');
-const combined = `${client}\n${page}`;
+const browserBoundary = `${client}\n${page}`;
 
 for (const required of [
   "OPERATOR_READINESS_GATEWAY_PATH = '/api/operator/readiness'",
@@ -46,6 +47,22 @@ for (const required of [
 }
 
 for (const required of [
+  "code: 'OPERATOR_IDENTITY_GATEWAY_NOT_CONFIGURED'",
+  'sendJson(response, 503',
+  "response.setHeader('Allow', 'GET, HEAD, OPTIONS')",
+  "'X-Operator-Gateway': 'not-configured'",
+  'gatewayConfigured: false',
+  'activationEnabled: false',
+  'deploymentAllowed: false',
+  'providerMutationAllowed: false',
+  'executionAllowed: false',
+  'realMoneyMovementAllowed: false',
+  'withdrawalsAllowed: false',
+]) {
+  assert.ok(gateway.includes(required), `operator gateway placeholder must include ${required}`);
+}
+
+for (const required of [
   'path="/operator-readiness"',
   '<ProtectedPage>',
 ]) {
@@ -77,7 +94,24 @@ for (const forbidden of [
   /automaticRetryAllowed:\s*true/i,
   /accountingAutomaticallyDispatched:\s*true/i,
 ]) {
-  assert.doesNotMatch(combined, forbidden, `operator frontend boundary must not match ${forbidden}`);
+  assert.doesNotMatch(browserBoundary, forbidden, `operator frontend boundary must not match ${forbidden}`);
+}
+
+for (const forbidden of [
+  /request\.headers/i,
+  /request\.body/i,
+  /process\.env/i,
+  /fetch\s*\(/i,
+  /Authorization/i,
+  /X-API-Key/i,
+  /X-Operator-Id/i,
+  /secret/i,
+  /credential/i,
+  /providerMutationAllowed:\s*true/i,
+  /executionAllowed:\s*true/i,
+  /withdrawalsAllowed:\s*true/i,
+]) {
+  assert.doesNotMatch(gateway, forbidden, `operator gateway placeholder must not match ${forbidden}`);
 }
 
 console.log('operator frontend safety verified');
