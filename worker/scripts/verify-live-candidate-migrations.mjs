@@ -11,15 +11,15 @@ const migrations = fs.readdirSync(migrationsRoot)
     const match = /^(\d{3})_.*\.sql$/.exec(name)
     if (!match) return false
     const sequence = Number(match[1])
-    return sequence >= 3 && sequence <= 28
+    return sequence >= 3 && sequence <= 29
   })
   .sort()
 
 if (migrations[0] !== '003_live_release_authorizations.sql') {
   throw new Error('live-candidate migration sequence must start at 003')
 }
-if (migrations.at(-1) !== '028_live_bitget_demo_deployment_readiness.sql') {
-  throw new Error('live-candidate migration sequence must end at 028')
+if (migrations.at(-1) !== '029_live_bitget_demo_operational_rehearsals.sql') {
+  throw new Error('live-candidate migration sequence must end at 029')
 }
 for (const required of [
   '020_live_recovery_accounting_dispatch_attempts.sql',
@@ -27,6 +27,7 @@ for (const required of [
   '026_live_bitget_demo_certification_evidence.sql',
   '027_live_bitget_demo_control_bindings.sql',
   '028_live_bitget_demo_deployment_readiness.sql',
+  '029_live_bitget_demo_operational_rehearsals.sql',
 ]) {
   if (!migrations.includes(required)) throw new Error(`required live migration is missing: ${required}`)
 }
@@ -188,6 +189,17 @@ function verifyBitgetDemoEvidenceConstraints(db) {
       '["external evidence missing"]', 'BLOCKED', 0, '${hash('e')}',
       'migration-028-preparer', '2026-07-18T03:00:32.000Z'
     );
+
+    INSERT INTO live_bitget_demo_operational_rehearsal_packs (
+      pack_id, git_sha, scenarios_json, scenario_count, passed_count,
+      blockers_json, status, ready_for_independent_review, pack_hash,
+      prepared_by, prepared_at
+    ) VALUES (
+      'migration-029-blocked', '${'e'.repeat(40)}',
+      '[{"name":"ROLLBACK_TO_KNOWN_GOOD"},{"name":"DISASTER_RECOVERY_RESTORE"},{"name":"ACCESS_REFERENCE_ROTATION"},{"name":"PROVIDER_OUTAGE_FAIL_CLOSED"},{"name":"INCIDENT_ESCALATION_AND_CONTAINMENT"}]',
+      5, 0, '["rehearsals not externally observed"]', 'BLOCKED', 0,
+      '${hash('f')}', 'migration-029-preparer', '2026-07-18T03:00:33.000Z'
+    );
   `)
 
   for (const [sql, label] of [
@@ -199,6 +211,8 @@ function verifyBitgetDemoEvidenceConstraints(db) {
     ["DELETE FROM live_bitget_demo_place_control_bindings WHERE binding_id = 'migration-027-binding';", 'immutable Bitget demo control-binding deletion'],
     ["UPDATE live_bitget_demo_deployment_readiness_manifests SET deployment_allowed = 1 WHERE manifest_id = 'migration-028-blocked';", 'immutable Bitget demo readiness update'],
     ["DELETE FROM live_bitget_demo_deployment_readiness_manifests WHERE manifest_id = 'migration-028-blocked';", 'immutable Bitget demo readiness deletion'],
+    ["UPDATE live_bitget_demo_operational_rehearsal_packs SET deployment_allowed = 1 WHERE pack_id = 'migration-029-blocked';", 'immutable operational rehearsal update'],
+    ["DELETE FROM live_bitget_demo_operational_rehearsal_packs WHERE pack_id = 'migration-029-blocked';", 'immutable operational rehearsal deletion'],
   ]) {
     expectRejected(db, sql, label)
   }
@@ -215,12 +229,12 @@ try {
 const upgradeDatabase = database()
 try {
   apply(upgradeDatabase, baselineMigrations, 'upgrade baseline through migration 019')
-  apply(upgradeDatabase, upgradeMigrations, 'upgrade from migration 019 through migration 028')
-  apply(upgradeDatabase, upgradeMigrations, 'idempotent replay of migrations 020 through 028')
+  apply(upgradeDatabase, upgradeMigrations, 'upgrade from migration 019 through migration 029')
+  apply(upgradeDatabase, upgradeMigrations, 'idempotent replay of migrations 020 through 029')
 } finally {
   upgradeDatabase.close()
 }
 
 console.log(
-  `Live-candidate empty and upgrade paths verified (${migrations.length} files; migrations 020-028 replayed).`,
+  `Live-candidate empty and upgrade paths verified (${migrations.length} files; migrations 020-029 replayed).`,
 )
