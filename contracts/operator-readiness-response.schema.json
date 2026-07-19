@@ -1,0 +1,252 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crypto-signal-bot.invalid/contracts/operator-readiness-response.schema.json",
+  "title": "Sanitized Operator Readiness Response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "environment",
+    "readOnly",
+    "generatedAt",
+    "operator",
+    "visibleResources",
+    "activation",
+    "deployment",
+    "operational",
+    "account",
+    "locks"
+  ],
+  "properties": {
+    "environment": { "const": "live-candidate" },
+    "readOnly": { "const": true },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "operator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actorId", "matchedRoles"],
+      "properties": {
+        "actorId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "matchedRoles": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["VIEWER", "RISK_OPERATOR", "RISK_ADMIN", "AUDITOR", "RELEASE_ADMIN"]
+          }
+        }
+      }
+    },
+    "visibleResources": {
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "ACTIVATION_GATE",
+          "DEPLOYMENT_READINESS",
+          "OPERATIONAL_REHEARSAL",
+          "CERTIFICATION",
+          "RECOVERY_READINESS",
+          "RECONCILIATION",
+          "ALERTS",
+          "AUDIT_HEAD"
+        ]
+      }
+    },
+    "activation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "liveReady",
+        "activationEnabled",
+        "activationBlocked",
+        "realMoneyMovementAllowed",
+        "reasons",
+        "evaluatedAt"
+      ],
+      "properties": {
+        "liveReady": { "const": false },
+        "activationEnabled": { "const": false },
+        "activationBlocked": { "const": true },
+        "realMoneyMovementAllowed": { "const": false },
+        "reasons": {
+          "type": "array",
+          "maxItems": 30,
+          "items": { "type": "string", "maxLength": 512 }
+        },
+        "evaluatedAt": {
+          "oneOf": [
+            { "type": "string", "format": "date-time" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "deployment": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "readyForNonLiveDeploymentReview",
+            "checks",
+            "blockers",
+            "externalReadOnlyAttestationPresent",
+            "gitSha",
+            "preparedAt"
+          ],
+          "properties": {
+            "status": { "enum": ["BLOCKED", "READY_FOR_NON_LIVE_DEPLOYMENT_REVIEW"] },
+            "readyForNonLiveDeploymentReview": { "type": "boolean" },
+            "checks": { "$ref": "#/$defs/checkCounts" },
+            "blockers": {
+              "type": "array",
+              "maxItems": 14,
+              "items": { "type": "string", "maxLength": 512 }
+            },
+            "externalReadOnlyAttestationPresent": { "type": "boolean" },
+            "gitSha": { "$ref": "#/$defs/nullableGitSha" },
+            "preparedAt": { "$ref": "#/$defs/nullableDateTime" }
+          }
+        }
+      ]
+    },
+    "operational": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "readyForIndependentReview",
+            "checks",
+            "scenarios",
+            "blockers",
+            "gitSha",
+            "preparedAt"
+          ],
+          "properties": {
+            "status": { "enum": ["BLOCKED", "READY_FOR_INDEPENDENT_REVIEW"] },
+            "readyForIndependentReview": { "type": "boolean" },
+            "checks": { "$ref": "#/$defs/checkCounts" },
+            "scenarios": {
+              "type": "array",
+              "maxItems": 5,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "passed", "evidencePresent", "observedAt"],
+                "properties": {
+                  "name": {
+                    "enum": [
+                      "ROLLBACK_TO_KNOWN_GOOD",
+                      "DISASTER_RECOVERY_RESTORE",
+                      "ACCESS_REFERENCE_ROTATION",
+                      "PROVIDER_OUTAGE_FAIL_CLOSED",
+                      "INCIDENT_ESCALATION_AND_CONTAINMENT"
+                    ]
+                  },
+                  "passed": { "type": "boolean" },
+                  "evidencePresent": { "type": "boolean" },
+                  "observedAt": { "$ref": "#/$defs/nullableDateTime" }
+                }
+              }
+            },
+            "blockers": {
+              "type": "array",
+              "maxItems": 5,
+              "items": { "type": "string", "maxLength": 512 }
+            },
+            "gitSha": { "$ref": "#/$defs/nullableGitSha" },
+            "preparedAt": { "$ref": "#/$defs/nullableDateTime" }
+          }
+        }
+      ]
+    },
+    "account": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "accountId",
+            "productId",
+            "certificationStatus",
+            "recoveryReadinessStatus",
+            "reconciliationStatus",
+            "activeAlertCount",
+            "auditHeadAt"
+          ],
+          "properties": {
+            "accountId": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "productId": { "oneOf": [{ "type": "string", "maxLength": 128 }, { "type": "null" }] },
+            "certificationStatus": { "oneOf": [{ "type": "string", "maxLength": 128 }, { "type": "null" }] },
+            "recoveryReadinessStatus": { "oneOf": [{ "type": "string", "maxLength": 128 }, { "type": "null" }] },
+            "reconciliationStatus": { "oneOf": [{ "type": "string", "maxLength": 128 }, { "type": "null" }] },
+            "activeAlertCount": { "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }] },
+            "auditHeadAt": { "$ref": "#/$defs/nullableDateTime" }
+          }
+        }
+      ]
+    },
+    "locks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deploymentAllowed",
+        "demoRequestAllowed",
+        "credentialsRead",
+        "providerMutationAllowed",
+        "executionAllowed",
+        "liveExecutionAllowed",
+        "realFundsAllowed",
+        "mainnetAllowed",
+        "withdrawalsAllowed",
+        "automaticRetryAllowed",
+        "accountingAutomaticallyDispatched"
+      ],
+      "properties": {
+        "deploymentAllowed": { "const": false },
+        "demoRequestAllowed": { "const": false },
+        "credentialsRead": { "const": false },
+        "providerMutationAllowed": { "const": false },
+        "executionAllowed": { "const": false },
+        "liveExecutionAllowed": { "const": false },
+        "realFundsAllowed": { "const": false },
+        "mainnetAllowed": { "const": false },
+        "withdrawalsAllowed": { "const": false },
+        "automaticRetryAllowed": { "const": false },
+        "accountingAutomaticallyDispatched": { "const": false }
+      }
+    }
+  },
+  "$defs": {
+    "checkCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "passed", "blocked"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "passed": { "type": "integer", "minimum": 0 },
+        "blocked": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "nullableGitSha": {
+      "oneOf": [
+        { "type": "string", "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$" },
+        { "type": "null" }
+      ]
+    },
+    "nullableDateTime": {
+      "oneOf": [
+        { "type": "string", "format": "date-time" },
+        { "type": "null" }
+      ]
+    }
+  }
+}
