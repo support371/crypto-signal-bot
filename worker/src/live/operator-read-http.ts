@@ -1,8 +1,4 @@
 import {
-  evaluateLiveCandidateReadiness,
-  type LiveGateEnv,
-} from './release-gate.ts'
-import {
   authenticateOperatorRead,
   type OperatorReadAuthEnv,
   type OperatorReadResource,
@@ -26,11 +22,16 @@ import {
 
 export const OPERATOR_READ_PREFIX = '/v1/operator/'
 
-export type OperatorReadHttpEnv = LiveGateEnv
-  & OperatorReadAuthEnv
+export type OperatorReadHttpEnv = OperatorReadAuthEnv
   & OperatorDeploymentReadinessEnv
   & OperatorReadModelEnv
   & LiveCandidateResponseEnv
+
+export interface OperatorReadHttpDependencies {
+  evaluateLiveCandidateReadiness(
+    env: OperatorReadHttpEnv,
+  ): Promise<Readonly<Record<string, unknown>>>
+}
 
 function requiredQuery(url: URL, name: string): string | null {
   const value = url.searchParams.get(name)?.trim() ?? ''
@@ -79,6 +80,7 @@ async function handleOperatorRead(
   request: Request,
   env: OperatorReadHttpEnv,
   url: URL,
+  dependencies: OperatorReadHttpDependencies,
 ): Promise<Response> {
   const pathname = url.pathname
   const exchangeAccountId = requiredQuery(url, 'account_id')
@@ -88,7 +90,7 @@ async function handleOperatorRead(
     if (pathname === '/v1/operator/activation-gate') {
       const principal = await authorizeOperator(request, env, 'ACTIVATION_GATE', null)
       if (principal instanceof Response) return principal
-      const report = await evaluateLiveCandidateReadiness(env)
+      const report = await dependencies.evaluateLiveCandidateReadiness(env)
       return liveCandidateJson(request, env, {
         ...report,
         activationEnabled: false,
@@ -180,6 +182,7 @@ async function handleOperatorRead(
 export async function routeOperatorReadRequest(
   request: Request,
   env: OperatorReadHttpEnv,
+  dependencies: OperatorReadHttpDependencies,
 ): Promise<Response | null> {
   const url = new URL(request.url)
   if (!url.pathname.startsWith(OPERATOR_READ_PREFIX)) return null
@@ -192,5 +195,5 @@ export async function routeOperatorReadRequest(
     }, 403)
   }
 
-  return handleOperatorRead(request, env, url)
+  return handleOperatorRead(request, env, url, dependencies)
 }
