@@ -59,11 +59,11 @@ for (const required of [
 }
 
 for (const forbidden of [
-  'manifest_id:',
-  'manifest_hash:',
-  'external_attestation_id:',
-  'evidence_hashes_json:',
-  'prepared_by:',
+  'manifestId:',
+  'manifestHash:',
+  'externalAttestationId:',
+  'evidenceHashes:',
+  'preparedBy:',
 ]) {
   assert.ok(
     !deploymentModel.includes(forbidden),
