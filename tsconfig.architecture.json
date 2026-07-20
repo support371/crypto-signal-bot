@@ -1,18 +1,1 @@
-{
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "noEmit": true,
-    "types": ["vite/client"]
-  },
-  "include": [
-    "src/lib/env.ts",
-    "src/lib/backendRuntime.ts",
-    "src/lib/infrastructureApi.ts",
-    "src/lib/operatorReadinessApi.ts",
-    "src/pages/OperatorReadiness.tsx",
-    "src/types/**/*.d.ts"
-  ],
-  "references": []
-}
+{"extends":"./tsconfig.json","compilerOptions":{"noUnusedLocals":false,"noUnusedParameters":false,"noEmit":true,"types":["vite/client"]},"include":["src/lib/env.ts","src/lib/backendRuntime.ts","src/lib/infrastructureApi.ts","src/lib/operatorReadinessApi.ts","src/server/operatorIdentityGateway.ts","src/server/boundedOperatorIdentityGateway.ts","src/pages/OperatorReadiness.tsx","src/types/**/*.d.ts"],"references":[]}
