@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import {
+  fetchCertificationBackendHealth,
+  type CertificationBackendHealthSnapshot,
+} from '../lib/certificationBackendHealthApi';
 import { fetchCertificationStatus, type CertificationStatusSnapshot } from '../lib/certificationStatusApi';
 import { validateFrontendEnv } from '../lib/env';
 
@@ -8,8 +12,13 @@ type MirrorState =
   | { status: 'checking' }
   | { status: 'available'; snapshot: CertificationStatusSnapshot }
   | { status: 'unavailable'; message: string };
+type BackendHealthState =
+  | { status: 'checking' }
+  | { status: 'available'; snapshot: CertificationBackendHealthSnapshot }
+  | { status: 'unavailable'; message: string };
 
 const MIRROR_TIMEOUT_MS = 3_000;
+const BACKEND_DIAGNOSTIC_TIMEOUT_MS = 6_000;
 
 function StatusPill({ label, tone }: { label: string; tone: StatusTone }) {
   const classes: Record<StatusTone, string> = {
@@ -28,6 +37,7 @@ function StatusPill({ label, tone }: { label: string; tone: StatusTone }) {
 const BUILT_ITEMS = [
   'Public Certification Mode web interface and mobile-responsive application shell.',
   'Same-origin read-only certification status mirror with minimized deployment metadata and permanent capability locks.',
+  'Bounded server-side Worker reachability diagnostic that reads no upstream response body and performs no retries.',
   'Risk, accounting, reconciliation, recovery, audit, and operational-readiness contracts.',
   'Read-only provider normalization and source-only certification foundations.',
   'Eight-resource operator readiness model with minimized responses and permanent capability locks.',
@@ -36,7 +46,7 @@ const BUILT_ITEMS = [
 ] as const;
 
 const REMAINING_ITEMS = [
-  'Validate the configured dashboard backend from target networks and restore or replace it when unreachable.',
+  'Restore or replace the configured dashboard Worker when the server-side diagnostic confirms it is unreachable.',
   'Configure an approved authentication provider for protected user and operator routes.',
   'Connect the server-side identity gateway to verified sessions, roles, and account scope.',
   'Complete external provider attestations, infrastructure review, and independent release approval.',
@@ -55,10 +65,38 @@ function mirrorTone(mirror: MirrorState): StatusTone {
   return 'blocked';
 }
 
+function backendLabel(backend: BackendHealthState): string {
+  if (backend.status === 'checking') return 'checking from Vercel';
+  if (backend.status === 'unavailable') return 'diagnostic unavailable';
+  if (backend.snapshot.result.healthy) return 'reachable and healthy';
+  if (backend.snapshot.result.reachable) return 'reachable, unhealthy response';
+  return 'unreachable from Vercel';
+}
+
+function backendTone(backend: BackendHealthState): StatusTone {
+  if (backend.status === 'checking') return 'pending';
+  if (backend.status === 'available' && backend.snapshot.result.healthy) return 'available';
+  return 'blocked';
+}
+
+function backendMessage(backend: BackendHealthState): string {
+  if (backend.status === 'checking') return 'Running one bounded server-side GET against the Worker health route.';
+  if (backend.status === 'unavailable') return backend.message;
+
+  const { result, target } = backend.snapshot;
+  if (result.healthy) {
+    return `Vercel reached ${target.host} with HTTP ${result.statusCode} in ${result.latencyMs} ms.`;
+  }
+  if (result.reachable) {
+    return `Vercel reached ${target.host}, but the health route returned HTTP ${result.statusCode}.`;
+  }
+  return `Vercel could not reach ${target.host}; diagnostic state: ${result.state}.`;
+}
+
 export default function CertificationOverview() {
   const environment = validateFrontendEnv();
-  const backendConfigured = Boolean(environment.backendUrl);
   const [mirror, setMirror] = useState<MirrorState>({ status: 'checking' });
+  const [backendHealth, setBackendHealth] = useState<BackendHealthState>({ status: 'checking' });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -87,6 +125,33 @@ export default function CertificationOverview() {
     };
   }, []);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), BACKEND_DIAGNOSTIC_TIMEOUT_MS);
+    let active = true;
+
+    void fetchCertificationBackendHealth(controller.signal)
+      .then((snapshot) => {
+        if (active) setBackendHealth({ status: 'available', snapshot });
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        const message = controller.signal.aborted
+          ? 'The backend diagnostic did not respond within six seconds.'
+          : error instanceof Error
+            ? error.message
+            : 'The backend diagnostic could not be verified.';
+        setBackendHealth({ status: 'unavailable', message });
+      })
+      .finally(() => window.clearTimeout(timeout));
+
+    return () => {
+      active = false;
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, []);
+
   return (
     <main className="min-h-screen bg-secondary-50 px-4 py-8 md:px-8">
       <div className="mx-auto max-w-6xl space-y-6">
@@ -98,9 +163,9 @@ export default function CertificationOverview() {
                 <StatusPill label="public read-only access" tone="available" />
               </div>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-secondary-600">
-                This page is intentionally independent of sign-in and connected-dashboard availability. It may verify a
-                same-origin certification snapshot, but it never attempts to authorize an operator, connect exchange
-                credentials, or perform any financial operation.
+                This page is intentionally independent of sign-in and connected-dashboard availability. It verifies only
+                minimized same-origin status and backend reachability; it never authorizes an operator, connects exchange
+                credentials, or performs any financial operation.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -135,15 +200,8 @@ export default function CertificationOverview() {
           </div>
           <div className="rounded-xl border border-secondary-200 bg-white p-5 shadow-sm">
             <p className="text-xs font-medium uppercase tracking-wide text-secondary-500">Dashboard backend</p>
-            <div className="mt-3">
-              <StatusPill
-                label={backendConfigured ? 'configured, health not assumed' : 'not configured'}
-                tone={backendConfigured ? 'pending' : 'blocked'}
-              />
-            </div>
-            <p className="mt-3 text-sm text-secondary-600">
-              The dashboard performs a bounded health check before loading connected features.
-            </p>
+            <div className="mt-3"><StatusPill label={backendLabel(backendHealth)} tone={backendTone(backendHealth)} /></div>
+            <p className="mt-3 text-sm text-secondary-600">{backendMessage(backendHealth)}</p>
           </div>
           <div className="rounded-xl border border-secondary-200 bg-white p-5 shadow-sm">
             <p className="text-xs font-medium uppercase tracking-wide text-secondary-500">User authentication</p>
@@ -178,6 +236,23 @@ export default function CertificationOverview() {
             <p className="mt-4 text-sm leading-6 text-secondary-600">
               Static repository status remains available. Exact deployment metadata will appear when the read-only mirror responds.
             </p>
+          )}
+        </section>
+
+        <section className="rounded-xl border border-secondary-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-xl font-semibold text-secondary-900">Backend reachability diagnostic</h2>
+            <StatusPill label={backendLabel(backendHealth)} tone={backendTone(backendHealth)} />
+          </div>
+          {backendHealth.status === 'available' ? (
+            <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div><p className="text-xs uppercase tracking-wide text-secondary-500">Target</p><p className="mt-1 break-all font-mono text-sm text-secondary-800">{backendHealth.snapshot.target.host}</p></div>
+              <div><p className="text-xs uppercase tracking-wide text-secondary-500">Configuration source</p><p className="mt-1 font-mono text-sm text-secondary-800">{backendHealth.snapshot.target.source}</p></div>
+              <div><p className="text-xs uppercase tracking-wide text-secondary-500">Result</p><p className="mt-1 font-mono text-sm text-secondary-800">{backendHealth.snapshot.result.state}</p></div>
+              <div><p className="text-xs uppercase tracking-wide text-secondary-500">Diagnostic contract</p><p className="mt-1 text-sm font-semibold text-secondary-800">No body read; zero retries</p></div>
+            </div>
+          ) : (
+            <p className="mt-4 text-sm leading-6 text-secondary-600">{backendMessage(backendHealth)}</p>
           )}
         </section>
 
@@ -222,6 +297,7 @@ export default function CertificationOverview() {
                 <tr><td className="px-3 py-3 font-mono">/</td><td className="px-3 py-3">Public landing</td><td className="px-3 py-3"><StatusPill label="available" tone="available" /></td></tr>
                 <tr><td className="px-3 py-3 font-mono">/certification</td><td className="px-3 py-3">Read-only build and readiness overview</td><td className="px-3 py-3"><StatusPill label="available" tone="available" /></td></tr>
                 <tr><td className="px-3 py-3 font-mono">/api/certification/status</td><td className="px-3 py-3">Minimized same-origin certification snapshot</td><td className="px-3 py-3"><StatusPill label="GET and HEAD only" tone="available" /></td></tr>
+                <tr><td className="px-3 py-3 font-mono">/api/certification/backend-health</td><td className="px-3 py-3">Bounded Worker reachability diagnostic</td><td className="px-3 py-3"><StatusPill label="GET and HEAD only" tone="available" /></td></tr>
                 <tr><td className="px-3 py-3 font-mono">/waitlist</td><td className="px-3 py-3">Product updates registration</td><td className="px-3 py-3"><StatusPill label="available" tone="available" /></td></tr>
                 <tr><td className="px-3 py-3 font-mono">/dashboard</td><td className="px-3 py-3">Connected dashboard with health-gated fallback</td><td className="px-3 py-3"><StatusPill label="authentication and backend health required" tone="blocked" /></td></tr>
                 <tr><td className="px-3 py-3 font-mono">/operator-readiness</td><td className="px-3 py-3">Server-authorized operator evidence</td><td className="px-3 py-3"><StatusPill label="identity gateway required" tone="blocked" /></td></tr>
