@@ -27,9 +27,9 @@ const BUILT_ITEMS = [
 ] as const;
 
 const REMAINING_ITEMS = [
+  'Validate the configured dashboard backend from target networks and restore or replace it when unreachable.',
   'Configure an approved authentication provider for protected user and operator routes.',
   'Connect the server-side identity gateway to verified sessions, roles, and account scope.',
-  'Deploy and configure the read-only backend services required by the full dashboard.',
   'Complete external provider attestations, infrastructure review, and independent release approval.',
   'Keep all execution, funding, withdrawal, and activation capabilities disabled until separately authorized.',
 ] as const;
@@ -80,9 +80,14 @@ export default function CertificationOverview() {
           <div className="rounded-xl border border-secondary-200 bg-white p-5 shadow-sm">
             <p className="text-xs font-medium uppercase tracking-wide text-secondary-500">Dashboard backend</p>
             <div className="mt-3">
-              <StatusPill label={backendConfigured ? 'configured' : 'not configured'} tone={backendConfigured ? 'available' : 'blocked'} />
+              <StatusPill
+                label={backendConfigured ? 'configured, health not assumed' : 'not configured'}
+                tone={backendConfigured ? 'pending' : 'blocked'}
+              />
             </div>
-            <p className="mt-3 text-sm text-secondary-600">The full dashboard depends on a separately deployed backend.</p>
+            <p className="mt-3 text-sm text-secondary-600">
+              The dashboard performs a bounded health check before loading connected features.
+            </p>
           </div>
           <div className="rounded-xl border border-secondary-200 bg-white p-5 shadow-sm">
             <p className="text-xs font-medium uppercase tracking-wide text-secondary-500">User authentication</p>
@@ -139,7 +144,7 @@ export default function CertificationOverview() {
                 <tr><td className="px-3 py-3 font-mono">/</td><td className="px-3 py-3">Public landing</td><td className="px-3 py-3"><StatusPill label="available" tone="available" /></td></tr>
                 <tr><td className="px-3 py-3 font-mono">/certification</td><td className="px-3 py-3">Read-only build and readiness overview</td><td className="px-3 py-3"><StatusPill label="available" tone="available" /></td></tr>
                 <tr><td className="px-3 py-3 font-mono">/waitlist</td><td className="px-3 py-3">Product updates registration</td><td className="px-3 py-3"><StatusPill label="available" tone="available" /></td></tr>
-                <tr><td className="px-3 py-3 font-mono">/dashboard</td><td className="px-3 py-3">Full connected dashboard</td><td className="px-3 py-3"><StatusPill label="authentication required" tone="blocked" /></td></tr>
+                <tr><td className="px-3 py-3 font-mono">/dashboard</td><td className="px-3 py-3">Connected dashboard with health-gated fallback</td><td className="px-3 py-3"><StatusPill label="authentication and backend health required" tone="blocked" /></td></tr>
                 <tr><td className="px-3 py-3 font-mono">/operator-readiness</td><td className="px-3 py-3">Server-authorized operator evidence</td><td className="px-3 py-3"><StatusPill label="identity gateway required" tone="blocked" /></td></tr>
               </tbody>
             </table>
