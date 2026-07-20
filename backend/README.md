@@ -7,6 +7,7 @@ This backend is the active FastAPI trading backend currently merged into `main`.
 - Default mode: `paper`
 - Synthetic paper mode is the default startup path
 - Hybrid live-paper mode is supported through selected public exchange market data with paper execution
+- CoinGecko cache prewarming is best-effort and capped at five seconds so an external data-provider stall cannot block backend startup
 - Live execution is exchange-selected (`binance`, `bitget`, `btcc`) when `TRADING_MODE=live`, `ccxt` is installed, credentials are present, and mainnet is explicitly allowed when applicable
 - No real exchange connection is active by default
 

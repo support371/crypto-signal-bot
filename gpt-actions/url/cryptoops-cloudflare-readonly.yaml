@@ -1,0 +1,146 @@
+openapi: 3.1.0
+info:
+  title: CryptoOps Cloudflare Inventory Read-Only API
+  version: 4.0.0
+  description: >-
+    Read-only Cloudflare inventory for D1 databases, R2 buckets, KV namespaces,
+    Queues, and Worker scripts. Secret values, configuration writes, deployment
+    operations, and database query execution are intentionally absent.
+servers:
+  - url: https://api.cloudflare.com/client/v4
+components:
+  securitySchemes:
+    cloudflareBearer:
+      type: http
+      scheme: bearer
+  schemas:
+    OpenObject:
+      type: object
+      additionalProperties: true
+security:
+  - cloudflareBearer: []
+paths:
+  /accounts/{account_id}/d1/database:
+    get:
+      operationId: listD1Databases
+      summary: List D1 database metadata
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: D1 database inventory
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenObject'
+  /accounts/{account_id}/r2/buckets:
+    get:
+      operationId: listR2Buckets
+      summary: List R2 bucket metadata
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: R2 bucket inventory
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenObject'
+  /accounts/{account_id}/storage/kv/namespaces:
+    get:
+      operationId: listKVNamespaces
+      summary: List KV namespace metadata
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: per_page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 100
+      responses:
+        '200':
+          description: KV namespace inventory
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenObject'
+  /accounts/{account_id}/queues:
+    get:
+      operationId: listQueues
+      summary: List Cloudflare Queue metadata
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: per_page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 100
+      responses:
+        '200':
+          description: Queue inventory
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenObject'
+  /accounts/{account_id}/workers/scripts:
+    get:
+      operationId: listWorkerScripts
+      summary: List Worker script metadata
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Worker script inventory
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenObject'
+  /accounts/{account_id}/workers/scripts/{script_name}/settings:
+    get:
+      operationId: getWorkerSettingsMetadata
+      summary: Get Worker binding and compatibility metadata
+      description: Do not disclose secret values; this endpoint is for binding metadata only.
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: script_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Worker settings metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenObject'

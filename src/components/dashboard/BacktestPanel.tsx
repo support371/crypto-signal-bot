@@ -307,7 +307,7 @@ export function BacktestPanel() {
           <div className="flex items-center gap-2 text-white font-medium">
             <Activity size={14} />Signal Quality Audit
           </div>
-          <p>Runs all 3 strategies against live historical data. Simulates paper trades with 2% risk sizing, 0.1% commission, and ATR-based stops. No look-ahead bias.</p>
+          <p>Runs all 3 strategies against live historical data. Rehearses certification trades with 2% risk sizing, 0.1% commission, and ATR-based stops. No look-ahead bias.</p>
           <p className="text-xs">Metrics: Win Rate · Sharpe · Sortino · Max Drawdown · Profit Factor · Equity Curve</p>
         </div>
       )}

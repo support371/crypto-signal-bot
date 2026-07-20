@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "src/live/exchange-registry.ts",
+    "src/live/bitget-locked-order-command.ts",
+    "src/live/bitget-read-only-certification.ts",
+    "src/live/bitget-read-only-certification-store.ts",
+    "src/live/bitget-read-only-certification-attestation.ts",
+    "src/live/bitget-attested-recovery-ingestion.ts",
+    "src/live/bitget-attested-recovery-readiness.ts",
+    "src/live/bitget-attested-recovery-readiness-observability.ts",
+    "src/live/demo-operational-rehearsal.ts",
+    "src/live/demo-operational-rehearsal-store.ts",
+    "src/live/operator-read-auth.ts",
+    "src/live/operator-read-model.ts",
+    "src/live/operator-deployment-readiness-read-model.ts",
+    "src/live/operator-operational-rehearsal-read-model.ts",
+    "src/live/live-candidate-response.ts",
+    "src/live/operator-read-http.ts",
+    "src/live/adapters/btcc/**/*.ts",
+    "src/live/adapters/bitget/**/*.ts"
+  ]
+}

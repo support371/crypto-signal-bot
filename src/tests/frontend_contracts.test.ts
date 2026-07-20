@@ -18,6 +18,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { resolvePostAuthPath } from '../lib/authNavigation';
 
 // ---------------------------------------------------------------------------
 // 1. API client — missing env var
@@ -334,7 +335,25 @@ describe("Demo mode — VITE_DEMO_MODE behavior", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 10. WebSocket failure does not mark backend offline
+// 10. Authentication return navigation
+// ---------------------------------------------------------------------------
+
+describe("Authentication — protected-route return navigation", () => {
+  it("returns users to the protected dashboard route after authentication", () => {
+    expect(resolvePostAuthPath('/dashboard')).toBe('/dashboard');
+    expect(resolvePostAuthPath('/portfolio?asset=BTC#lots')).toBe('/portfolio?asset=BTC#lots');
+  });
+
+  it("defaults to the dashboard and rejects external redirects", () => {
+    expect(resolvePostAuthPath(undefined)).toBe('/dashboard');
+    expect(resolvePostAuthPath('/auth')).toBe('/dashboard');
+    expect(resolvePostAuthPath('https://example.com')).toBe('/dashboard');
+    expect(resolvePostAuthPath('//example.com')).toBe('/dashboard');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 11. WebSocket failure does not mark backend offline
 // ---------------------------------------------------------------------------
 
 describe("WebSocket — failure isolation", () => {

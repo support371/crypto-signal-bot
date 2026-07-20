@@ -194,7 +194,7 @@ export function GuardianPanel({ guardian, isLoading, authEnabled, onKillSwitchTo
             <div className="flex justify-between text-xs">
               <span className="text-muted-foreground">Market Data</span>
               <span className={cn('font-mono', marketData.connected ? 'text-accent' : 'text-warning')}>
-                {marketData.market_data_mode === 'live_public_paper' ? 'LIVE PAPER' : 'SYNTHETIC'}
+                {marketData.market_data_mode === 'live_public_paper' ? 'LIVE CERTIFICATION' : 'SYNTHETIC'}
               </span>
             </div>
             <div className="mt-1 flex justify-between text-[11px] font-mono text-muted-foreground">

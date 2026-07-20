@@ -33,10 +33,10 @@ import { SurgePanel } from '@/components/dashboard/SurgePanel';
 import { useSurgeScanner } from '@/hooks/useSurgeScanner';
 import { useAuth } from '@/context/AuthContext';
 
-function DemoModeBanner() {
+function CertificationModeBanner() {
   return (
     <div className="bg-amber-500/90 text-black py-2 px-4 text-center font-mono text-sm">
-      <span className="font-bold">DEMO PAPER MODE</span> — Auth disabled, live trading unavailable. For evaluation only.
+      <span className="font-bold">CERTIFICATION MODE</span> — Real-market rehearsal; provider mutation and funds movement remain locked.
     </div>
   );
 }
@@ -143,7 +143,7 @@ const Index = () => {
     }
 
     if (systemMode === 'live') {
-      toast.warning('Auto-trade skipped: live execution is disabled. Paper mode remains enforced.', { duration: 5000 });
+      toast.warning('Auto-trade skipped: live execution is disabled. Certification controls remain enforced.', { duration: 5000 });
       return;
     }
 
@@ -168,7 +168,7 @@ const Index = () => {
     })
       .then(() => {
         toast.info(
-          `Auto-trade: paper ${side} ${selectedCoin.symbol} (confidence ${signal.confidence}%)`,
+          `Certification rehearsal: ${side} ${selectedCoin.symbol} (confidence ${signal.confidence}%)`,
           { duration: 5000 }
         );
         refetchPortfolio();
@@ -322,12 +322,12 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background scanlines">
-      {isDemoMode && <DemoModeBanner />}
+      {isDemoMode && <CertificationModeBanner />}
       <Header
         onSettingsClick={() => setSettingsOpen(true)}
         backendConnected={isConnected}
         killSwitchActive={health?.kill_switch_active}
-        paperBalance={paperBalance}
+        certificationBalance={paperBalance}
         systemMode={systemMode}
       />
 
@@ -347,7 +347,7 @@ const Index = () => {
         {!isConnected && (
           <div className="cyber-card p-4 border-destructive bg-destructive/10">
             <p className="text-destructive font-mono text-sm">
-              Backend unavailable. Market state, health, and paper balance are offline.
+              Backend unavailable. Market state, health, and certification balance are offline.
             </p>
             <p className="text-destructive/70 font-mono text-xs mt-2">
               Backend URL: {backendUrl}
@@ -470,12 +470,12 @@ const Index = () => {
                 // PRICES: {priceSource === 'coingecko'
                   ? 'COINGECKO LIVE'
                   : priceSource === 'backend-live'
-                  ? 'BACKEND LIVE PAPER'
+                  ? 'BACKEND LIVE CERTIFICATION'
                   : 'BACKEND SYNTHETIC'}
               </span>
             )}
             {settings.autoTradeEnabled && (
-              <span className="ml-2 text-accent opacity-80">// AUTO-TRADE PAPER ON</span>
+              <span className="ml-2 text-accent opacity-80">// CERTIFICATION AUTO-REHEARSAL ON</span>
             )}
           </span>
           <span className="flex items-center gap-3">

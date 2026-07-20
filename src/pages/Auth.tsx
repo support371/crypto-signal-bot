@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { Loader2, TrendingUp, Shield, AlertTriangle } from 'lucide-react';
+import { resolvePostAuthPath } from '@/lib/authNavigation';
 
 const authSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
@@ -50,18 +51,20 @@ function friendlyAuthError(message: string): string {
 
 const Auth = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, isLoading: authLoading, signIn, signUp, authUnconfigured, isDemoMode } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const returnPath = resolvePostAuthPath((location.state as { from?: unknown } | null)?.from);
 
   // Redirect if already logged in (including demo mode)
   useEffect(() => {
     if (user) {
-      navigate('/');
+      navigate(returnPath, { replace: true });
     }
-  }, [user, navigate]);
+  }, [user, navigate, returnPath]);
 
   const validateForm = () => {
     const result = authSchema.safeParse({ email, password });
@@ -92,7 +95,7 @@ const Auth = () => {
         toast.error(friendlyAuthError(error.message));
       } else {
         toast.success('Welcome back!');
-        navigate('/');
+        navigate(returnPath, { replace: true });
       }
     } catch {
       toast.error('An unexpected error occurred. Please try again.');
@@ -168,9 +171,9 @@ const Auth = () => {
             <Button
               variant="outline"
               className="w-full font-mono"
-              onClick={() => navigate('/public')}
+              onClick={() => navigate('/')}
             >
-              View Public Dashboard
+              View Public Home
             </Button>
             <Button
               variant="outline"
@@ -183,7 +186,7 @@ const Auth = () => {
         </Card>
 
         <p className="mt-4 text-xs text-muted-foreground font-mono">
-          Paper trading only - No real money involved
+          Certification rehearsal only — no provider mutation or real funds
         </p>
       </div>
     );
@@ -197,7 +200,7 @@ const Auth = () => {
           <CardHeader>
             <CardTitle className="font-mono flex items-center gap-2">
               <TrendingUp className="h-5 w-5 text-accent" />
-              Demo Mode Active
+              Certification Mode Active
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -360,7 +363,7 @@ const Auth = () => {
       </Card>
 
       <p className="mt-4 text-xs text-muted-foreground font-mono">
-        Paper trading only • No real money involved
+        Certification rehearsal only • No provider mutation or real funds
       </p>
     </div>
   );

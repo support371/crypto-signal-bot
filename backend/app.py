@@ -147,6 +147,27 @@ context.risk_engine = risk_engine
 # ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
+COINGECKO_WARM_CACHE_TIMEOUT_SECONDS = 5.0
+
+
+async def _warm_coingecko_cache() -> None:
+    """Best-effort cache prewarm that cannot block application startup."""
+    try:
+        from backend.adapters.exchanges.coingecko import warm_cache
+
+        await asyncio.wait_for(
+            warm_cache(),
+            timeout=COINGECKO_WARM_CACHE_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "CoinGecko pre-warm timed out after %.1fs (non-fatal)",
+            COINGECKO_WARM_CACHE_TIMEOUT_SECONDS,
+        )
+    except Exception as exc:
+        logger.warning("CoinGecko pre-warm skipped (non-fatal): %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(application):
     context.app_event_loop = asyncio.get_running_loop()
@@ -177,11 +198,7 @@ async def lifespan(application):
 
     # Pre-warm the CoinGecko price cache so the signal service hits cache on first eval
     # This eliminates the 429 storm caused by 9 simultaneous requests at startup
-    try:
-        from backend.adapters.exchanges.coingecko import warm_cache
-        await warm_cache()
-    except Exception as exc:
-        logger.warning("CoinGecko pre-warm skipped (non-fatal): %s", exc)
+    await _warm_coingecko_cache()
 
     if PAPER_USE_LIVE_MARKET_DATA:  # Start coingecko market data in both paper and live modes
         svc = _get_market_data_service()

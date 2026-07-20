@@ -21,7 +21,7 @@ export function ExchangeStatusCard() {
         <div className="space-y-1 text-xs">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Exchange</span>
-            <span>{status.exchange ?? 'paper'}</span>
+            <span>{status.exchange ?? 'certification'}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Mode</span>

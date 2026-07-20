@@ -1,0 +1,77 @@
+name: Live Candidate Safety (manual advisory)
+
+# Required live-candidate safety validation runs in CircleCI.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-candidate-safety-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Test, typecheck, migrate, bundle, and prove execution lock
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    defaults:
+      run:
+        working-directory: worker
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run live-candidate foundation test suite
+        run: npm run test:live-foundation
+
+      - name: Typecheck Worker
+        run: npm run build:live-candidate
+
+      - name: Verify live-candidate safety invariants
+        run: npm run verify:live-candidate-safety
+
+      - name: Apply release authorization migration locally
+        run: npm run migrate:003:local
+
+      - name: Apply idempotency migration locally
+        run: npm run migrate:004:local
+
+      - name: Apply ledger and reservation migration locally
+        run: npm run migrate:005:local
+
+      - name: Apply immutable audit migration locally
+        run: npm run migrate:006:local
+
+      - name: Apply exchange projection migration locally
+        run: npm run migrate:007:local
+
+      - name: Apply Guardian hierarchy migration locally
+        run: npm run migrate:008:local
+
+      - name: Build a dry-run Cloudflare bundle
+        run: npm run bundle:live-candidate
+
+      - name: Reject committed runtime secret files
+        run: |
+          set -euo pipefail
+          forbidden=$(find .. \
+            -path ../.git -prune -o \
+            -path ../node_modules -prune -o \
+            -path ../worker/.wrangler -prune -o \
+            \( -name '.env' -o -name '.env.production' -o -name '.env.staging' -o -name '.env.preview' -o -name '.dev.vars' -o -name '*.pem' -o -name '*.key' -o -name '*.p12' -o -name '*.pfx' \) \
+            -type f -print)
+          test -z "$forbidden" || { echo "$forbidden"; exit 1; }

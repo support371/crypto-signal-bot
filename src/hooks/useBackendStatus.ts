@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchBackendJson, getBackendBaseUrl } from '@/lib/backend';
+import { PAPER_DASHBOARD_ROUTES } from '@/lib/paperDashboardRoutes';
 
 export interface BackendHealth {
   status?: string;
@@ -196,11 +197,11 @@ export function useBackendStatus(pollIntervalMs = 30000): UseBackendStatusResult
     };
 
     const [healthResult, balanceResult, configResult, exchangeResult, portfolioResult] = await Promise.allSettled([
-      fetchBackendJson<BackendHealth>('/health'),
-      fetchBackendJson<BalanceResponse>('/balance'),
-      fetchBackendJson<Record<string, unknown>>('/config'),
-      fetchBackendJson<Record<string, unknown>>('/exchange/status'),
-      fetchBackendJson<PortfolioSummaryResponse>('/api/v1/portfolio'),
+      fetchBackendJson<BackendHealth>(PAPER_DASHBOARD_ROUTES.health),
+      fetchBackendJson<BalanceResponse>(PAPER_DASHBOARD_ROUTES.portfolioBalance),
+      fetchBackendJson<Record<string, unknown>>(PAPER_DASHBOARD_ROUTES.runtimeStatus),
+      fetchBackendJson<Record<string, unknown>>(PAPER_DASHBOARD_ROUTES.exchangeStatus),
+      fetchBackendJson<PortfolioSummaryResponse>(PAPER_DASHBOARD_ROUTES.portfolioSummary),
     ]);
 
     if (healthResult.status === 'fulfilled') {

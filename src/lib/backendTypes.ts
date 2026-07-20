@@ -10,7 +10,7 @@
 // ============================================================================
 
 export class PaperTradingError extends Error {
-  constructor(message: string = 'Paper trading mode is enforced') {
+  constructor(message: string = 'Certification Mode is enforced') {
     super(message);
     this.name = 'PaperTradingError';
   }

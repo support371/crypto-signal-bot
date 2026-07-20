@@ -1,0 +1,68 @@
+name = "crypto-signal-bot-live-candidate"
+main = "worker/src/index_live_candidate.ts"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# This deployment is intentionally read-only. No routes or cron triggers are assigned.
+# Secrets must be configured through Cloudflare encrypted secrets, never in this file.
+# Placeholder resource IDs intentionally prevent accidental deployment against production.
+
+[vars]
+TRADING_MODE = "live-candidate"
+EXCHANGE_MODE = "live-candidate"
+NETWORK = "testnet"
+ALLOW_MAINNET = "false"
+LIVE_EXECUTION_ENABLED = "false"
+WITHDRAWALS_ENABLED = "false"
+LIVE_RELEASE_ID = ""
+BUILD_GIT_SHA = ""
+CANDIDATE_RESOURCES_CONFIGURED = "false"
+EXECUTION_EXCHANGE_PRIMARY = "btcc"
+EXECUTION_EXCHANGE_SECONDARY = "bitget"
+MARKET_DATA_PUBLIC_EXCHANGE = "bitget"
+OPTIONAL_PUBLIC_DATA_EXCHANGE = "coinbase"
+PAPER_STARTING_BALANCE_USDT = "10000"
+GUARDIAN_MAX_DRAWDOWN_PCT = "15"
+GUARDIAN_MAX_API_ERRORS = "10"
+GUARDIAN_MAX_FAILED_ORDERS = "5"
+RATE_LIMIT_RPM = "60"
+CORS_ALLOWED_ORIGINS = "https://crypto-signal-bot-indol.vercel.app"
+
+# Account-level Bitget certification secrets. These bindings are read-only
+# credential inputs only; the candidate still has placeholder storage resources,
+# no public certification route, no triggers, and all execution flags disabled.
+[[secrets_store_secrets]]
+binding = "BITGET_CERT_API_KEY"
+store_id = "077d4599269544239a34ade0f64d2f48"
+secret_name = "BITGET_CERT_API_KEY"
+
+[[secrets_store_secrets]]
+binding = "BITGET_CERT_API_SECRET"
+store_id = "077d4599269544239a34ade0f64d2f48"
+secret_name = "BITGET_CERT_API_SECRET"
+
+[[secrets_store_secrets]]
+binding = "BITGET_CERT_API_PASSPHRASE"
+store_id = "077d4599269544239a34ade0f64d2f48"
+secret_name = "BITGET_CERT_API_PASSPHRASE"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "crypto-signal-bot-live-candidate-db"
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[[r2_buckets]]
+binding = "STORAGE"
+bucket_name = "crypto-signal-bot-live-candidate-storage"
+
+[[kv_namespaces]]
+binding = "AGENT_MEMORY"
+id = "00000000000000000000000000000000"
+
+[[durable_objects.bindings]]
+name = "EXCHANGE_ACCOUNT_COORDINATOR"
+class_name = "ExchangeAccountCoordinator"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ExchangeAccountCoordinator"]

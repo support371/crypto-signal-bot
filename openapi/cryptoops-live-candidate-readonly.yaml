@@ -1,0 +1,168 @@
+openapi: 3.1.0
+info:
+  title: CryptoOps Live Candidate Read-Only API
+  version: 0.1.0
+  description: |
+    Read-only certification surface for the disabled live-candidate Worker.
+    This schema exposes no financial mutation, credential, order-submission,
+    withdrawal, deposit, or release-activation operation.
+servers:
+  - url: https://{candidateHost}
+    variables:
+      candidateHost:
+        default: crypto-signal-bot-live-candidate.example.invalid
+        description: Replace only after a separately reviewed candidate deployment exists.
+security:
+  - OperatorApiKey: []
+paths:
+  /v1/live/readiness:
+    get:
+      operationId: getLiveCandidateReadiness
+      summary: Read disabled live-candidate readiness evidence
+      description: |
+        Returns prerequisite evidence and always reports liveReady=false for a
+        candidate artifact. HTTP 503 is the expected response while activation
+        remains prohibited.
+      responses:
+        '503':
+          description: Candidate is intentionally not live-ready.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveCandidateReadiness'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /v1/live/capabilities:
+    get:
+      operationId: getLiveCandidateCapabilities
+      summary: Read candidate capability and execution-lock status
+      responses:
+        '200':
+          description: Read-only candidate capability report.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveCandidateCapabilities'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+components:
+  securitySchemes:
+    OperatorApiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Configure in the Custom GPT Action authentication settings. Never place the value in this schema.
+  responses:
+    Unauthorized:
+      description: Operator authentication is invalid or absent.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: The requested operation is forbidden.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    LiveCandidateReadiness:
+      type: object
+      additionalProperties: false
+      required:
+        - liveReady
+        - withdrawalsReady
+        - environment
+        - reasons
+        - checks
+        - releaseId
+        - gitSha
+        - evaluatedAt
+        - authorizationEvidenceSatisfied
+      properties:
+        liveReady:
+          type: boolean
+          const: false
+        withdrawalsReady:
+          type: boolean
+          const: false
+        environment:
+          type: string
+          const: live-candidate
+        reasons:
+          type: array
+          items:
+            type: string
+        checks:
+          type: object
+          additionalProperties:
+            type: boolean
+        releaseId:
+          type:
+            - string
+            - 'null'
+        gitSha:
+          type: string
+        evaluatedAt:
+          type: string
+          format: date-time
+        authorizationEvidenceSatisfied:
+          type: boolean
+          description: Evidence completeness only; never permission to execute.
+    LiveCandidateCapabilities:
+      type: object
+      additionalProperties: false
+      required:
+        - environment
+        - order_submission
+        - order_cancellation
+        - withdrawals
+        - deposits
+        - account_coordinator
+        - durable_idempotency
+        - exact_decimal_arithmetic
+        - readiness_endpoint
+        - reason
+      properties:
+        environment:
+          type: string
+          const: live-candidate
+        order_submission:
+          type: boolean
+          const: false
+        order_cancellation:
+          type: boolean
+          const: false
+        withdrawals:
+          type: boolean
+          const: false
+        deposits:
+          type: boolean
+          const: false
+        account_coordinator:
+          type: string
+        durable_idempotency:
+          type: string
+        exact_decimal_arithmetic:
+          type: boolean
+        readiness_endpoint:
+          type: string
+          const: /v1/live/readiness
+        reason:
+          type: string
+    Error:
+      type: object
+      additionalProperties: true
+      required:
+        - error
+      properties:
+        error:
+          type: string
+        code:
+          oneOf:
+            - type: string
+            - type: integer

@@ -44,7 +44,7 @@ export function enforceOperatorBoundary(operation: string, context: { isPaper?: 
   
   // SAFETY: Paper trading mode is ALWAYS enforced
   if (!isPaperTradingMode() && !isPaper) {
-    throw new PaperTradingError('Paper trading mode is enforced. All operations use mock data.');
+    throw new PaperTradingError('Certification Mode is enforced. All operations remain non-funding rehearsals.');
   }
   
   // SAFETY: Live trading is ALWAYS blocked

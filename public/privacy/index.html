@@ -25,14 +25,14 @@
 
       <h2>1. Overview</h2>
       <p>CryptoOps Agent is a custom GPT assistant created to help monitor, inspect, test, diagnose, and operate the crypto-signal-bot project.</p>
-      <p>The project is designed as a real-time crypto monitoring, signal, portfolio, deployment, and exchange-integration readiness system. Paper mode is used as the active safe testing mode while the system is developed, verified, and hardened.</p>
+      <p>The project is designed as a real-time crypto monitoring, signal, portfolio, deployment, and exchange-integration readiness system. Certification Mode is used for isolated real-market rehearsal while the system is developed, verified, and hardened.</p>
       <p>This Privacy Policy explains what information the assistant may access through configured Actions, how that information is used, and how secrets and sensitive project data must be handled.</p>
 
       <h2>2. Project Covered by This Policy</h2>
       <p>This policy applies to CryptoOps Agent and connected services including the crypto-signal-bot frontend, backend Worker, GitHub repository, Cloudflare Worker, D1, R2, Vercel deployments, optional Render diagnostics, optional Telegram alerting, and future exchange connector architecture for Binance, Bitget, BTCC, Coinbase public data, and other exchange adapters.</p>
 
       <h2>3. Data the Agent May Access</h2>
-      <p>Depending on which Actions are connected and authorized, CryptoOps Agent may access backend health status, runtime configuration, paper-trading mode status, Guardian status, circuit breaker status, market feed status, public market prices, paper portfolio records, paper trade history, signal history, audit logs, Cloudflare D1 metadata and records, Cloudflare R2 metadata, GitHub repository files, commits, branches, workflow runs, issues, pull requests, Vercel deployment metadata, Render diagnostics, and Telegram alert delivery status if configured.</p>
+      <p>Depending on which Actions are connected and authorized, CryptoOps Agent may access backend health status, runtime configuration, certification-mode status, Guardian status, circuit breaker status, market feed status, public market prices, certification portfolio records, rehearsal trade history, signal history, audit logs, Cloudflare D1 metadata and records, Cloudflare R2 metadata, GitHub repository files, commits, branches, workflow runs, issues, pull requests, Vercel deployment metadata, Render diagnostics, and Telegram alert delivery status if configured.</p>
       <p>The agent should only access information needed to perform the requested monitoring, diagnosis, testing, deployment, reporting, or project-support task.</p>
 
       <h2>4. Data the Agent Must Not Request or Store</h2>
@@ -45,13 +45,13 @@
       <p>Real values must never be placed in public files, instructions, commits, logs, or chat messages.</p>
 
       <h2>6. Purpose of Data Use</h2>
-      <p>CryptoOps Agent may use authorized project data to verify system health, confirm paper-safety status, monitor real-time market data, review trading signals, inspect paper portfolio state, diagnose backend, frontend, database, and deployment issues, inspect GitHub workflows, inspect Vercel deployments, inspect Cloudflare resources, prepare fixes, apply fixes when authorized, generate audit reports, generate incident reports, generate Telegram alert drafts, verify that live trading and withdrawals remain blocked during testing, and support future exchange connector readiness without exposing secrets.</p>
+      <p>CryptoOps Agent may use authorized project data to verify system health, confirm certification-safety status, monitor real-time market data, review trading signals, inspect certification portfolio state, diagnose backend, frontend, database, and deployment issues, inspect GitHub workflows, inspect Vercel deployments, inspect Cloudflare resources, prepare fixes, apply fixes when authorized, generate audit reports, generate incident reports, generate Telegram alert drafts, verify that live trading and withdrawals remain blocked during testing, and support future exchange connector readiness without exposing secrets.</p>
 
-      <h2>7. Paper Mode and Exchange Safety</h2>
-      <p>The current active testing mode is paper mode.</p>
+      <h2>7. Certification Mode and Exchange Safety</h2>
+      <p>The current active environment is Certification Mode.</p>
       <ul>
-        <li>Trading mode must remain paper during testing.</li>
-        <li>Exchange mode must remain paper during testing.</li>
+        <li>The internal compatibility mode must remain non-live during certification.</li>
+        <li>Provider mutation and real-funds execution must remain disabled during certification.</li>
         <li>Mainnet execution must remain disabled during testing.</li>
         <li>Live trading endpoints must remain blocked during testing.</li>
         <li>Withdrawal endpoints must remain blocked during testing.</li>
@@ -88,15 +88,15 @@
 
       <h2>12. Live Trading Limitation</h2>
       <p>CryptoOps Agent may help design, inspect, test, and prepare exchange integration architecture.</p>
-      <p>However, during current paper-mode development, it must not enable live trading, enable withdrawals, enable mainnet execution, request real live exchange keys, execute real-money orders, or circumvent Guardian or circuit breaker protections.</p>
-      <p>Any future move from paper mode to live execution must require separate review, secure backend secret handling, explicit approval, exchange-side verification, compliance review, and production safety checks.</p>
+      <p>However, during Certification Mode development, it must not enable live trading, enable withdrawals, enable mainnet execution, request real live exchange keys, execute real-money orders, or circumvent Guardian or circuit breaker protections.</p>
+      <p>Any future move from Certification Mode to live execution must require separate review, secure backend secret handling, explicit approval, exchange-side verification, compliance review, and production safety checks.</p>
 
       <h2>13. Incident Handling</h2>
       <p>If a security issue is detected, CryptoOps Agent should stop unsafe operations, report the issue clearly, avoid exposing secret values, recommend token rotation if needed, recommend Guardian kill mode if trading safety is affected, provide a recovery checklist, and verify the fix through tool-confirmed evidence.</p>
 
       <h2>14. Changes to This Policy</h2>
       <p>This policy may be updated as the project evolves, especially when new Actions, exchange connectors, monitoring tools, deployment tools, or compliance requirements are added.</p>
-      <p>Updates should preserve the core rules: no exposed secrets, no fabricated results, no live execution during paper-mode testing, verified evidence before claims, and secure exchange integration only through approved backend systems.</p>
+      <p>Updates should preserve the core rules: no exposed secrets, no fabricated results, no live execution during certification, verified evidence before claims, and secure exchange integration only through approved backend systems.</p>
 
       <h2>15. Contact</h2>
       <p>For questions about this CryptoOps Agent policy, contact the project owner or administrator responsible for the crypto-signal-bot deployment.</p>

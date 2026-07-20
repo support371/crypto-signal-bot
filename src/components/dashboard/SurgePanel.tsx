@@ -228,7 +228,7 @@ export function SurgePanel({
       {/* ── Footer ─────────────────────────────────────────────────────── */}
       <div className="px-4 py-2.5 border-t border-border flex items-center gap-1.5 text-[10px] text-muted-foreground font-mono">
         <ShieldCheck className="w-3 h-3 text-emerald-500" />
-        Guardian-gated · Paper mode only · Top market-cap coins
+        Guardian-gated · Certification Mode · Top market-cap coins
         {soundEnabled && (
           <span className="ml-auto flex items-center gap-1 text-emerald-400">
             <Volume2 className="w-2.5 h-2.5" /> alerts on

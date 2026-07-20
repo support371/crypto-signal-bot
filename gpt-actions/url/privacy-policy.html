@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CryptoOps Custom GPT Privacy Policy</title>
+</head>
+<body>
+  <main>
+    <h1>CryptoOps Custom GPT Privacy Policy</h1>
+    <p>Last updated: July 17, 2026.</p>
+
+    <h2>Purpose</h2>
+    <p>The CryptoOps Custom GPT provides read-only operational visibility for the support371/crypto-signal-bot project. Its published Action schemas do not expose order placement, withdrawals, deployments, Guardian resets, configuration changes, or repository writes.</p>
+
+    <h2>Data processed</h2>
+    <p>When an authorized user invokes an Action, the selected provider may return operational metadata such as health status, readiness checks, pull-request metadata, commit checks, deployment status, and infrastructure inventory. The GPT should request only the information needed for the current operational question.</p>
+
+    <h2>Credentials</h2>
+    <p>Provider credentials are configured separately in the Custom GPT Action settings. Credentials must not be placed in the OpenAPI files, repository, prompts, logs, browser storage, or responses. The GPT must not reveal bearer tokens, API keys, exchange credentials, private keys, signed URLs, or secret environment values.</p>
+
+    <h2>Financial data</h2>
+    <p>The Actions are intended for operational evidence and do not authorize financial execution. The GPT must not place or cancel orders, move funds, approve withdrawals, or activate live trading.</p>
+
+    <h2>Storage</h2>
+    <p>This repository does not intentionally store Action credentials or identity documents. Provider systems and the ChatGPT product may process requests according to their own applicable policies and account settings.</p>
+
+    <h2>Sharing and sale</h2>
+    <p>Project data is not sold to advertisers. Operational data should be shared only with authorized project participants and only to the extent necessary for project operations and review.</p>
+
+    <h2>Retention and deletion</h2>
+    <p>Repository content follows the project’s Git history and retention practices. Provider-side logs and ChatGPT conversation retention are controlled through the relevant provider and product settings.</p>
+
+    <h2>Security</h2>
+    <p>Use least-privilege, read-only provider tokens. Rotate compromised credentials immediately. Do not use a token that can write repository state, deploy infrastructure, alter Cloudflare resources, change Vercel configuration, or access exchange trading or withdrawal functions.</p>
+
+    <h2>Contact</h2>
+    <p>Questions about this project policy should be raised through the repository’s normal issue or security-reporting process without including secrets.</p>
+  </main>
+</body>
+</html>

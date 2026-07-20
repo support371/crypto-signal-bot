@@ -1,10 +1,7 @@
-name: Production Lock
+name: Production Lock (manual advisory)
 
+# Required production-lock validation runs in CircleCI.
 on:
-  pull_request:
-    branches: [main]
-  push:
-    branches: [main, agent/production-lock-finalization]
   workflow_dispatch:
 
 permissions:
@@ -103,4 +100,3 @@ jobs:
 
       - name: Confirm production lock artifact exists
         run: test -f docs/PRODUCTION_LOCK.md
-

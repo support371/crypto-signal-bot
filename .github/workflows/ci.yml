@@ -1,13 +1,9 @@
-name: CI
-# Pull request validation is owned by CircleCI for this repository.
-# GitHub Actions validation now uses the self-hosted CryptoOps runner lane.
+name: CI (manual advisory)
+# Required validation is owned by CircleCI. GitHub Actions is manual-only so
+# GitHub billing or runner availability cannot block engineering or release review.
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
 
 jobs:
   backend:
@@ -78,4 +74,3 @@ jobs:
           test -f dist/index.html
           test -d dist/assets
           echo "Frontend build output verified"
-

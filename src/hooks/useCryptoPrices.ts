@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { MutableRefObject } from 'react';
 import { CryptoPrice } from '@/types/crypto';
 import { fetchBackendJson } from '@/lib/backend';
+import { PAPER_DASHBOARD_ROUTES } from '@/lib/paperDashboardRoutes';
 
 interface CoinConfig {
   id: string;
@@ -116,7 +117,7 @@ async function fetchFromBackend(
 
   const symbols = coins.map((c) => c.backendSymbol).join(',');
   const response = await fetchBackendJson<BatchPricesResponse>(
-    `/prices/batch?symbols=${encodeURIComponent(symbols)}`,
+    `${PAPER_DASHBOARD_ROUTES.marketPrices}?symbols=${encodeURIComponent(symbols)}`,
   );
 
   const items = Array.isArray(response.prices) ? response.prices : [];

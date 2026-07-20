@@ -1,8 +1,8 @@
 # Safe Fast Path — Architecture Control Center
 
-**Status:** Phases 1–2 implemented in paper-mode shadow form  
-**Scope:** Cloudflare Worker, Durable Objects, D1 projections, Queues, observability, and React operator UI  
-**Boundary:** simulation mode only; mainnet operations and withdrawals remain disabled
+**Status:** Phases 1–2 implemented in Certification Mode shadow form
+**Scope:** Cloudflare Worker, Durable Objects, D1 projections, Queues, observability, and React operator UI
+**Boundary:** certification rehearsal only; provider mutation, mainnet operations, real funds, and withdrawals remain disabled
 
 This folder is the authoritative location for the repository's low-latency architecture standard. Any agent, engineer, reviewer, or operator should begin with the root `AGENTS.md`, then read this folder in order.
 

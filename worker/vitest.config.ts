@@ -5,5 +5,6 @@ export default defineConfig({
     environment: 'node',
     globals: false,
     include: ['worker/tests/**/*.test.ts'],
+    exclude: ['worker/tests/live-*.test.ts'],
   },
 })

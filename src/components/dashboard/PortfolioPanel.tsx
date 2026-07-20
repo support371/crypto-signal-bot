@@ -34,7 +34,7 @@ function QuickTrade({ symbol, signal, risk, price, tradingMode, onFilled }: Quic
   const handleTrade = async (side: 'BUY' | 'SELL') => {
     if (!risk) return;
     if (tradingMode === 'live') {
-      toast.error('Live execution is disabled. Paper mode is the only enabled execution path.');
+      toast.error('Live execution is disabled. Certification rehearsal is the only enabled execution path.');
       return;
     }
     setSubmitting(true);
@@ -50,7 +50,7 @@ function QuickTrade({ symbol, signal, risk, price, tradingMode, onFilled }: Quic
           price,
         }),
       });
-      toast.success(`PAPER ${side} submitted for ${symbol}`);
+      toast.success(`CERTIFICATION ${side} recorded for ${symbol}`);
       onFilled();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Trade failed');
@@ -74,7 +74,7 @@ function QuickTrade({ symbol, signal, risk, price, tradingMode, onFilled }: Quic
         )}
         onClick={() => handleTrade(side)}
         disabled={submitting || !canTrade}
-        title={!canTrade ? 'Signal, risk, and live price must be ready for paper trading' : `Execute paper ${side}`}
+        title={!canTrade ? 'Signal, risk, and live price must be ready for certification rehearsal' : `Rehearse ${side}`}
       >
         {submitting ? (
           <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
@@ -83,7 +83,7 @@ function QuickTrade({ symbol, signal, risk, price, tradingMode, onFilled }: Quic
         ) : (
           <TrendingDown className="w-3 h-3 mr-1" />
         )}
-        PAPER {side}
+        REHEARSE {side}
       </Button>
     </div>
   );
@@ -153,7 +153,7 @@ export function PortfolioPanel({
   const handleWithdraw = async () => {
     setWithdrawing(true);
     try {
-      toast.error('Withdrawals are blocked by the paper-safety release. The backend /withdraw route must remain HTTP 403.');
+      toast.error('Withdrawals are blocked by the certification safety release. The backend /withdraw route must remain HTTP 403.');
     } finally {
       setWithdrawing(false);
     }
@@ -165,7 +165,7 @@ export function PortfolioPanel({
         <div className="flex items-center gap-2">
           <Wallet className="w-4 h-4 text-primary" />
           <h3 className="font-display text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-            Paper Portfolio
+            Certification Portfolio
           </h3>
         </div>
         {onRefetch && (
@@ -175,7 +175,7 @@ export function PortfolioPanel({
               variant="ghost"
               className="h-7 px-2 text-[11px] font-mono"
               onClick={() => setWithdrawOpen(true)}
-              title="Withdrawals are blocked in paper-safety mode"
+              title="Withdrawals are blocked in certification mode"
             >
               <Landmark className="w-3 h-3 mr-1" />
               WITHDRAW BLOCKED
@@ -254,7 +254,7 @@ export function PortfolioPanel({
           <DialogHeader>
             <DialogTitle>Withdrawals Blocked</DialogTitle>
             <DialogDescription>
-              Paper mode keeps all withdrawals disabled. This protects the release while still allowing portfolio, signal, and paper-order testing.
+              Certification Mode keeps all withdrawals disabled while allowing realistic market, signal, order, accounting, and recovery rehearsal.
             </DialogDescription>
           </DialogHeader>
 

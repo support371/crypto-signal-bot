@@ -30,6 +30,7 @@ npm-debug.log*
 # Cache
 .cache/
 .vitest/
+.wrangler/
 
 # Supabase
 supabase/
