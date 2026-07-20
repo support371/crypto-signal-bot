@@ -93,7 +93,15 @@ describe('public certification access', () => {
     expect(healthEndpoint).not.toContain('upstream.text(');
     expect(healthEndpoint).not.toMatch(/request\.body/i);
 
-    expect(vercel).toContain('(?!api/|assets/|.*\\..*)');
+    const vercelConfig = JSON.parse(vercel) as {
+      rewrites?: Array<{ source?: string; destination?: string }>;
+    };
+    expect(vercelConfig.rewrites).toEqual([
+      {
+        source: '/((?!api/|assets/|.*\\..*).*)',
+        destination: '/index.html',
+      },
+    ]);
 
     for (const required of [
       "const ConnectedDashboard = lazy(() => import('./Index'))",
