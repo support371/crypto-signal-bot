@@ -59,6 +59,28 @@ accounting result. The projection is immutable and idempotent. It remains
 unwired: evaluation does not automatically persist, and no Worker route invokes
 the store.
 
+The source-only simulation runner composes the complete flow using one trusted
+injected clock and an independently supplied risk/sizing input builder. A HOLD
+signal terminates with `NO_ACTION`; it cannot create an assessment, fill,
+accounting result, or projection. BUY and SELL signals can be projected only
+when the caller supplies an explicit projection request and D1 environment.
+The runner has no default fetcher, route, trigger, retry loop, provider client,
+or automatic persistence.
+
+An account-scoped SELECT-only read model exposes sanitized certification
+activity for a future authenticated operator route. It includes the signal,
+exact reference/fill amounts, quote commission, position quantity and cost
+basis, and realized P&L. It omits exchange-account IDs, internal order/fill IDs,
+evidence hashes, raw evidence JSON, and ledger account identifiers, and rejects
+any stored row with a corrupted capability lock.
+
+An account-and-product-scoped state loader reloads only the latest immutable
+simulation, verifies both the simulation and nested accounting hashes, rejects
+corrupted capability locks or non-canonical FIFO lots, and supplies the exact
+remaining lots and cumulative realized P&L to the next rehearsal. A missing
+history produces an explicit empty state; an existing history can no longer be
+silently replaced with an empty portfolio.
+
 The candle-direction volume proxy is not presented as exchange order-flow
 delta. A true order-flow delta requires a separately reviewed public-trade or
 book-event contract.

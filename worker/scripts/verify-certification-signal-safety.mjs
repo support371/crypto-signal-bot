@@ -21,6 +21,18 @@ const evidenceStore = await readFile(
   new URL('../src/certification/evidence-store.ts', import.meta.url),
   'utf8',
 )
+const simulationRunner = await readFile(
+  new URL('../src/certification/simulation-runner.ts', import.meta.url),
+  'utf8',
+)
+const readModel = await readFile(
+  new URL('../src/certification/read-model.ts', import.meta.url),
+  'utf8',
+)
+const stateLoader = await readFile(
+  new URL('../src/certification/state-loader.ts', import.meta.url),
+  'utf8',
+)
 const entrypoints = await Promise.all([
   '../src/index.ts',
   '../src/index_with_d1.ts',
@@ -133,6 +145,68 @@ for (const forbidden of [
   assert.doesNotMatch(assessmentBridge, forbidden, `assessment bridge must not match ${forbidden}`)
 }
 
+for (const required of [
+  'fetchBitgetPublicClosedCandles',
+  'evaluateCertificationSignal',
+  'assessCertificationSignalCandidate',
+  'simulateCertificationFill',
+  'explicitProjection.requestedByCaller',
+  'automaticallyPersisted: false',
+  'providerOrderCreated: false',
+  'providerFillClaimed: false',
+  'reservationApplied: false',
+  'providerMutationAllowed: false',
+  'executionAllowed: false',
+  'realFundsAllowed: false',
+  'mainnetAllowed: false',
+  'withdrawalsAllowed: false',
+  'automaticRetryAllowed: false',
+]) {
+  assert.ok(simulationRunner.includes(required), `simulation runner must include ${required}`)
+}
+
+for (const forbidden of [
+  /createOrder\s*\(/,
+  /cancelOrder\s*\(/,
+  /requestWithdrawal\s*\(/,
+  /setInterval\s*\(/,
+  /setTimeout\s*\(/,
+]) {
+  assert.doesNotMatch(simulationRunner, forbidden, `simulation runner must not match ${forbidden}`)
+}
+
+for (const required of [
+  'readCertificationActivity',
+  'exchangeAccountScoped: true',
+  'providerOrderCreated: false',
+  'providerFillClaimed: false',
+  'providerMutationAllowed: false',
+  'executionAllowed: false',
+  'realFundsAllowed: false',
+  'mainnetAllowed: false',
+  'withdrawalsAllowed: false',
+  'WHERE a.exchange_account_id = ?',
+]) {
+  assert.ok(readModel.includes(required), `read model must include ${required}`)
+}
+assert.doesNotMatch(readModel, /\b(?:INSERT|UPDATE|DELETE|REPLACE)\b/i)
+assert.doesNotMatch(readModel, /signalEvidenceHash|assessmentBindingHash|simulationHash/)
+
+for (const required of [
+  'loadCertificationSimulationState',
+  'verifyCertificationFillSimulationEvidence',
+  'WHERE a.exchange_account_id = ? AND f.product_id = ?',
+  "source: 'IMMUTABLE_CERTIFICATION_EVIDENCE'",
+  'providerMutationAllowed: false',
+  'executionAllowed: false',
+  'realFundsAllowed: false',
+  'mainnetAllowed: false',
+  'withdrawalsAllowed: false',
+]) {
+  assert.ok(stateLoader.includes(required), `state loader must include ${required}`)
+}
+assert.doesNotMatch(stateLoader, /\b(?:INSERT|UPDATE|DELETE|REPLACE)\b/i)
+
 for (const forbidden of [
   /Authorization\s*:/i,
   /ACCESS-(?:KEY|SIGN|PASSPHRASE)/i,
@@ -146,7 +220,7 @@ for (const forbidden of [
 for (const entrypoint of entrypoints) {
   assert.doesNotMatch(
     entrypoint,
-    /certification\/(?:bitget-public-candles|signal-engine|signal-assessment-bridge|fill-simulation|evidence-store)/,
+    /certification\/(?:bitget-public-candles|signal-engine|signal-assessment-bridge|fill-simulation|evidence-store|simulation-runner|read-model|state-loader)/,
     'source-only certification signal modules must not be imported by deployed entrypoints',
   )
 }

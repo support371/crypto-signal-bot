@@ -37,6 +37,68 @@ export function assertCertificationFillSimulationVerified(
   }
 }
 
+function simulationHashBase(simulation: CertificationFillSimulation) {
+  return {
+    version: simulation.version,
+    provider: simulation.provider,
+    marketDataSource: simulation.marketDataSource,
+    signalEvidenceHash: simulation.signalEvidenceHash,
+    assessmentBindingHash: simulation.assessmentBindingHash,
+    fill: simulation.fill,
+    accounting: simulation.accounting,
+    providerOrderCreated: simulation.providerOrderCreated,
+    providerFillClaimed: simulation.providerFillClaimed,
+    reservationApplied: simulation.reservationApplied,
+    automaticallyPersisted: simulation.automaticallyPersisted,
+    providerMutationAllowed: simulation.providerMutationAllowed,
+    executionAllowed: simulation.executionAllowed,
+    realFundsAllowed: simulation.realFundsAllowed,
+    mainnetAllowed: simulation.mainnetAllowed,
+    withdrawalsAllowed: simulation.withdrawalsAllowed,
+  }
+}
+
+/** Verify serialized immutable simulation evidence without restoring its brand. */
+export async function verifyCertificationFillSimulationEvidence(
+  simulation: CertificationFillSimulation,
+): Promise<void> {
+  if (simulation.version !== 'certification-fill-simulation-v1'
+    || simulation.provider !== 'BITGET'
+    || simulation.marketDataSource !== 'BITGET_PUBLIC_CLOSED_CANDLES') {
+    throw new Error('Unsupported certification fill simulation evidence')
+  }
+  if (simulation.providerOrderCreated || simulation.providerFillClaimed
+    || simulation.reservationApplied || simulation.automaticallyPersisted
+    || simulation.providerMutationAllowed || simulation.executionAllowed
+    || simulation.realFundsAllowed || simulation.mainnetAllowed
+    || simulation.withdrawalsAllowed) {
+    throw new Error('Certification fill simulation violates permanent capability locks')
+  }
+  if (simulation.accounting.providerMutationAllowed
+    || simulation.accounting.reservationApplied
+    || simulation.accounting.executionAllowed) {
+    throw new Error('Certification fill accounting violates permanent capability locks')
+  }
+  const accountingHash = await canonicalHash({
+    method: simulation.accounting.method,
+    fill: simulation.fill,
+    journal: simulation.accounting.journal,
+    acquiredLot: simulation.accounting.acquiredLot,
+    lotConsumptions: simulation.accounting.lotConsumptions,
+    position: simulation.accounting.position,
+    realizedPnlEvent: simulation.accounting.realizedPnlEvent,
+    providerMutationAllowed: false,
+    reservationApplied: false,
+    executionAllowed: false,
+  })
+  if (accountingHash !== simulation.accounting.accountingHash) {
+    throw new Error('Certification fill accounting hash does not match its payload')
+  }
+  if (await canonicalHash(simulationHashBase(simulation)) !== simulation.simulationHash) {
+    throw new Error('Certification fill simulation hash does not match its payload')
+  }
+}
+
 export type CertificationFillSimulation = Readonly<{
   version: 'certification-fill-simulation-v1'
   provider: 'BITGET'

@@ -8,8 +8,11 @@ import { fileURLToPath } from 'node:url'
 import { fetchBitgetPublicClosedCandles } from '../src/certification/bitget-public-candles.ts'
 import { persistCertificationEvidence } from '../src/certification/evidence-store.ts'
 import { simulateCertificationFill } from '../src/certification/fill-simulation.ts'
+import { readCertificationActivity } from '../src/certification/read-model.ts'
 import { assessCertificationSignalCandidate } from '../src/certification/signal-assessment-bridge.ts'
 import { evaluateCertificationSignal } from '../src/certification/signal-engine.ts'
+import { runBitgetCertificationSimulation } from '../src/certification/simulation-runner.ts'
+import { loadCertificationSimulationState } from '../src/certification/state-loader.ts'
 import type { CandidateOrderAssessmentInput } from '../src/live/candidate-command-plan.ts'
 import { asDecimalString, asSignedDecimalString } from '../src/live/decimal.ts'
 import type { ProductRules } from '../src/live/domain.ts'
@@ -423,4 +426,183 @@ test('explicit D1 projection persists signal, assessment, and simulated FIFO evi
   } finally {
     database.close()
   }
+})
+
+test('one-shot runner composes public market evidence through projected FIFO simulation', async () => {
+  const database = new CertificationSqliteD1()
+  let clockCalls = 0
+  try {
+    const outcome = await runBitgetCertificationSimulation(
+      'BTCUSDT',
+      {
+        existingLots: [],
+        cumulativeRealizedPnlQuote: asSignedDecimalString('0'),
+        accounts: accountingAccounts,
+      },
+      {
+        fetcher: async () => Response.json({
+          code: '00000',
+          msg: 'success',
+          requestTime: NOW,
+          data: candleRows('up').reverse(),
+        }),
+        clock: {
+          now: () => {
+            clockCalls += 1
+            return new Date(NOW)
+          },
+        },
+        buildAssessmentInput: (marketSignal) => assessmentInput(marketSignal),
+        explicitProjection: {
+          requestedByCaller: true,
+          env: database.env(),
+        },
+      },
+    )
+
+    assert.equal(clockCalls, 1)
+    assert.equal(outcome.status, 'SIMULATED_AND_PROJECTED')
+    assert.equal(outcome.signal.direction, 'BUY')
+    assert.equal(outcome.assessment?.candidateAssessment.status, 'READY_BUT_EXECUTION_LOCKED')
+    assert.equal(outcome.simulation?.accounting.position.status, 'OPEN')
+    assert.equal(outcome.projection?.projectionStatus, 'PROJECTED')
+    assert.equal(outcome.automaticallyPersisted, false)
+    assert.equal(outcome.providerOrderCreated, false)
+    assert.equal(outcome.providerMutationAllowed, false)
+    assert.equal(outcome.executionAllowed, false)
+    assert.equal(outcome.realFundsAllowed, false)
+    assert.equal(outcome.automaticRetryAllowed, false)
+
+    const activity = await readCertificationActivity(
+      database.env(),
+      'bitget-certification-account-ref',
+    )
+    assert.equal(activity.count, 1)
+    assert.equal(activity.items[0]?.productSymbol, 'BTCUSDT')
+    assert.equal(activity.items[0]?.signalDirection, 'BUY')
+    assert.equal(activity.items[0]?.side, 'BUY')
+    assert.equal(activity.items[0]?.positionStatus, 'OPEN')
+    assert.equal(activity.items[0]?.providerOrderCreated, false)
+    assert.equal(activity.items[0]?.providerMutationAllowed, false)
+    assert.equal(activity.items[0]?.executionAllowed, false)
+    assert.equal(activity.items[0]?.realFundsAllowed, false)
+    assert.equal('signalEvidenceHash' in activity.items[0]!, false)
+    assert.equal('exchangeAccountId' in activity.items[0]!, false)
+
+    const wrongAccount = await readCertificationActivity(database.env(), 'other-account')
+    assert.equal(wrongAccount.count, 0)
+    assert.deepEqual(wrongAccount.items, [])
+
+    const persistedState = await loadCertificationSimulationState(
+      database.env(),
+      'bitget-certification-account-ref',
+      'BTC-USDT',
+    )
+    assert.equal(persistedState.source, 'IMMUTABLE_CERTIFICATION_EVIDENCE')
+    assert.equal(persistedState.existingLots.length, 1)
+    assert.equal(persistedState.cumulativeRealizedPnlQuote, '0')
+    assert.equal(persistedState.providerMutationAllowed, false)
+    assert.equal(persistedState.executionAllowed, false)
+
+    const sellNow = NOW + 1
+    const sellOutcome = await runBitgetCertificationSimulation(
+      'BTCUSDT',
+      {
+        existingLots: persistedState.existingLots,
+        cumulativeRealizedPnlQuote: persistedState.cumulativeRealizedPnlQuote,
+        accounts: accountingAccounts,
+      },
+      {
+        fetcher: async () => Response.json({
+          code: '00000',
+          msg: 'success',
+          requestTime: sellNow,
+          data: candleRows('down').reverse(),
+        }),
+        clock: { now: () => new Date(sellNow) },
+        buildAssessmentInput: (marketSignal) => {
+          const base = assessmentInput(marketSignal)
+          return {
+            ...base,
+            orderId: 'certification-order-runner-sell',
+            correlationId: 'certification-correlation-runner-sell',
+            idempotencyKey: 'certification:runner:sell:0001',
+            riskDecisionId: 'certification-risk-runner-sell',
+            reservationJournalId: 'certification-reservation-runner-sell',
+            decidedAt: new Date(sellNow).toISOString(),
+            request: {
+              ...base.request,
+              side: 'SELL',
+              baseQuantity: asDecimalString('0.001'),
+              quoteNotional: null,
+            },
+            reservationAccounts: {
+              availableAccountId: 'ledger:BTC:available',
+              reservedAccountId: 'ledger:BTC:reserved',
+            },
+          }
+        },
+        explicitProjection: {
+          requestedByCaller: true,
+          env: database.env(),
+        },
+      },
+    )
+    assert.equal(sellOutcome.signal.direction, 'SELL')
+    assert.equal(sellOutcome.simulation?.fill.side, 'SELL')
+    assert.equal(sellOutcome.simulation?.accounting.lotConsumptions.length, 1)
+    assert.notEqual(sellOutcome.simulation?.accounting.realizedPnlEvent, null)
+    assert.equal(sellOutcome.projection?.projectionStatus, 'PROJECTED')
+
+    const stateAfterSell = await loadCertificationSimulationState(
+      database.env(),
+      'bitget-certification-account-ref',
+      'BTC-USDT',
+    )
+    assert.equal(stateAfterSell.source, 'IMMUTABLE_CERTIFICATION_EVIDENCE')
+    assert.notEqual(stateAfterSell.cumulativeRealizedPnlQuote, '0')
+    assert.equal(stateAfterSell.existingLots.length, 1)
+
+    const emptyState = await loadCertificationSimulationState(
+      database.env(),
+      'other-account',
+      'BTC-USDT',
+    )
+    assert.equal(emptyState.source, 'EMPTY')
+    assert.deepEqual(emptyState.existingLots, [])
+  } finally {
+    database.close()
+  }
+})
+
+test('one-shot runner treats HOLD as no action without assessment, accounting, or projection', async () => {
+  let assessmentBuilderCalls = 0
+  const outcome = await runBitgetCertificationSimulation(
+    'BTCUSDT',
+    {
+      existingLots: [],
+      cumulativeRealizedPnlQuote: asSignedDecimalString('0'),
+      accounts: accountingAccounts,
+    },
+    {
+      fetcher: async () => Response.json({
+        code: '00000',
+        msg: 'success',
+        requestTime: NOW,
+        data: candleRows('flat').reverse(),
+      }),
+      clock: { now: () => new Date(NOW) },
+      buildAssessmentInput: (marketSignal) => {
+        assessmentBuilderCalls += 1
+        return assessmentInput(marketSignal)
+      },
+    },
+  )
+
+  assert.equal(outcome.status, 'NO_ACTION')
+  assert.equal(outcome.signal.direction, 'HOLD')
+  assert.equal(outcome.assessment, null)
+  assert.equal(outcome.simulation, null)
+  assert.equal(outcome.projection, null)
+  assert.equal(assessmentBuilderCalls, 0)
 })
