@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 const productFiles = [
+  '../../index.html',
   '../pages/Index.tsx',
   '../pages/Infrastructure.tsx',
   '../pages/Auth.tsx',
@@ -31,6 +32,7 @@ describe('Certification Mode product language', () => {
       'Certification Control Center',
       'Certification Portfolio',
       'Certification Mode and Exchange Safety',
+      'Certification Mode Dashboard',
       'provider mutation and funds movement remain locked',
     ]) {
       expect(productSurface).toContain(required);
