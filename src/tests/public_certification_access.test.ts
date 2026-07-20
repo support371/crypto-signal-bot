@@ -2,14 +2,26 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 describe('public certification access', () => {
-  it('keeps the overview public and validates the same-origin status mirror', async () => {
-    const [app, home, overview, dashboardEntry, client, endpoint, vercel] = await Promise.all([
+  it('keeps the overview public and validates its same-origin diagnostics', async () => {
+    const [
+      app,
+      home,
+      overview,
+      dashboardEntry,
+      statusClient,
+      statusEndpoint,
+      healthClient,
+      healthEndpoint,
+      vercel,
+    ] = await Promise.all([
       readFile(new URL('../AppCore.tsx', import.meta.url), 'utf8'),
       readFile(new URL('../pages/PublicHome.tsx', import.meta.url), 'utf8'),
       readFile(new URL('../pages/CertificationOverview.tsx', import.meta.url), 'utf8'),
       readFile(new URL('../pages/DashboardEntry.tsx', import.meta.url), 'utf8'),
       readFile(new URL('../lib/certificationStatusApi.ts', import.meta.url), 'utf8'),
       readFile(new URL('../../api/certification/status.js', import.meta.url), 'utf8'),
+      readFile(new URL('../lib/certificationBackendHealthApi.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../../api/certification/backend-health.js', import.meta.url), 'utf8'),
       readFile(new URL('../../vercel.json', import.meta.url), 'utf8'),
     ]);
 
@@ -26,32 +38,53 @@ describe('public certification access', () => {
     expect(overview).toContain('What still remains');
     expect(overview).toContain('/operator-readiness');
     expect(overview).toContain('/api/certification/status');
-    expect(overview).toContain('configured, health not assumed');
+    expect(overview).toContain('/api/certification/backend-health');
     expect(overview).toContain('static fallback');
     expect(overview).toContain('All operational capabilities locked');
+    expect(overview).toContain('No body read; zero retries');
+    expect(overview).toContain('checking from Vercel');
     expect(overview).not.toContain('readOperatorReadinessSnapshot');
     expect(overview).not.toContain('fetchBackendJson');
     expect(overview).not.toContain('useAuth');
 
-    expect(client).toContain("CERTIFICATION_STATUS_ROUTE = '/api/certification/status'");
-    expect(client).toContain("method: 'GET'");
-    expect(client).toContain("credentials: 'omit'");
-    expect(client).toContain("redirect: 'error'");
-    expect(client).toContain("cache: 'no-store'");
-    expect(client).toContain('value.capabilities[key] !== false');
-    expect(client).not.toContain("credentials: 'include'");
+    expect(statusClient).toContain("CERTIFICATION_STATUS_ROUTE = '/api/certification/status'");
+    expect(statusClient).toContain("method: 'GET'");
+    expect(statusClient).toContain("credentials: 'omit'");
+    expect(statusClient).toContain("redirect: 'error'");
+    expect(statusClient).toContain("cache: 'no-store'");
+    expect(statusClient).toContain('capabilities[key] !== false');
+    expect(statusClient).not.toContain("credentials: 'include'");
 
-    expect(endpoint).toContain("schemaVersion: 'certification-status.v1'");
-    expect(endpoint).toContain("mode: 'CERTIFICATION'");
-    expect(endpoint).toContain('readOnly: true');
-    expect(endpoint).toContain('deploymentAllowed: false');
-    expect(endpoint).toContain('executionAllowed: false');
-    expect(endpoint).toContain('mainnetAllowed: false');
-    expect(endpoint).toContain('withdrawalsAllowed: false');
-    expect(endpoint).not.toMatch(/\bfetch\s*\(/i);
-    expect(endpoint).not.toMatch(/authorization/i);
-    expect(endpoint).not.toMatch(/deploymentAllowed:\s*true/i);
-    expect(endpoint).not.toMatch(/executionAllowed:\s*true/i);
+    expect(statusEndpoint).toContain("schemaVersion: 'certification-status.v1'");
+    expect(statusEndpoint).toContain("mode: 'CERTIFICATION'");
+    expect(statusEndpoint).toContain('readOnly: true');
+    expect(statusEndpoint).toContain('deploymentAllowed: false');
+    expect(statusEndpoint).toContain('executionAllowed: false');
+    expect(statusEndpoint).toContain('mainnetAllowed: false');
+    expect(statusEndpoint).toContain('withdrawalsAllowed: false');
+    expect(statusEndpoint).not.toMatch(/\bfetch\s*\(/i);
+    expect(statusEndpoint).not.toMatch(/authorization/i);
+    expect(statusEndpoint).not.toMatch(/deploymentAllowed:\s*true/i);
+    expect(statusEndpoint).not.toMatch(/executionAllowed:\s*true/i);
+
+    expect(healthClient).toContain("CERTIFICATION_BACKEND_HEALTH_ROUTE = '/api/certification/backend-health'");
+    expect(healthClient).toContain("method: 'GET'");
+    expect(healthClient).toContain("credentials: 'omit'");
+    expect(healthClient).toContain("redirect: 'error'");
+    expect(healthClient).toContain('value.responseBodyRead !== false');
+    expect(healthClient).toContain('value.retriesAttempted !== 0');
+
+    expect(healthEndpoint).toContain("DEFAULT_BACKEND_URL = 'https://crypto-signal-bot-api.gr8r9bfzry.workers.dev'");
+    expect(healthEndpoint).toContain("url.hostname.endsWith('.workers.dev')");
+    expect(healthEndpoint).toContain("url.pathname = '/health'");
+    expect(healthEndpoint).toContain('HEALTH_TIMEOUT_MS = 4_000');
+    expect(healthEndpoint).toContain('await fetch(target.url');
+    expect(healthEndpoint).toContain('responseBodyRead: false');
+    expect(healthEndpoint).toContain('retriesAttempted: 0');
+    expect(healthEndpoint).not.toContain('upstream.json(');
+    expect(healthEndpoint).not.toContain('upstream.text(');
+    expect(healthEndpoint).not.toMatch(/request\.body/i);
+    expect(healthEndpoint).not.toMatch(/authorization/i);
 
     expect(vercel).toContain('(?!api/|assets/|.*\\..*)');
 
