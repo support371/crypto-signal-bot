@@ -42,15 +42,18 @@ function parseCertificationStatus(value: unknown): CertificationStatusSnapshot {
     throw new Error('Certification status response has an invalid envelope');
   }
 
-  if (!isRecord(value.release) || !['packageVersion', 'channel', 'commit', 'environment'].every((key) => hasString(value.release, key))) {
+  const release = value.release;
+  if (!isRecord(release) || !['packageVersion', 'channel', 'commit', 'environment'].every((key) => hasString(release, key))) {
     throw new Error('Certification status response has invalid release metadata');
   }
 
-  if (!isRecord(value.services) || !['publicApplication', 'certificationMirror', 'connectedDashboard', 'userAuthentication', 'operatorGateway'].every((key) => hasString(value.services, key))) {
+  const services = value.services;
+  if (!isRecord(services) || !['publicApplication', 'certificationMirror', 'connectedDashboard', 'userAuthentication', 'operatorGateway'].every((key) => hasString(services, key))) {
     throw new Error('Certification status response has invalid service metadata');
   }
 
-  if (!isRecord(value.capabilities)) {
+  const capabilities = value.capabilities;
+  if (!isRecord(capabilities)) {
     throw new Error('Certification status response is missing capability locks');
   }
 
@@ -63,7 +66,7 @@ function parseCertificationStatus(value: unknown): CertificationStatusSnapshot {
     'withdrawalsAllowed',
     'automaticRetryAllowed',
   ]) {
-    if (value.capabilities[key] !== false) {
+    if (capabilities[key] !== false) {
       throw new Error(`Certification capability lock is invalid: ${key}`);
     }
   }
