@@ -8,7 +8,7 @@ import { QueryClientProvider } from './providers/QueryClientProvider';
 const Auth = lazy(() => import('./pages/Auth'));
 const Backtest = lazy(() => import('./pages/Backtest'));
 const CertificationOverview = lazy(() => import('./pages/CertificationOverview'));
-const Index = lazy(() => import('./pages/Index'));
+const DashboardEntry = lazy(() => import('./pages/DashboardEntry'));
 const Infrastructure = lazy(() => import('./pages/Infrastructure'));
 const IntegrationsStatus = lazy(() => import('./pages/IntegrationsStatus'));
 const NotFound = lazy(() => import('./pages/NotFound'));
@@ -64,7 +64,7 @@ export default function AppCore() {
               path="/dashboard"
               element={
                 <ProtectedPage>
-                  <Index />
+                  <DashboardEntry />
                 </ProtectedPage>
               }
             />
