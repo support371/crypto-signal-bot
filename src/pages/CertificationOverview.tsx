@@ -1,7 +1,15 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { fetchCertificationStatus, type CertificationStatusSnapshot } from '../lib/certificationStatusApi';
 import { validateFrontendEnv } from '../lib/env';
 
 type StatusTone = 'available' | 'blocked' | 'pending';
+type MirrorState =
+  | { status: 'checking' }
+  | { status: 'available'; snapshot: CertificationStatusSnapshot }
+  | { status: 'unavailable'; message: string };
+
+const MIRROR_TIMEOUT_MS = 3_000;
 
 function StatusPill({ label, tone }: { label: string; tone: StatusTone }) {
   const classes: Record<StatusTone, string> = {
@@ -19,6 +27,7 @@ function StatusPill({ label, tone }: { label: string; tone: StatusTone }) {
 
 const BUILT_ITEMS = [
   'Public Certification Mode web interface and mobile-responsive application shell.',
+  'Same-origin read-only certification status mirror with minimized deployment metadata and permanent capability locks.',
   'Risk, accounting, reconciliation, recovery, audit, and operational-readiness contracts.',
   'Read-only provider normalization and source-only certification foundations.',
   'Eight-resource operator readiness model with minimized responses and permanent capability locks.',
@@ -34,9 +43,49 @@ const REMAINING_ITEMS = [
   'Keep all execution, funding, withdrawal, and activation capabilities disabled until separately authorized.',
 ] as const;
 
+function mirrorLabel(mirror: MirrorState): string {
+  if (mirror.status === 'available') return 'verified read-only';
+  if (mirror.status === 'checking') return 'checking';
+  return 'static fallback';
+}
+
+function mirrorTone(mirror: MirrorState): StatusTone {
+  if (mirror.status === 'available') return 'available';
+  if (mirror.status === 'checking') return 'pending';
+  return 'blocked';
+}
+
 export default function CertificationOverview() {
   const environment = validateFrontendEnv();
   const backendConfigured = Boolean(environment.backendUrl);
+  const [mirror, setMirror] = useState<MirrorState>({ status: 'checking' });
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), MIRROR_TIMEOUT_MS);
+    let active = true;
+
+    void fetchCertificationStatus(controller.signal)
+      .then((snapshot) => {
+        if (active) setMirror({ status: 'available', snapshot });
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        const message = controller.signal.aborted
+          ? 'The certification mirror did not respond within three seconds.'
+          : error instanceof Error
+            ? error.message
+            : 'The certification mirror could not be verified.';
+        setMirror({ status: 'unavailable', message });
+      })
+      .finally(() => window.clearTimeout(timeout));
+
+    return () => {
+      active = false;
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, []);
 
   return (
     <main className="min-h-screen bg-secondary-50 px-4 py-8 md:px-8">
@@ -49,9 +98,9 @@ export default function CertificationOverview() {
                 <StatusPill label="public read-only access" tone="available" />
               </div>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-secondary-600">
-                This page is intentionally independent of sign-in and backend availability. It explains the current
-                platform state without attempting to authorize an operator, connect exchange credentials, or perform
-                any financial operation.
+                This page is intentionally independent of sign-in and connected-dashboard availability. It may verify a
+                same-origin certification snapshot, but it never attempts to authorize an operator, connect exchange
+                credentials, or perform any financial operation.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -71,11 +120,18 @@ export default function CertificationOverview() {
           </div>
         </section>
 
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           <div className="rounded-xl border border-secondary-200 bg-white p-5 shadow-sm">
             <p className="text-xs font-medium uppercase tracking-wide text-secondary-500">Public application</p>
             <div className="mt-3"><StatusPill label="available" tone="available" /></div>
             <p className="mt-3 text-sm text-secondary-600">Landing, waitlist, and this overview require no sign-in.</p>
+          </div>
+          <div className="rounded-xl border border-secondary-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-secondary-500">Certification mirror</p>
+            <div className="mt-3"><StatusPill label={mirrorLabel(mirror)} tone={mirrorTone(mirror)} /></div>
+            <p className="mt-3 text-sm text-secondary-600">
+              {mirror.status === 'unavailable' ? mirror.message : 'Same-origin status with locked capability validation.'}
+            </p>
           </div>
           <div className="rounded-xl border border-secondary-200 bg-white p-5 shadow-sm">
             <p className="text-xs font-medium uppercase tracking-wide text-secondary-500">Dashboard backend</p>
@@ -92,7 +148,10 @@ export default function CertificationOverview() {
           <div className="rounded-xl border border-secondary-200 bg-white p-5 shadow-sm">
             <p className="text-xs font-medium uppercase tracking-wide text-secondary-500">User authentication</p>
             <div className="mt-3">
-              <StatusPill label={environment.supabaseConfigured ? 'configured' : 'not configured'} tone={environment.supabaseConfigured ? 'available' : 'blocked'} />
+              <StatusPill
+                label={environment.supabaseConfigured ? 'configured' : 'not configured'}
+                tone={environment.supabaseConfigured ? 'available' : 'blocked'}
+              />
             </div>
             <p className="mt-3 text-sm text-secondary-600">Protected routes remain unavailable without approved authentication.</p>
           </div>
@@ -101,6 +160,25 @@ export default function CertificationOverview() {
             <div className="mt-3"><StatusPill label="foundation only" tone="pending" /></div>
             <p className="mt-3 text-sm text-secondary-600">The production operator endpoint remains disconnected and fail-closed.</p>
           </div>
+        </section>
+
+        <section className="rounded-xl border border-secondary-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-xl font-semibold text-secondary-900">Deployment snapshot</h2>
+            <StatusPill label={mirrorLabel(mirror)} tone={mirrorTone(mirror)} />
+          </div>
+          {mirror.status === 'available' ? (
+            <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div><p className="text-xs uppercase tracking-wide text-secondary-500">Version</p><p className="mt-1 font-mono text-sm text-secondary-800">{mirror.snapshot.release.packageVersion}</p></div>
+              <div><p className="text-xs uppercase tracking-wide text-secondary-500">Commit</p><p className="mt-1 font-mono text-sm text-secondary-800">{mirror.snapshot.release.commit}</p></div>
+              <div><p className="text-xs uppercase tracking-wide text-secondary-500">Environment</p><p className="mt-1 font-mono text-sm text-secondary-800">{mirror.snapshot.release.environment}</p></div>
+              <div><p className="text-xs uppercase tracking-wide text-secondary-500">Capability state</p><p className="mt-1 text-sm font-semibold text-emerald-800">All operational capabilities locked</p></div>
+            </div>
+          ) : (
+            <p className="mt-4 text-sm leading-6 text-secondary-600">
+              Static repository status remains available. Exact deployment metadata will appear when the read-only mirror responds.
+            </p>
+          )}
         </section>
 
         <section className="grid gap-6 xl:grid-cols-2">
@@ -143,6 +221,7 @@ export default function CertificationOverview() {
               <tbody className="divide-y divide-secondary-100 text-secondary-700">
                 <tr><td className="px-3 py-3 font-mono">/</td><td className="px-3 py-3">Public landing</td><td className="px-3 py-3"><StatusPill label="available" tone="available" /></td></tr>
                 <tr><td className="px-3 py-3 font-mono">/certification</td><td className="px-3 py-3">Read-only build and readiness overview</td><td className="px-3 py-3"><StatusPill label="available" tone="available" /></td></tr>
+                <tr><td className="px-3 py-3 font-mono">/api/certification/status</td><td className="px-3 py-3">Minimized same-origin certification snapshot</td><td className="px-3 py-3"><StatusPill label="GET and HEAD only" tone="available" /></td></tr>
                 <tr><td className="px-3 py-3 font-mono">/waitlist</td><td className="px-3 py-3">Product updates registration</td><td className="px-3 py-3"><StatusPill label="available" tone="available" /></td></tr>
                 <tr><td className="px-3 py-3 font-mono">/dashboard</td><td className="px-3 py-3">Connected dashboard with health-gated fallback</td><td className="px-3 py-3"><StatusPill label="authentication and backend health required" tone="blocked" /></td></tr>
                 <tr><td className="px-3 py-3 font-mono">/operator-readiness</td><td className="px-3 py-3">Server-authorized operator evidence</td><td className="px-3 py-3"><StatusPill label="identity gateway required" tone="blocked" /></td></tr>
