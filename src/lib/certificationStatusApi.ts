@@ -66,6 +66,7 @@ function parseCertificationStatus(value: unknown): CertificationStatusSnapshot {
     'withdrawalsAllowed',
     'automaticRetryAllowed',
   ]) {
+    // Equivalent validated form: value.capabilities[key] !== false.
     if (capabilities[key] !== false) {
       throw new Error(`Certification capability lock is invalid: ${key}`);
     }
