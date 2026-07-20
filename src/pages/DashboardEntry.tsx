@@ -1,15 +1,24 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { fetchCertificationBackendHealth } from '../lib/certificationBackendHealthApi';
 import { getConfiguredBackendUrl } from '../lib/env';
 import { PAPER_DASHBOARD_ROUTES } from '../lib/paperDashboardRoutes';
 
 const ConnectedDashboard = lazy(() => import('./Index'));
 const HEALTH_TIMEOUT_MS = 5_000;
+const DIAGNOSTIC_TIMEOUT_MS = 6_000;
+
+type UnavailableReason =
+  | 'not-configured'
+  | 'backend-response'
+  | 'browser-network-path'
+  | 'backend-unreachable'
+  | 'diagnostic-unavailable';
 
 type ConnectionState =
   | { status: 'checking'; message: string }
   | { status: 'available'; message: string }
-  | { status: 'unavailable'; message: string };
+  | { status: 'unavailable'; message: string; reason: UnavailableReason };
 
 function backendHost(): string {
   try {
@@ -19,14 +28,72 @@ function backendHost(): string {
   }
 }
 
+async function classifyBrowserFailure(browserMessage: string): Promise<Extract<ConnectionState, { status: 'unavailable' }>> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), DIAGNOSTIC_TIMEOUT_MS);
+
+  try {
+    const snapshot = await fetchCertificationBackendHealth(controller.signal);
+    const { result, target } = snapshot;
+
+    if (result.healthy) {
+      return {
+        status: 'unavailable',
+        reason: 'browser-network-path',
+        message: `${browserMessage} Vercel reached ${target.host} successfully with HTTP ${result.statusCode} in ${result.latencyMs} ms, so the failure is limited to this browser or network path.`,
+      };
+    }
+
+    if (result.reachable) {
+      return {
+        status: 'unavailable',
+        reason: 'backend-response',
+        message: `${browserMessage} Vercel also reached ${target.host}, but its health route returned HTTP ${result.statusCode}.`,
+      };
+    }
+
+    return {
+      status: 'unavailable',
+      reason: 'backend-unreachable',
+      message: `${browserMessage} Vercel could not reach ${target.host} either; diagnostic state: ${result.state}.`,
+    };
+  } catch (error) {
+    const timedOut = error instanceof DOMException && error.name === 'AbortError';
+    return {
+      status: 'unavailable',
+      reason: 'diagnostic-unavailable',
+      message: `${browserMessage} ${
+        timedOut
+          ? 'The same-origin server diagnostic did not respond within six seconds.'
+          : 'The same-origin server diagnostic could not classify the failure.'
+      }`,
+    };
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+function fallbackExplanation(reason: UnavailableReason): string {
+  if (reason === 'browser-network-path') {
+    return 'The Vercel application and Worker are healthy, but this device or mobile network cannot reach the workers.dev route directly. The connected dashboard remains closed because its data requests would fail from this browser.';
+  }
+  if (reason === 'backend-response' || reason === 'backend-unreachable') {
+    return 'The connected-dashboard service did not pass its health requirement. The Vercel application remains available, and the Certification Overview shows the measured backend state.';
+  }
+  if (reason === 'not-configured') {
+    return 'This deployment has no browser-facing dashboard backend configured. The public Certification Overview remains available.';
+  }
+  return 'The browser check failed and the same-origin diagnostic could not establish the backend condition. The public Certification Overview remains available.';
+}
+
 export default function DashboardEntry() {
   const [connection, setConnection] = useState<ConnectionState>({
     status: 'checking',
-    message: 'Checking the Certification Mode backend…',
+    message: 'Checking the Certification Mode backend from this browser…',
   });
 
   const checkBackend = useCallback(async () => {
-    setConnection({ status: 'checking', message: 'Checking the Certification Mode backend…' });
+    setConnection({ status: 'checking', message: 'Checking the Certification Mode backend from this browser…' });
 
     let backendUrl: string;
     try {
@@ -34,6 +101,7 @@ export default function DashboardEntry() {
     } catch {
       setConnection({
         status: 'unavailable',
+        reason: 'not-configured',
         message: 'No dashboard backend is configured for this deployment.',
       });
       return;
@@ -55,20 +123,19 @@ export default function DashboardEntry() {
       if (!response.ok) {
         setConnection({
           status: 'unavailable',
-          message: `The dashboard backend returned HTTP ${response.status}.`,
+          reason: 'backend-response',
+          message: `This browser reached the dashboard backend, but it returned HTTP ${response.status}.`,
         });
         return;
       }
 
-      setConnection({ status: 'available', message: 'Backend health check passed.' });
+      setConnection({ status: 'available', message: 'Browser-to-backend health check passed.' });
     } catch (error) {
       const timedOut = error instanceof DOMException && error.name === 'AbortError';
-      setConnection({
-        status: 'unavailable',
-        message: timedOut
-          ? 'The dashboard backend did not respond within five seconds.'
-          : 'The configured dashboard backend could not be reached from this network.',
-      });
+      const browserMessage = timedOut
+        ? 'This browser did not receive a backend response within five seconds.'
+        : 'This browser could not reach the configured dashboard backend.';
+      setConnection(await classifyBrowserFailure(browserMessage));
     } finally {
       window.clearTimeout(timeout);
     }
@@ -106,7 +173,7 @@ export default function DashboardEntry() {
                 : 'bg-amber-100 text-amber-900'
             }`}
           >
-            {connection.status === 'checking' ? 'checking' : 'read-only fallback'}
+            {connection.status === 'checking' ? 'checking browser path' : 'read-only fallback'}
           </span>
         </div>
 
@@ -121,8 +188,7 @@ export default function DashboardEntry() {
 
         {connection.status === 'unavailable' && (
           <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
-            The Vercel application is available. Only the separately hosted connected-dashboard service is unavailable.
-            The Certification Overview remains accessible and describes the implemented and remaining work.
+            {fallbackExplanation(connection.reason)}
           </div>
         )}
 
@@ -133,7 +199,7 @@ export default function DashboardEntry() {
               onClick={() => void checkBackend()}
               className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary-700"
             >
-              Retry backend check
+              Retry browser and server checks
             </button>
           )}
           <Link
