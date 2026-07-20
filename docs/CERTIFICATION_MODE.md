@@ -41,6 +41,9 @@ The current contract:
 - calculates deterministic EMA12, EMA26, RSI14, and a clearly labeled
   candle-direction volume proxy;
 - hashes the normalized candle source and complete signal evidence;
+- derives a stable signal identity from the provider, product, interval, latest
+  closed candle, and normalized source hash so clock changes cannot duplicate a
+  persisted decision for the same market snapshot;
 - requires an independent risk decision;
 - fixes provider mutation, execution, real funds, mainnet, and withdrawals to
   `false`.

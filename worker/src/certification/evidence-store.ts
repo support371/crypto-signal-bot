@@ -62,6 +62,7 @@ type StoredEvidenceRow = Record<string, unknown> & {
 
 type StoredSignalRow = Record<string, unknown> & {
   signal_evidence_hash: string
+  signal_identity_hash: string
   evidence_json: string
   provider_mutation_allowed: number
   execution_allowed: number
@@ -181,15 +182,16 @@ async function loadEvidence(
 async function loadSignal(
   env: CertificationEvidenceStoreEnv,
   signalEvidenceHash: string,
+  signalIdentityHash: string,
 ): Promise<StoredSignalRow | null> {
   return env.DB.prepare(`
-    SELECT signal_evidence_hash, evidence_json, provider_mutation_allowed,
+    SELECT signal_evidence_hash, signal_identity_hash, evidence_json, provider_mutation_allowed,
            execution_allowed, real_funds_allowed, mainnet_allowed,
            withdrawals_allowed
       FROM live_certification_signal_evidence
-     WHERE signal_evidence_hash = ?
+     WHERE signal_evidence_hash = ? OR signal_identity_hash = ?
      LIMIT 1
-  `).bind(signalEvidenceHash).first<StoredSignalRow>()
+  `).bind(signalEvidenceHash, signalIdentityHash).first<StoredSignalRow>()
 }
 
 function matches(
@@ -264,10 +266,11 @@ export async function persistCertificationEvidence(
     return receipt(signal, assessment, simulation, 'REPLAYED', existing.persisted_at)
   }
 
-  const existingSignal = await loadSignal(env, signal.evidenceHash)
+  const existingSignal = await loadSignal(env, signal.evidenceHash, signal.signalIdentityHash)
   if (existingSignal) {
     if (
       existingSignal.signal_evidence_hash !== signal.evidenceHash
+      || existingSignal.signal_identity_hash !== signal.signalIdentityHash
       || existingSignal.evidence_json !== signalJson
       || existingSignal.provider_mutation_allowed !== 0
       || existingSignal.execution_allowed !== 0
@@ -284,14 +287,15 @@ export async function persistCertificationEvidence(
     if (!existingSignal) {
       statements.push(env.DB.prepare(`
         INSERT INTO live_certification_signal_evidence (
-          signal_evidence_hash, source_hash, provider, product_symbol,
+          signal_evidence_hash, signal_identity_hash, source_hash, provider, product_symbol,
           direction, confidence_bps, reference_price, latest_closed_at_ms,
           evidence_json, requires_independent_risk_decision,
           provider_mutation_allowed, execution_allowed, real_funds_allowed,
           mainnet_allowed, withdrawals_allowed, created_at
-        ) VALUES (?, ?, 'BITGET', ?, ?, ?, ?, ?, ?, 1, 0, 0, 0, 0, 0, ?)
+        ) VALUES (?, ?, ?, 'BITGET', ?, ?, ?, ?, ?, ?, 1, 0, 0, 0, 0, 0, ?)
       `).bind(
         signal.evidenceHash,
+        signal.signalIdentityHash,
         signal.sourceHash,
         signal.productSymbol,
         signal.direction,

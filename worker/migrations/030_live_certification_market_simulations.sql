@@ -7,6 +7,7 @@
 
 CREATE TABLE IF NOT EXISTS live_certification_signal_evidence (
   signal_evidence_hash TEXT PRIMARY KEY CHECK (length(signal_evidence_hash) = 64),
+  signal_identity_hash TEXT NOT NULL UNIQUE CHECK (length(signal_identity_hash) = 64),
   source_hash TEXT NOT NULL CHECK (length(source_hash) = 64),
   provider TEXT NOT NULL CHECK (provider = 'BITGET'),
   product_symbol TEXT NOT NULL,

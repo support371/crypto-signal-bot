@@ -85,6 +85,7 @@ test('certification evaluator emits deterministic BUY evidence without execution
   })
   const first = await evaluateCertificationSignal(snapshot, NOW)
   const second = await evaluateCertificationSignal(snapshot, NOW)
+  const later = await evaluateCertificationSignal(snapshot, NOW + 1)
 
   assert.equal(first.direction, 'BUY')
   assert.equal(first.confidenceBps, 7_000)
@@ -98,6 +99,9 @@ test('certification evaluator emits deterministic BUY evidence without execution
     'directional_volume_positive',
   ])
   assert.equal(first.evidenceHash, second.evidenceHash)
+  assert.equal(first.signalIdentityHash, later.signalIdentityHash)
+  assert.notEqual(first.evidenceHash, later.evidenceHash)
+  assert.match(first.signalIdentityHash, /^[a-f0-9]{64}$/)
   assert.equal(first.requiresIndependentRiskDecision, true)
   assert.equal(first.providerMutationAllowed, false)
   assert.equal(first.executionAllowed, false)

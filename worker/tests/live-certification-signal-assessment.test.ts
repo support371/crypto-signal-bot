@@ -423,6 +423,47 @@ test('explicit D1 projection persists signal, assessment, and simulated FIFO evi
     assert.equal(database.database.prepare(
       'SELECT COUNT(*) AS count FROM live_certification_fill_simulations',
     ).get().count, 1)
+
+    const sameSnapshot = await fetchBitgetPublicClosedCandles('BTCUSDT', {
+      now: () => NOW,
+      fetcher: async () => Response.json({
+        code: '00000',
+        msg: 'success',
+        requestTime: NOW,
+        data: candleRows('up').reverse(),
+      }),
+    })
+    const laterSignal = await evaluateCertificationSignal(sameSnapshot, NOW + 1)
+    assert.equal(laterSignal.signalIdentityHash, marketSignal.signalIdentityHash)
+    assert.notEqual(laterSignal.evidenceHash, marketSignal.evidenceHash)
+    const laterAssessment = await assessCertificationSignalCandidate(
+      laterSignal,
+      assessmentInput(laterSignal, {
+        orderId: 'certification-order-same-candle-later',
+        correlationId: 'certification-correlation-same-candle-later',
+        idempotencyKey: 'certification:same-candle:later',
+        riskDecisionId: 'certification-risk-same-candle-later',
+        reservationJournalId: 'certification-reservation-same-candle-later',
+      }),
+      NOW + 1,
+    )
+    const laterSimulation = await simulateCertificationFill({
+      assessment: laterAssessment,
+      simulatedAt: new Date(NOW + 1).toISOString(),
+      existingLots: [],
+      cumulativeRealizedPnlQuote: asSignedDecimalString('0'),
+      accounts: accountingAccounts,
+    })
+    await assert.rejects(
+      persistCertificationEvidence(
+        database.env(),
+        laterSignal,
+        laterAssessment,
+        laterSimulation,
+        new Date(NOW + 1).toISOString(),
+      ),
+      /stored certification signal conflicts/,
+    )
   } finally {
     database.close()
   }

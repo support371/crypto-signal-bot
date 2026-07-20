@@ -66,6 +66,8 @@ for (const required of [
   'rsi14Bps',
   "volumeMethod: 'CANDLE_DIRECTION_PROXY'",
   'requiresIndependentRiskDecision: true',
+  'signalIdentityHash',
+  'Certification signal identity hash does not match its source',
   'providerMutationAllowed: false',
   'executionAllowed: false',
   'realFundsAllowed: false',

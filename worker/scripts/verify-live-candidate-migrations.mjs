@@ -203,11 +203,11 @@ function verifyBitgetDemoEvidenceConstraints(db) {
     );
 
     INSERT INTO live_certification_signal_evidence (
-      signal_evidence_hash, source_hash, provider, product_symbol, direction,
+      signal_evidence_hash, signal_identity_hash, source_hash, provider, product_symbol, direction,
       confidence_bps, reference_price, latest_closed_at_ms, evidence_json,
       created_at
     ) VALUES (
-      '${hash('1')}', '${hash('2')}', 'BITGET', 'BTCUSDT', 'BUY', 7000,
+      '${hash('1')}', '${hash('0')}', '${hash('2')}', 'BITGET', 'BTCUSDT', 'BUY', 7000,
       '50000.01', 1800000000000, '{}', '2027-01-15T08:00:00.000Z'
     );
     INSERT INTO live_certification_signal_assessments (

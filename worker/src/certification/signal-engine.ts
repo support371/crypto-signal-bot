@@ -39,6 +39,7 @@ export type CertificationSignalEvidence = Readonly<{
   referencePrice: DecimalString
   sourceAgeMs: number
   sourceHash: string
+  signalIdentityHash: string
   evidenceHash: string
   requiresIndependentRiskDecision: true
   providerMutationAllowed: false
@@ -143,6 +144,7 @@ function signalHashPayload(
     referencePrice: evidence.referencePrice,
     sourceAgeMs: evidence.sourceAgeMs,
     sourceHash: evidence.sourceHash,
+    signalIdentityHash: evidence.signalIdentityHash,
     requiresIndependentRiskDecision: evidence.requiresIndependentRiskDecision,
     providerMutationAllowed: evidence.providerMutationAllowed,
     executionAllowed: evidence.executionAllowed,
@@ -178,6 +180,20 @@ export async function verifyCertificationSignalEvidence(
   }
   if (!/^[a-f0-9]{64}$/.test(evidence.evidenceHash)) {
     throw new TypeError('Certification signal evidenceHash is invalid')
+  }
+  if (!/^[a-f0-9]{64}$/.test(evidence.signalIdentityHash)) {
+    throw new TypeError('Certification signal identity hash is invalid')
+  }
+  const identityHash = await sha256Hex(JSON.stringify({
+    version: evidence.version,
+    provider: evidence.provider,
+    productSymbol: evidence.productSymbol,
+    granularity: evidence.granularity,
+    latestClosedAtMs: evidence.latestClosedAtMs,
+    sourceHash: evidence.sourceHash,
+  }))
+  if (identityHash !== evidence.signalIdentityHash) {
+    throw new Error('Certification signal identity hash does not match its source')
   }
   const recomputed = await sha256Hex(JSON.stringify(signalHashPayload(evidence)))
   if (recomputed !== evidence.evidenceHash) {
@@ -215,6 +231,14 @@ export async function evaluateCertificationSignal(
   const confidenceBps = direction === 'HOLD' ? 4_000 : 7_000
   const sourceAgeMs = nowMs - snapshot.latestClosedAtMs
   const referencePrice = snapshot.candles.at(-1)!.close
+  const signalIdentityHash = await sha256Hex(JSON.stringify({
+    version: 'certification-signal-v1',
+    provider: 'BITGET',
+    productSymbol: snapshot.productSymbol,
+    granularity: '5min',
+    latestClosedAtMs: snapshot.latestClosedAtMs,
+    sourceHash: snapshot.sourceHash,
+  }))
   const evidenceWithoutHash = {
     version: 'certification-signal-v1' as const,
     provider: 'BITGET' as const,
@@ -235,6 +259,7 @@ export async function evaluateCertificationSignal(
     referencePrice,
     sourceAgeMs,
     sourceHash: snapshot.sourceHash,
+    signalIdentityHash,
     requiresIndependentRiskDecision: true as const,
     providerMutationAllowed: false as const,
     executionAllowed: false as const,
