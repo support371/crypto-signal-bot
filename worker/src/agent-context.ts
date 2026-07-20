@@ -27,15 +27,24 @@ type CircuitBreakerRow = {
   open: number | boolean
 }
 
-const PAPER_RUNTIME = {
+const CERTIFICATION_RUNTIME = {
   mode: 'paper',
   trading_mode: 'paper',
   exchange_mode: 'paper',
+  display_mode: 'certification',
+  certification_mode: true,
   network: 'testnet',
   allow_mainnet: false,
   live_trading_enabled: false,
+  provider_mutation_enabled: false,
+  real_funds_enabled: false,
   withdrawals_enabled: false,
 } as const
+
+export type AgentContextDependencies = {
+  fetcher?: typeof fetch
+  now?: () => number
+}
 
 function ok(detail: string | null = null): SubcheckResult {
   return { status: 'ok', detail }
@@ -176,7 +185,7 @@ async function readPortfolio(env: Env): Promise<{
   }
 }
 
-async function readMarketFeed(env: Env): Promise<{
+async function readMarketFeed(env: Env, fetcher: typeof fetch): Promise<{
   check: SubcheckResult
   connected: boolean
   circuitBreakers: Record<string, boolean>
@@ -198,7 +207,7 @@ async function readMarketFeed(env: Env): Promise<{
   }
 
   try {
-    const response = await fetch(
+    const response = await fetcher(
       'https://api.coinbase.com/v2/prices/BTC-USD/spot',
       { signal: AbortSignal.timeout(3000) },
     )
@@ -226,7 +235,11 @@ async function readMarketFeed(env: Env): Promise<{
 export async function handleAgentContextRequest(
   request: Request,
   env: AgentContextEnv,
+  dependencies: AgentContextDependencies = {},
 ): Promise<Response> {
+  const fetcher = dependencies.fetcher ?? fetch
+  const now = dependencies.now ?? Date.now
+
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: corsHeaders(request, env) })
   }
@@ -247,7 +260,7 @@ export async function handleAgentContextRequest(
     readGuardian(env),
     readSignals(env),
     readPortfolio(env),
-    readMarketFeed(env),
+    readMarketFeed(env, fetcher),
   ])
 
   const checks = [
@@ -261,14 +274,14 @@ export async function handleAgentContextRequest(
 
   const payload = {
     ok: allOk,
-    ts: Date.now(),
+    ts: now(),
     memory_available: Boolean(env.AGENT_MEMORY),
     runtime: runtimeCheck,
     guardian: guardian.check,
     signal: signal.check,
     portfolio: portfolio.check,
     market_feed: marketFeed.check,
-    ...PAPER_RUNTIME,
+    ...CERTIFICATION_RUNTIME,
     kill_switch_active: guardian.triggered,
     kill_switch_reason: guardian.reason,
     guardian_triggered: guardian.triggered,

@@ -11,15 +11,15 @@ const migrations = fs.readdirSync(migrationsRoot)
     const match = /^(\d{3})_.*\.sql$/.exec(name)
     if (!match) return false
     const sequence = Number(match[1])
-    return sequence >= 3 && sequence <= 29
+    return sequence >= 3 && sequence <= 30
   })
   .sort()
 
 if (migrations[0] !== '003_live_release_authorizations.sql') {
   throw new Error('live-candidate migration sequence must start at 003')
 }
-if (migrations.at(-1) !== '029_live_bitget_demo_operational_rehearsals.sql') {
-  throw new Error('live-candidate migration sequence must end at 029')
+if (migrations.at(-1) !== '030_live_certification_market_simulations.sql') {
+  throw new Error('live-candidate migration sequence must end at 030')
 }
 for (const required of [
   '020_live_recovery_accounting_dispatch_attempts.sql',
@@ -28,6 +28,7 @@ for (const required of [
   '027_live_bitget_demo_control_bindings.sql',
   '028_live_bitget_demo_deployment_readiness.sql',
   '029_live_bitget_demo_operational_rehearsals.sql',
+  '030_live_certification_market_simulations.sql',
 ]) {
   if (!migrations.includes(required)) throw new Error(`required live migration is missing: ${required}`)
 }
@@ -200,6 +201,34 @@ function verifyBitgetDemoEvidenceConstraints(db) {
       5, 0, '["rehearsals not externally observed"]', 'BLOCKED', 0,
       '${hash('f')}', 'migration-029-preparer', '2026-07-18T03:00:33.000Z'
     );
+
+    INSERT INTO live_certification_signal_evidence (
+      signal_evidence_hash, source_hash, provider, product_symbol, direction,
+      confidence_bps, reference_price, latest_closed_at_ms, evidence_json,
+      created_at
+    ) VALUES (
+      '${hash('1')}', '${hash('2')}', 'BITGET', 'BTCUSDT', 'BUY', 7000,
+      '50000.01', 1800000000000, '{}', '2027-01-15T08:00:00.000Z'
+    );
+    INSERT INTO live_certification_signal_assessments (
+      assessment_binding_hash, signal_evidence_hash,
+      candidate_assessment_hash, exchange_account_id, internal_order_id,
+      product_id, side, status, evidence_json, created_at
+    ) VALUES (
+      '${hash('3')}', '${hash('1')}', '${hash('4')}',
+      'migration-030-account', 'migration-030-order', 'BTC-USDT', 'BUY',
+      'READY_BUT_EXECUTION_LOCKED', '{}', '2027-01-15T08:00:00.000Z'
+    );
+    INSERT INTO live_certification_fill_simulations (
+      simulation_hash, assessment_binding_hash, signal_evidence_hash,
+      fill_id, accounting_hash, product_id, side, fill_price, base_size,
+      commission, simulated_at, evidence_json, persisted_at
+    ) VALUES (
+      '${hash('5')}', '${hash('3')}', '${hash('1')}',
+      'migration-030-fill', '${hash('6')}', 'BTC-USDT', 'BUY', '50500.01',
+      '0.001', '0.05', '2027-01-15T08:00:01.000Z', '{}',
+      '2027-01-15T08:00:02.000Z'
+    );
   `)
 
   for (const [sql, label] of [
@@ -213,6 +242,10 @@ function verifyBitgetDemoEvidenceConstraints(db) {
     ["DELETE FROM live_bitget_demo_deployment_readiness_manifests WHERE manifest_id = 'migration-028-blocked';", 'immutable Bitget demo readiness deletion'],
     ["UPDATE live_bitget_demo_operational_rehearsal_packs SET deployment_allowed = 1 WHERE pack_id = 'migration-029-blocked';", 'immutable operational rehearsal update'],
     ["DELETE FROM live_bitget_demo_operational_rehearsal_packs WHERE pack_id = 'migration-029-blocked';", 'immutable operational rehearsal deletion'],
+    ["UPDATE live_certification_signal_evidence SET execution_allowed = 1 WHERE signal_evidence_hash = '${hash('1')}';", 'immutable certification signal update'],
+    ["DELETE FROM live_certification_signal_assessments WHERE assessment_binding_hash = '${hash('3')}';", 'immutable certification assessment deletion'],
+    ["UPDATE live_certification_fill_simulations SET provider_order_created = 1 WHERE simulation_hash = '${hash('5')}';", 'immutable certification simulation update'],
+    ["DELETE FROM live_certification_fill_simulations WHERE simulation_hash = '${hash('5')}';", 'immutable certification simulation deletion'],
   ]) {
     expectRejected(db, sql, label)
   }
@@ -229,12 +262,12 @@ try {
 const upgradeDatabase = database()
 try {
   apply(upgradeDatabase, baselineMigrations, 'upgrade baseline through migration 019')
-  apply(upgradeDatabase, upgradeMigrations, 'upgrade from migration 019 through migration 029')
-  apply(upgradeDatabase, upgradeMigrations, 'idempotent replay of migrations 020 through 029')
+  apply(upgradeDatabase, upgradeMigrations, 'upgrade from migration 019 through migration 030')
+  apply(upgradeDatabase, upgradeMigrations, 'idempotent replay of migrations 020 through 030')
 } finally {
   upgradeDatabase.close()
 }
 
 console.log(
-  `Live-candidate empty and upgrade paths verified (${migrations.length} files; migrations 020-029 replayed).`,
+  `Live-candidate empty and upgrade paths verified (${migrations.length} files; migrations 020-030 replayed).`,
 )

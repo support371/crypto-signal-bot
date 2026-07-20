@@ -607,7 +607,7 @@ export const TradingApi = {
     
     return markAsMock({
       success: false,
-      error: 'Order modification is disabled in paper trading mode.',
+      error: 'Order modification is disabled in Certification Mode.',
       timestamp: new Date().toISOString(),
       isMock: true,
     });
@@ -619,7 +619,7 @@ export const TradingApi = {
     
     return markAsMock({
       success: false,
-      error: 'Withdrawals are disabled. This is a paper trading environment.',
+      error: 'Withdrawals are disabled. This is a certification environment.',
       timestamp: new Date().toISOString(),
       isMock: true,
     });

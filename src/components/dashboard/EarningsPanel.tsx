@@ -101,7 +101,7 @@ export function EarningsPanel({ summary, trades, isLoading, onReset }: EarningsP
         )}>
           {fmtPnl(pnl)}
         </div>
-        <p className="text-xs text-muted-foreground mt-0.5">Realized P&L (paper USDT)</p>
+        <p className="text-xs text-muted-foreground mt-0.5">Realized P&amp;L (certification USDT)</p>
       </div>
 
       {/* Stats row */}
@@ -192,7 +192,7 @@ export function EarningsPanel({ summary, trades, isLoading, onReset }: EarningsP
           <AlertDialogHeader>
             <AlertDialogTitle>Reset Earnings Ledger?</AlertDialogTitle>
             <AlertDialogDescription>
-              This clears realized P&amp;L history from the backend paper ledger. Open lots and balances remain untouched.
+              This clears realized P&amp;L history from the backend certification ledger. Open lots and balances remain untouched.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

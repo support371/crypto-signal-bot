@@ -456,7 +456,7 @@ export function CommandConsolePanel({
               size="sm"
               className="h-6 text-[10px] font-mono text-muted-foreground hover:text-destructive"
               onClick={async () => {
-                if (!window.confirm('Hard reset paper portfolio to $10,000? All positions and trades will be cleared.')) return;
+                if (!window.confirm('Hard reset the certification portfolio to $10,000? All positions and trades will be cleared.')) return;
                 setBusy(true);
                 try {
                   await onResetPortfolio();
@@ -467,7 +467,7 @@ export function CommandConsolePanel({
                 } finally { setBusy(false); }
               }}
               disabled={busy}
-              title="Hard reset paper portfolio to $10,000"
+              title="Hard reset certification portfolio to $10,000"
             >
               <RotateCcw className="w-3 h-3 mr-1" />RESET PORTFOLIO
             </Button>

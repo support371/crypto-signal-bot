@@ -60,7 +60,7 @@ function normalizeIntent(intent: AuditIntent): AuditEvent {
     kind: 'intent',
     timestamp: intent.updated_at ?? intent.created_at ?? 0,
     title: `${intent.side} ${intent.symbol}`,
-    detail: intent.notes || `${intent.mode ?? 'paper'} intent`,
+    detail: intent.notes || `${intent.mode === 'paper' || !intent.mode ? 'certification' : intent.mode} intent`,
     accent: intent.side === 'BUY' ? 'text-accent' : 'text-destructive',
     status: intent.status,
   };

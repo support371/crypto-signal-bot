@@ -12,15 +12,15 @@ export default function PrivacyPolicy() {
         </p>
         <p>
           The project is designed as a real-time crypto monitoring, signal, portfolio,
-          deployment, and exchange-integration readiness system. Paper mode is used as
-          the active safe testing mode while the system is developed, verified, and hardened.
+          deployment, and exchange-integration readiness system. Certification Mode is used
+          for isolated real-market rehearsal while the system is developed, verified, and hardened.
         </p>
 
         <h2 className="text-2xl font-semibold mt-8">Data the Agent May Access</h2>
         <p>
           Depending on connected Actions and authorization, CryptoOps Agent may access
           backend health status, runtime configuration, Guardian status, circuit breakers,
-          market feed status, public market prices, paper portfolio records, paper trade
+          market feed status, public market prices, certification portfolio records, rehearsal trade
           history, signal history, audit logs, Cloudflare D1/R2 metadata, GitHub repository
           files, commits, workflow runs, issues, pull requests, Vercel deployment metadata,
           Render diagnostics, and Telegram alert delivery status if configured.
@@ -38,16 +38,16 @@ export default function PrivacyPolicy() {
           <li>Use placeholders such as &lt;GITHUB_TOKEN&gt;, &lt;CF_API_TOKEN&gt;, &lt;VERCEL_TOKEN&gt;, and exchange testnet placeholders in docs and examples.</li>
         </ul>
 
-        <h2 className="text-2xl font-semibold mt-8">Paper Mode and Exchange Safety</h2>
+        <h2 className="text-2xl font-semibold mt-8">Certification Mode and Exchange Safety</h2>
         <p>
-          Paper mode is the current active safe testing mode. Future exchange integration
+          Certification Mode is the current isolated rehearsal environment. Future exchange integration
           may include Binance, Bitget, BTCC, Coinbase public market data, and other exchange
           adapters, but live execution must remain gated behind security, compliance,
           secret-management, Guardian, audit, and explicit approval controls.
         </p>
         <ul className="list-disc pl-6 space-y-2">
-          <li>Trading mode must remain paper during testing.</li>
-          <li>Exchange mode must remain paper during testing.</li>
+          <li>The internal compatibility mode must remain non-live during certification.</li>
+          <li>Provider mutation and real-funds execution must remain disabled during certification.</li>
           <li>Mainnet execution must remain disabled during testing.</li>
           <li>Live trading and withdrawals must remain blocked during testing.</li>
           <li>Coinbase public market data may be used for read-only pricing.</li>

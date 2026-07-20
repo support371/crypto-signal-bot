@@ -186,7 +186,7 @@ const Auth = () => {
         </Card>
 
         <p className="mt-4 text-xs text-muted-foreground font-mono">
-          Paper trading only - No real money involved
+          Certification rehearsal only — no provider mutation or real funds
         </p>
       </div>
     );
@@ -200,7 +200,7 @@ const Auth = () => {
           <CardHeader>
             <CardTitle className="font-mono flex items-center gap-2">
               <TrendingUp className="h-5 w-5 text-accent" />
-              Demo Mode Active
+              Certification Mode Active
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -363,7 +363,7 @@ const Auth = () => {
       </Card>
 
       <p className="mt-4 text-xs text-muted-foreground font-mono">
-        Paper trading only • No real money involved
+        Certification rehearsal only • No provider mutation or real funds
       </p>
     </div>
   );

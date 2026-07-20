@@ -141,6 +141,6 @@ CI fails if the operator modules acquire:
 
 ## Migration and release status
 
-The verified evidence sequence now runs through migration 029. Migration 029 adds append-only operational-rehearsal packs and does not alter deployment or execution capability.
+The verified evidence sequence now runs through migration 030. Migration 030 adds append-only real-market certification signal, locked-assessment, and synthetic FIFO evidence; it does not alter deployment or execution capability.
 
 The live-candidate PR must remain draft until all independent engineering, deployment, security, eligibility, legal, compliance, and release-certification gates are satisfied by authorized parties.

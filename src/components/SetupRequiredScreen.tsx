@@ -35,7 +35,7 @@ export default function SetupRequiredScreen() {
         </h1>
         
         <p className="text-secondary-600 mb-8">
-          Paper trading mode is enabled. All trading operations use mock data 
+          Certification Mode is enabled. Trading operations are isolated rehearsals
           and no real funds are at risk.
         </p>
         

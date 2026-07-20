@@ -11,7 +11,7 @@ export default function PublicHome() {
         className="mb-6 inline-flex rounded bg-primary px-4 py-2 font-semibold text-primary-foreground hover:bg-primary/90"
         to="/dashboard"
       >
-        Open paper dashboard
+        Open certification dashboard
       </Link>
       <nav className="grid gap-4 sm:grid-cols-2">
         <Link className="rounded border p-4 hover:bg-muted" to="/integrations">

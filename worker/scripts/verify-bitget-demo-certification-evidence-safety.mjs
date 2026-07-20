@@ -125,8 +125,8 @@ if (!packageJson.includes('verify-bitget-demo-certification-evidence-safety.mjs'
 if (!packageJson.includes('026_live_bitget_demo_certification_evidence.sql')) {
   failures.push('migration 026 local command is not wired')
 }
-if (!migrationVerifier.includes('sequence <= 29')) {
-  failures.push('migration verifier does not cover migrations through 029')
+if (!migrationVerifier.includes('sequence <= 30')) {
+  failures.push('migration verifier does not cover migrations through 030')
 }
 
 for (const configPath of [

@@ -109,7 +109,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
               <>
                 <div className="hidden md:flex items-center space-x-4">
                   <span className="text-sm text-secondary-500">
-                    Paper Trading Mode
+                    Certification Mode
                   </span>
                   <button
                     onClick={signOut}

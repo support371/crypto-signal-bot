@@ -63,7 +63,7 @@ A scenario passes only when its pass flag, evidence reference, and timestamp are
 - exact replay and conflicting-evidence rejection;
 - permanent zero-capability constraints.
 
-Migration verification applies the complete sequence through 029 from an empty database, upgrades from migration 019, replays migrations 020–029, inserts a blocked pack, and proves that the row cannot be updated or deleted.
+Migration verification applies the complete sequence through 030 from an empty database, upgrades from migration 019, replays migrations 020–030, inserts representative locked evidence, and proves that immutable rows cannot be updated or deleted.
 
 ## Operator visibility
 

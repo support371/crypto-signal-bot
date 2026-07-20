@@ -8,7 +8,7 @@ interface HeaderProps {
   onSettingsClick?: () => void;
   backendConnected?: boolean;
   killSwitchActive?: boolean;
-  paperBalance?: number | null;
+  certificationBalance?: number | null;
   systemMode?: string;
 }
 
@@ -22,7 +22,7 @@ export function Header({
   onSettingsClick,
   backendConnected = false,
   killSwitchActive = false,
-  paperBalance,
+  certificationBalance,
   systemMode = 'paper',
 }: HeaderProps) {
   const { signOut, user } = useAuth();
@@ -46,16 +46,16 @@ export function Header({
     ? 'bg-destructive'
     : 'bg-accent';
 
-  const paperBalanceLabel =
-    typeof paperBalance === 'number'
-      ? currencyFormatter.format(paperBalance)
+  const certificationBalanceLabel =
+    typeof certificationBalance === 'number'
+      ? currencyFormatter.format(certificationBalance)
       : 'Unavailable';
 
   const subtitle = !backendConnected
     ? 'Control Center Offline'
     : systemMode === 'live'
     ? 'Execution Control Center'
-    : 'Paper Trading Control Center';
+    : 'Certification Control Center';
 
   return (
     <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
@@ -87,8 +87,8 @@ export function Header({
             <div className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-lg bg-muted/30 border border-border">
               <Wallet className="w-4 h-4 text-primary" />
               <div className="text-right">
-                <div className="text-xs text-muted-foreground">Paper Balance</div>
-                <div className="font-mono font-semibold text-sm">{paperBalanceLabel}</div>
+                <div className="text-xs text-muted-foreground">Certification Balance</div>
+                <div className="font-mono font-semibold text-sm">{certificationBalanceLabel}</div>
               </div>
             </div>
 

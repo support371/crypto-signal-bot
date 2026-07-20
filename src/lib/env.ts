@@ -55,7 +55,7 @@ export function getConfiguredBackendUrl(): string {
   if (import.meta.env.DEV) return 'http://localhost:8000';
 
   throw new Error(
-    'Backend URL is not configured. Set VITE_BACKEND_URL to the public paper-mode Worker URL.',
+    'Backend URL is not configured. Set VITE_BACKEND_URL to the public Certification Mode Worker URL.',
   );
 }
 

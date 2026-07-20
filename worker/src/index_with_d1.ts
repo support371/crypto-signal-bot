@@ -2,10 +2,12 @@ import worker, { type Env } from './index'
 import { fastPathDecisionMetrics, fastPathFeedRegistry } from './fast-path'
 import { buildV2InfrastructureStatus } from './routes/v2-infrastructure'
 import { buildV2MarketFeedsStatus } from './routes/v2-market-feeds'
+import {
+  handleAgentContextRequest,
+  type AgentContextEnv,
+} from './agent-context'
 
-type AgentEnv = Env & {
-  AGENT_MEMORY?: KVNamespace
-}
+type AgentEnv = AgentContextEnv
 
 type D1ReadonlyRequest = {
   sql?: string
@@ -111,31 +113,6 @@ async function handleAgentMemory(request: Request, env: AgentEnv, key: string): 
   return Response.json({ error: 'Method not allowed' }, { status: 405 })
 }
 
-async function handleAgentContext(request: Request, env: AgentEnv): Promise<Response> {
-  const url = new URL(request.url)
-  const base = `${url.origin}`
-
-  const [runtime, guardian, signal, portfolio, feed] = await Promise.allSettled([
-    fetch(`${base}/runtime/status`).then(r => r.json()),
-    fetch(`${base}/guardian/status`).then(r => r.json()),
-    fetch(`${base}/signal/latest`).then(r => r.json()),
-    fetch(`${base}/portfolio/summary`).then(r => r.json()),
-    fetch(`${base}/market/feed/status`).then(r => r.json()),
-  ])
-
-  const memoryAvailable = !!env.AGENT_MEMORY
-
-  return Response.json({
-    ts: new Date().toISOString(),
-    memory_available: memoryAvailable,
-    runtime: runtime.status === 'fulfilled' ? runtime.value : { error: 'unavailable' },
-    guardian: guardian.status === 'fulfilled' ? guardian.value : { error: 'unavailable' },
-    signal: signal.status === 'fulfilled' ? signal.value : { error: 'unavailable' },
-    portfolio: portfolio.status === 'fulfilled' ? portfolio.value : { error: 'unavailable' },
-    market_feed: feed.status === 'fulfilled' ? feed.value : { error: 'unavailable' },
-  })
-}
-
 async function readD1Status(env: Env): Promise<'healthy' | 'unavailable'> {
   try {
     await env.DB.prepare('SELECT 1 AS ok').first()
@@ -214,7 +191,7 @@ export default {
     }
 
     if (request.method === 'GET' && url.pathname === '/agent/context') {
-      return handleAgentContext(request, env)
+      return handleAgentContextRequest(request, env)
     }
 
     if (request.method === 'POST' && url.pathname === '/d1/query/readonly') {

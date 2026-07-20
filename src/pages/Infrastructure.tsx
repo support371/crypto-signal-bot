@@ -76,7 +76,7 @@ export default function Infrastructure() {
               <h1 className="text-2xl font-bold text-secondary-900">Infrastructure Readiness</h1>
               <StatusBadge
                 status={snapshot.paperSafetyOk ? 'healthy' : 'halted'}
-                label={snapshot.paperSafetyOk ? 'paper safety verified' : 'paper safety unverified'}
+                label={snapshot.paperSafetyOk ? 'certification safety verified' : 'certification safety unverified'}
               />
             </div>
             <p className="mt-2 max-w-3xl text-sm text-secondary-600">
@@ -132,11 +132,11 @@ export default function Infrastructure() {
           <div className="mt-4 divide-y divide-secondary-100">
             <div className="flex items-center justify-between py-3">
               <span className="text-sm text-secondary-600">Trading mode</span>
-              <StatusBadge status={snapshot.runtime.tradingMode === 'paper' ? 'healthy' : 'halted'} label={snapshot.runtime.tradingMode} />
+              <StatusBadge status={snapshot.runtime.tradingMode === 'paper' ? 'healthy' : 'halted'} label={snapshot.runtime.tradingMode === 'paper' ? 'certification' : snapshot.runtime.tradingMode} />
             </div>
             <div className="flex items-center justify-between py-3">
               <span className="text-sm text-secondary-600">Exchange mode</span>
-              <StatusBadge status={snapshot.runtime.exchangeMode === 'paper' ? 'healthy' : 'halted'} label={snapshot.runtime.exchangeMode} />
+              <StatusBadge status={snapshot.runtime.exchangeMode === 'paper' ? 'healthy' : 'halted'} label={snapshot.runtime.exchangeMode === 'paper' ? 'certification' : snapshot.runtime.exchangeMode} />
             </div>
             <div className="flex items-center justify-between py-3">
               <span className="text-sm text-secondary-600">Network</span>
