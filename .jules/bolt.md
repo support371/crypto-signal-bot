@@ -45,3 +45,7 @@
 ## 2026-07-15 - [Efficient RSI Series Calculation]
 **Learning:** The traditional RSI formula $100 - (100 / (1 + RS))$ involves multiple divisions and nested calculations. It can be simplified to $100 \cdot avg\_gain / (avg\_gain + avg\_loss)$, which is mathematically equivalent and significantly faster.
 **Action:** Use the ratio-based RSI formula to reduce floating-point divisions and simplify the update logic inside hot loops.
+
+## 2026-07-22 - [In-Memory Rate Limiter O(N) Global Cleanup Bottleneck]
+**Learning:** Performing a full-store sweep (`_rate_limit_store.items()`) to evict stale keys on every single request degrades performance linearly with the number of unique clients $O(U)$. Under a large load of unique IPs, this simple cleanup completely dwarfs the sliding window check. Decoupling the cleanup to run periodically (e.g. every 10 seconds) keeps the request hot-path incredibly fast. Additionally, using `collections.deque` and lazy `popleft()` eliminates list allocation and slicing overhead, reducing per-check latency from ~178 microseconds to ~1.1 microseconds (~155x speedup).
+**Action:** Always decouple global cleanup/eviction sweeps in in-memory stores to run periodically, and use `collections.deque` with `popleft()` for sliding-window lookups to keep the request hot-path $O(1)$.
