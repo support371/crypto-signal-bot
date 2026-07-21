@@ -54,11 +54,11 @@ function parseCertificationStatus(value: unknown): CertificationStatusSnapshot {
     throw new Error('Certification status response has an invalid envelope');
   }
 
-  const root: Record<string, unknown> = value;
-  if (root.schemaVersion !== 'certification-status.v1' || root.mode !== 'CERTIFICATION' || root.readOnly !== true) {
+  if (value.schemaVersion !== 'certification-status.v1' || value.mode !== 'CERTIFICATION' || value.readOnly !== true) {
     throw new Error('Certification status response has an invalid envelope');
   }
 
+  const root: Record<string, unknown> = value;
   const release = requireRecord(root, 'release');
   const services = requireRecord(root, 'services');
   const capabilities = requireRecord(root, 'capabilities');
