@@ -1,4 +1,5 @@
 export const CERTIFICATION_STATUS_ROUTE = '/api/certification/status' as const;
+export const CERTIFICATION_STATUS_STATIC_ROUTE = '/certification-status.json' as const;
 
 export type CertificationStatusSnapshot = {
   schemaVersion: 'certification-status.v1';
@@ -28,6 +29,13 @@ export type CertificationStatusSnapshot = {
     automaticRetryAllowed: false;
   };
 };
+
+class CertificationStatusRouteUnavailable extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CertificationStatusRouteUnavailable';
+  }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -114,19 +122,53 @@ function parseCertificationStatus(value: unknown): CertificationStatusSnapshot {
   };
 }
 
-export async function fetchCertificationStatus(signal: AbortSignal): Promise<CertificationStatusSnapshot> {
-  const response = await fetch(CERTIFICATION_STATUS_ROUTE, {
-    method: 'GET',
-    headers: { Accept: 'application/json' },
-    credentials: 'omit',
-    redirect: 'error',
-    cache: 'no-store',
-    signal,
-  });
+async function fetchCertificationStatusRoute(
+  route: typeof CERTIFICATION_STATUS_ROUTE | typeof CERTIFICATION_STATUS_STATIC_ROUTE,
+  signal: AbortSignal,
+): Promise<CertificationStatusSnapshot> {
+  let response: Response;
 
-  if (!response.ok) {
-    throw new Error(`Certification status endpoint returned HTTP ${response.status}`);
+  try {
+    response = await fetch(route, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      credentials: 'omit',
+      redirect: 'error',
+      cache: 'no-store',
+      signal,
+    });
+  } catch (error) {
+    if (signal.aborted) throw error;
+    throw new CertificationStatusRouteUnavailable(`Certification status route could not be reached: ${route}`);
   }
 
-  return parseCertificationStatus(await response.json());
+  if (!response.ok) {
+    throw new CertificationStatusRouteUnavailable(`Certification status route returned HTTP ${response.status}: ${route}`);
+  }
+
+  const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+  if (!contentType.includes('application/json')) {
+    throw new CertificationStatusRouteUnavailable(`Certification status route did not return JSON: ${route}`);
+  }
+
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new CertificationStatusRouteUnavailable(`Certification status route returned invalid JSON: ${route}`);
+  }
+
+  return parseCertificationStatus(payload);
+}
+
+export async function fetchCertificationStatus(signal: AbortSignal): Promise<CertificationStatusSnapshot> {
+  try {
+    return await fetchCertificationStatusRoute(CERTIFICATION_STATUS_ROUTE, signal);
+  } catch (error) {
+    if (signal.aborted || !(error instanceof CertificationStatusRouteUnavailable)) {
+      throw error;
+    }
+  }
+
+  return fetchCertificationStatusRoute(CERTIFICATION_STATUS_STATIC_ROUTE, signal);
 }
