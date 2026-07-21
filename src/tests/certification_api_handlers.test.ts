@@ -58,7 +58,7 @@ afterEach(() => {
 });
 
 describe('certification status handler', () => {
-  it('returns minimized preview metadata with every operational capability locked', () => {
+  it('returns minimized preview metadata with a deterministic build version and every operational capability locked', () => {
     process.env.VERCEL_GIT_COMMIT_SHA = '1234567890abcdef1234567890abcdef12345678';
     process.env.VERCEL_ENV = 'preview';
 
@@ -74,7 +74,7 @@ describe('certification status handler', () => {
     expect(payload.mode).toBe('CERTIFICATION');
     expect(payload.readOnly).toBe(true);
     expect(payload.release).toMatchObject({
-      packageVersion: '0.0.0',
+      packageVersion: '0.0.0-dev+1234567890ab',
       channel: 'preview-candidate',
       commit: '1234567890ab',
       environment: 'preview',
@@ -83,6 +83,22 @@ describe('certification status handler', () => {
     const capabilities = payload.capabilities as Record<string, unknown>;
     expect(Object.keys(capabilities)).toHaveLength(7);
     expect(Object.values(capabilities).every((value) => value === false)).toBe(true);
+  });
+
+  it('uses a non-production development label when deployment commit metadata is unavailable', () => {
+    delete process.env.VERCEL_GIT_COMMIT_SHA;
+    process.env.VERCEL_ENV = 'development';
+
+    const response = new TestResponse();
+    certificationStatusHandler({ method: 'GET' } as TestRequest, response);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().release).toMatchObject({
+      packageVersion: '0.0.0-dev',
+      channel: 'preview-candidate',
+      commit: 'unknown',
+      environment: 'development',
+    });
   });
 
   it('suppresses the body for HEAD requests', () => {
