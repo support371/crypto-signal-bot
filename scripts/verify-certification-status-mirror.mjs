@@ -60,7 +60,7 @@ for (const required of [
   "value.schemaVersion !== 'certification-status.v1'",
   "value.mode !== 'CERTIFICATION'",
   'value.readOnly !== true',
-  'value.capabilities[key] !== false',
+  'capabilities[key] !== false',
 ]) {
   assert.ok(client.includes(required), `certification client must include ${required}`);
 }
