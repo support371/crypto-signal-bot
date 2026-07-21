@@ -3,11 +3,14 @@ import { readFile } from 'node:fs/promises';
 
 const endpoint = await readFile(new URL('../api/certification/status.js', import.meta.url), 'utf8');
 const client = await readFile(new URL('../src/lib/certificationStatusApi.ts', import.meta.url), 'utf8');
+const staticWriter = await readFile(new URL('./write-static-certification-status.mjs', import.meta.url), 'utf8');
+const packageJson = await readFile(new URL('../package.json', import.meta.url), 'utf8');
 const backendEndpoint = await readFile(new URL('../api/certification/backend-health.js', import.meta.url), 'utf8');
 const backendClient = await readFile(new URL('../src/lib/certificationBackendHealthApi.ts', import.meta.url), 'utf8');
 const page = await readFile(new URL('../src/pages/CertificationOverview.tsx', import.meta.url), 'utf8');
 const vercel = await readFile(new URL('../vercel.json', import.meta.url), 'utf8');
 
+const packageConfig = JSON.parse(packageJson);
 JSON.parse(vercel);
 
 for (const required of [
@@ -60,10 +63,14 @@ for (const forbidden of [
 
 for (const required of [
   "CERTIFICATION_STATUS_ROUTE = '/api/certification/status'",
+  "CERTIFICATION_STATUS_STATIC_ROUTE = '/certification-status.json'",
   "method: 'GET'",
   "credentials: 'omit'",
   "redirect: 'error'",
   "cache: 'no-store'",
+  'CertificationStatusRouteUnavailable',
+  "contentType.includes('application/json')",
+  'fetchCertificationStatusRoute(CERTIFICATION_STATUS_STATIC_ROUTE, signal)',
   'capabilities[key] !== false',
 ]) {
   assert.ok(client.includes(required), `certification client must include ${required}`);
@@ -93,6 +100,46 @@ for (const forbidden of [
 ]) {
   assert.doesNotMatch(client, forbidden, `certification client must not match ${forbidden}`);
 }
+
+for (const required of [
+  "new URL('../public/certification-status.json'",
+  "channel: 'static-build-candidate'",
+  "certificationMirror: 'static-build'",
+  "operatorGateway: 'disconnected'",
+  'deploymentAllowed: false',
+  'providerMutationAllowed: false',
+  'executionAllowed: false',
+  'mainnetAllowed: false',
+  'realFundsAllowed: false',
+  'withdrawalsAllowed: false',
+  'automaticRetryAllowed: false',
+]) {
+  assert.ok(staticWriter.includes(required), `static certification writer must include ${required}`);
+}
+
+for (const forbidden of [
+  /\bfetch\s*\(/i,
+  /authorization/i,
+  /document\.cookie/i,
+  /localStorage/i,
+  /sessionStorage/i,
+  /api[_-]?key/i,
+  /secret/i,
+  /Allowed:\s*true/i,
+]) {
+  assert.doesNotMatch(staticWriter, forbidden, `static certification writer must not match ${forbidden}`);
+}
+
+assert.equal(
+  packageConfig.scripts?.['prepare:certification-static'],
+  'node scripts/write-static-certification-status.mjs',
+  'build must expose the static certification writer',
+);
+assert.match(
+  packageConfig.scripts?.build ?? '',
+  /^npm run prepare:certification-static && /,
+  'build must generate the static certification snapshot before validation and bundling',
+);
 
 for (const required of [
   "'X-Certification-Diagnostic': 'read-only'",
@@ -172,4 +219,4 @@ for (const required of [
 
 assert.ok(vercel.includes('(?!api/|assets/|.*\\..*)'), 'SPA rewrite must continue excluding API routes');
 
-console.log('certification status mirror and backend diagnostic verified');
+console.log('certification status mirror, static fallback, and backend diagnostic verified');
