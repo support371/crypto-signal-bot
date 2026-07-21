@@ -5,6 +5,7 @@ const core = await readFile(new URL('../src/server/operatorIdentityGateway.ts', 
 const bounded = await readFile(new URL('../src/server/boundedOperatorIdentityGateway.ts', import.meta.url), 'utf8');
 const aggregator = await readFile(new URL('../src/server/operatorReadOnlyAggregator.ts', import.meta.url), 'utf8');
 const sessionVerifier = await readFile(new URL('../src/server/trustedOperatorSessionVerifier.ts', import.meta.url), 'utf8');
+const authorizationResolver = await readFile(new URL('../src/server/operatorAuthorizationResolver.ts', import.meta.url), 'utf8');
 const placeholder = await readFile(new URL('../api/operator/readiness.js', import.meta.url), 'utf8');
 const schema = await readFile(new URL('../contracts/operator-readiness-response.schema.json', import.meta.url), 'utf8');
 
@@ -170,6 +171,45 @@ for (const forbidden of [
 }
 
 for (const required of [
+  'loadAccessProfile(',
+  "'GLOBAL' | 'EXCHANGE' | 'ACCOUNT'",
+  'RESOURCE_ROLES',
+  "ACTIVATION_GATE: Object.freeze(['RISK_ADMIN', 'AUDITOR', 'RELEASE_ADMIN'])",
+  "AUDIT_HEAD: Object.freeze(['RISK_ADMIN', 'AUDITOR', 'RELEASE_ADMIN'])",
+  "CERTIFICATION: Object.freeze(['VIEWER', 'RISK_OPERATOR', 'RISK_ADMIN', 'AUDITOR', 'RELEASE_ADMIN'])",
+  'operator profile escaped the verified subject',
+  'account resources require a server-resolved account',
+  'product scope requires an account scope',
+  'operator role assignments contain duplicates',
+  "assignment.scopeType === 'GLOBAL'",
+  "assignment.scopeType === 'EXCHANGE'",
+  'operator role or scope does not authorize every requested resource',
+  "status: 'AUTHORIZED'",
+  "status: 'FORBIDDEN'",
+  "status: 'UNAVAILABLE'",
+]) {
+  assert.ok(authorizationResolver.includes(required), `operator authorization resolver must include ${required}`);
+}
+
+for (const forbidden of [
+  /process\.env/i,
+  /localStorage/i,
+  /sessionStorage/i,
+  /document\.cookie/i,
+  /window\./i,
+  /\bfetch\s*\(/i,
+  /\baxios\b/i,
+  /X-API-Key/i,
+  /Authorization/i,
+  /\bCookie\b/i,
+  /requestedResources\s*:\s*request\./i,
+  /accountId\s*:\s*request\./i,
+  /productId\s*:\s*request\./i,
+]) {
+  assert.doesNotMatch(authorizationResolver, forbidden, `operator authorization resolver must not match ${forbidden}`);
+}
+
+for (const required of [
   "code: 'OPERATOR_IDENTITY_GATEWAY_NOT_CONFIGURED'",
   'sendJson(response, 503',
   "response.setHeader('Allow', 'GET, HEAD, OPTIONS')",
@@ -182,9 +222,11 @@ for (const forbidden of [
   'boundedOperatorIdentityGateway',
   'operatorReadOnlyAggregator',
   'trustedOperatorSessionVerifier',
+  'operatorAuthorizationResolver',
   'verifySession',
   'verifySignedSession',
   'resolveAuthorization',
+  'loadAccessProfile',
   'aggregateReadOnlyEvidence',
   'resolveCredential',
 ]) {
