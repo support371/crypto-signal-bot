@@ -59,13 +59,26 @@ for (const required of [
   "credentials: 'omit'",
   "redirect: 'error'",
   "cache: 'no-store'",
-  "root.schemaVersion !== 'certification-status.v1'",
-  "root.mode !== 'CERTIFICATION'",
-  'root.readOnly !== true',
   'capabilities[key] !== false',
 ]) {
   assert.ok(client.includes(required), `certification client must include ${required}`);
 }
+
+assert.match(
+  client,
+  /(?:value|root)\.schemaVersion\s*!==\s*'certification-status\.v1'/,
+  'certification client must validate the schema version after record narrowing',
+);
+assert.match(
+  client,
+  /(?:value|root)\.mode\s*!==\s*'CERTIFICATION'/,
+  'certification client must validate certification mode after record narrowing',
+);
+assert.match(
+  client,
+  /(?:value|root)\.readOnly\s*!==\s*true/,
+  'certification client must validate the read-only envelope after record narrowing',
+);
 
 for (const forbidden of [
   /credentials:\s*'include'/i,
