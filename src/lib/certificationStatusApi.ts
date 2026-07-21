@@ -33,6 +33,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function requireRecord(record: Record<string, unknown>, key: string): Record<string, unknown> {
+  const value = record[key];
+  if (!isRecord(value)) {
+    throw new Error(`Certification status response has an invalid object field: ${key}`);
+  }
+  return value;
+}
+
 function requireString(record: Record<string, unknown>, key: string): string {
   const value = record[key];
   if (typeof value !== 'string') {
@@ -46,20 +54,9 @@ function parseCertificationStatus(value: unknown): CertificationStatusSnapshot {
     throw new Error('Certification status response has an invalid envelope');
   }
 
-  const releaseValue = value.release;
-  if (!isRecord(releaseValue)) {
-    throw new Error('Certification status response has invalid release metadata');
-  }
-
-  const servicesValue = value.services;
-  if (!isRecord(servicesValue)) {
-    throw new Error('Certification status response has invalid service metadata');
-  }
-
-  const capabilitiesValue = value.capabilities;
-  if (!isRecord(capabilitiesValue)) {
-    throw new Error('Certification status response is missing capability locks');
-  }
+  const release = requireRecord(value, 'release');
+  const services = requireRecord(value, 'services');
+  const capabilities = requireRecord(value, 'capabilities');
 
   const capabilityKeys = [
     'deploymentAllowed',
@@ -72,7 +69,7 @@ function parseCertificationStatus(value: unknown): CertificationStatusSnapshot {
   ] as const;
 
   for (const key of capabilityKeys) {
-    if (capabilitiesValue[key] !== false) {
+    if (capabilities[key] !== false) {
       throw new Error(`Certification capability lock is invalid: ${key}`);
     }
   }
@@ -87,17 +84,17 @@ function parseCertificationStatus(value: unknown): CertificationStatusSnapshot {
     readOnly: true,
     generatedAt: value.generatedAt,
     release: {
-      packageVersion: requireString(releaseValue, 'packageVersion'),
-      channel: requireString(releaseValue, 'channel'),
-      commit: requireString(releaseValue, 'commit'),
-      environment: requireString(releaseValue, 'environment'),
+      packageVersion: requireString(release, 'packageVersion'),
+      channel: requireString(release, 'channel'),
+      commit: requireString(release, 'commit'),
+      environment: requireString(release, 'environment'),
     },
     services: {
-      publicApplication: requireString(servicesValue, 'publicApplication'),
-      certificationMirror: requireString(servicesValue, 'certificationMirror'),
-      connectedDashboard: requireString(servicesValue, 'connectedDashboard'),
-      userAuthentication: requireString(servicesValue, 'userAuthentication'),
-      operatorGateway: requireString(servicesValue, 'operatorGateway'),
+      publicApplication: requireString(services, 'publicApplication'),
+      certificationMirror: requireString(services, 'certificationMirror'),
+      connectedDashboard: requireString(services, 'connectedDashboard'),
+      userAuthentication: requireString(services, 'userAuthentication'),
+      operatorGateway: requireString(services, 'operatorGateway'),
     },
     capabilities: {
       deploymentAllowed: false,
