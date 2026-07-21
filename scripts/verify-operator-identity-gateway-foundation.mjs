@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 
 const core = await readFile(new URL('../src/server/operatorIdentityGateway.ts', import.meta.url), 'utf8');
 const bounded = await readFile(new URL('../src/server/boundedOperatorIdentityGateway.ts', import.meta.url), 'utf8');
+const aggregator = await readFile(new URL('../src/server/operatorReadOnlyAggregator.ts', import.meta.url), 'utf8');
 const placeholder = await readFile(new URL('../api/operator/readiness.js', import.meta.url), 'utf8');
 const schema = await readFile(new URL('../contracts/operator-readiness-response.schema.json', import.meta.url), 'utf8');
 
@@ -73,6 +74,64 @@ for (const forbidden of [
 }
 
 for (const required of [
+  "workerOrigin: string",
+  'fetcher(input: RequestInfo | URL, init?: RequestInit): Promise<Response>',
+  'resolveCredential(',
+  "'/v1/operator/activation-gate'",
+  "'/v1/operator/deployment-readiness'",
+  "'/v1/operator/operational-readiness'",
+  "'/v1/operator/certification'",
+  "'/v1/operator/recovery-readiness'",
+  "'/v1/operator/reconciliation'",
+  "'/v1/operator/alerts'",
+  "'/v1/operator/audit-head'",
+  "redirect: 'error'",
+  "credentials: 'omit'",
+  "cache: 'no-store'",
+  "method: 'GET'",
+  "'X-Operator-Id': credential.actorId",
+  "'X-API-Key': credential.apiKey",
+  'maxResponseBytes',
+  'maxAggregateBytes',
+  'response.arrayBuffer()',
+  'Promise.all(resources.map',
+  'upstream evidence escaped the authorized account',
+  'upstream evidence escaped the authorized product',
+  'operator resource returned an unexpected status',
+  'activation_resource_not_visible',
+  'deploymentAllowed: false',
+  'providerMutationAllowed: false',
+  'executionAllowed: false',
+  'realFundsAllowed: false',
+  'withdrawalsAllowed: false',
+]) {
+  assert.ok(aggregator.includes(required), `operator aggregator must include ${required}`);
+}
+
+for (const forbidden of [
+  /process\.env/i,
+  /localStorage/i,
+  /sessionStorage/i,
+  /document\.cookie/i,
+  /window\./i,
+  /axios/i,
+  /setInterval/i,
+  /deploymentAllowed:\s*true/i,
+  /demoRequestAllowed:\s*true/i,
+  /credentialsRead:\s*true/i,
+  /providerMutationAllowed:\s*true/i,
+  /executionAllowed:\s*true/i,
+  /liveExecutionAllowed:\s*true/i,
+  /realFundsAllowed:\s*true/i,
+  /mainnetAllowed:\s*true/i,
+  /withdrawalsAllowed:\s*true/i,
+  /automaticRetryAllowed:\s*true/i,
+  /accountingAutomaticallyDispatched:\s*true/i,
+]) {
+  assert.doesNotMatch(aggregator, forbidden, `operator aggregator must not match ${forbidden}`);
+}
+
+for (const required of [
   "code: 'OPERATOR_IDENTITY_GATEWAY_NOT_CONFIGURED'",
   'sendJson(response, 503',
   "response.setHeader('Allow', 'GET, HEAD, OPTIONS')",
@@ -83,9 +142,11 @@ for (const required of [
 for (const forbidden of [
   'operatorIdentityGateway',
   'boundedOperatorIdentityGateway',
+  'operatorReadOnlyAggregator',
   'verifySession',
   'resolveAuthorization',
   'aggregateReadOnlyEvidence',
+  'resolveCredential',
 ]) {
   assert.ok(!placeholder.includes(forbidden), `production placeholder must remain disconnected from ${forbidden}`);
 }
