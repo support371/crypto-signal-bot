@@ -76,6 +76,54 @@ def test_filtered_retrieval_stops_after_newest_requested_matches() -> None:
     assert not audit_store._lock.locked()
 
 
+def test_combined_filters_stop_after_newest_requested_matches() -> None:
+    traces = _TrackingTraceSequence(
+        [
+            {
+                "intent_id": "old-0",
+                "symbol": "BTCUSDT",
+                "execution": {"status": "FILLED"},
+            },
+            {
+                "intent_id": "old-1",
+                "symbol": "ETHUSDT",
+                "execution": {"status": "FILLED"},
+            },
+            {
+                "intent_id": "old-2",
+                "symbol": "BTCUSDT",
+                "execution": {"status": "FAILED"},
+            },
+            {
+                "intent_id": "new-3",
+                "symbol": "BTCUSDT",
+                "execution": {"status": "FILLED"},
+            },
+            {
+                "intent_id": "new-4",
+                "symbol": "ETHUSDT",
+                "execution": {"status": "FILLED"},
+            },
+            {
+                "intent_id": "new-5",
+                "symbol": "BTCUSDT",
+                "execution": {"status": "FILLED"},
+            },
+        ]
+    )
+    _install_traces(traces)
+
+    result = audit_store.get_traces(
+        symbol="btcusdt",
+        status="FILLED",
+        limit=2,
+    )
+
+    assert [trace["intent_id"] for trace in result] == ["new-3", "new-5"]
+    assert traces.accesses == [5, 4, 3]
+    assert not audit_store._lock.locked()
+
+
 def test_intent_lookup_stops_at_newest_duplicate() -> None:
     traces = _TrackingTraceSequence(
         [
