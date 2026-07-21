@@ -59,9 +59,9 @@ for (const required of [
   "credentials: 'omit'",
   "redirect: 'error'",
   "cache: 'no-store'",
-  "value.schemaVersion !== 'certification-status.v1'",
-  "value.mode !== 'CERTIFICATION'",
-  'value.readOnly !== true',
+  "root.schemaVersion !== 'certification-status.v1'",
+  "root.mode !== 'CERTIFICATION'",
+  'root.readOnly !== true',
   'capabilities[key] !== false',
 ]) {
   assert.ok(client.includes(required), `certification client must include ${required}`);
