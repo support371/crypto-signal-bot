@@ -46,7 +46,7 @@ function parseCertificationStatus(value: unknown): CertificationStatusSnapshot {
   if (!isRecord(releaseValue)) {
     throw new Error('Certification status response has invalid release metadata');
   }
-  const release = releaseValue;
+  const release: Record<string, unknown> = releaseValue;
   if (!['packageVersion', 'channel', 'commit', 'environment'].every((key) => hasString(release, key))) {
     throw new Error('Certification status response has invalid release metadata');
   }
@@ -55,15 +55,16 @@ function parseCertificationStatus(value: unknown): CertificationStatusSnapshot {
   if (!isRecord(servicesValue)) {
     throw new Error('Certification status response has invalid service metadata');
   }
-  const services = servicesValue;
+  const services: Record<string, unknown> = servicesValue;
   if (!['publicApplication', 'certificationMirror', 'connectedDashboard', 'userAuthentication', 'operatorGateway'].every((key) => hasString(services, key))) {
     throw new Error('Certification status response has invalid service metadata');
   }
 
-  const capabilities = value.capabilities;
-  if (!isRecord(capabilities)) {
+  const capabilitiesValue = value.capabilities;
+  if (!isRecord(capabilitiesValue)) {
     throw new Error('Certification status response is missing capability locks');
   }
+  const capabilities: Record<string, unknown> = capabilitiesValue;
 
   for (const key of [
     'deploymentAllowed',
