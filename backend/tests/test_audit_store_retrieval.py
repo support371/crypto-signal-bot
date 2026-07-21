@@ -76,6 +76,26 @@ def test_filtered_retrieval_stops_after_newest_requested_matches() -> None:
     assert not audit_store._lock.locked()
 
 
+def test_status_filter_stops_after_newest_requested_matches() -> None:
+    traces = _TrackingTraceSequence(
+        [
+            {"intent_id": "old-0", "execution": {"status": "FILLED"}},
+            {"intent_id": "old-1", "execution": {"status": "FAILED"}},
+            {"intent_id": "old-2", "execution": {"status": "FILLED"}},
+            {"intent_id": "new-3", "execution": {"status": "FAILED"}},
+            {"intent_id": "new-4", "execution": {"status": "FILLED"}},
+            {"intent_id": "new-5", "execution": {"status": "FILLED"}},
+        ]
+    )
+    _install_traces(traces)
+
+    result = audit_store.get_traces(status="FILLED", limit=2)
+
+    assert [trace["intent_id"] for trace in result] == ["new-4", "new-5"]
+    assert traces.accesses == [5, 4]
+    assert not audit_store._lock.locked()
+
+
 def test_combined_filters_stop_after_newest_requested_matches() -> None:
     traces = _TrackingTraceSequence(
         [
