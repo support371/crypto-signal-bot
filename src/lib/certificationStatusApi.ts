@@ -50,13 +50,18 @@ function requireString(record: Record<string, unknown>, key: string): string {
 }
 
 function parseCertificationStatus(value: unknown): CertificationStatusSnapshot {
-  if (!isRecord(value) || value.schemaVersion !== 'certification-status.v1' || value.mode !== 'CERTIFICATION' || value.readOnly !== true) {
+  if (!isRecord(value)) {
     throw new Error('Certification status response has an invalid envelope');
   }
 
-  const release = requireRecord(value, 'release');
-  const services = requireRecord(value, 'services');
-  const capabilities = requireRecord(value, 'capabilities');
+  const root: Record<string, unknown> = value;
+  if (root.schemaVersion !== 'certification-status.v1' || root.mode !== 'CERTIFICATION' || root.readOnly !== true) {
+    throw new Error('Certification status response has an invalid envelope');
+  }
+
+  const release = requireRecord(root, 'release');
+  const services = requireRecord(root, 'services');
+  const capabilities = requireRecord(root, 'capabilities');
 
   const capabilityKeys = [
     'deploymentAllowed',
@@ -74,7 +79,8 @@ function parseCertificationStatus(value: unknown): CertificationStatusSnapshot {
     }
   }
 
-  if (typeof value.generatedAt !== 'string') {
+  const generatedAt = root.generatedAt;
+  if (typeof generatedAt !== 'string') {
     throw new Error('Certification status response has an invalid timestamp');
   }
 
@@ -82,7 +88,7 @@ function parseCertificationStatus(value: unknown): CertificationStatusSnapshot {
     schemaVersion: 'certification-status.v1',
     mode: 'CERTIFICATION',
     readOnly: true,
-    generatedAt: value.generatedAt,
+    generatedAt,
     release: {
       packageVersion: requireString(release, 'packageVersion'),
       channel: requireString(release, 'channel'),
