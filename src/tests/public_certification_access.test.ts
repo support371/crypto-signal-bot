@@ -10,6 +10,8 @@ describe('public certification access', () => {
       dashboardEntry,
       statusClient,
       statusEndpoint,
+      staticStatusWriter,
+      packageJson,
       healthClient,
       healthEndpoint,
       vercel,
@@ -20,6 +22,8 @@ describe('public certification access', () => {
       readFile(new URL('../pages/DashboardEntry.tsx', import.meta.url), 'utf8'),
       readFile(new URL('../lib/certificationStatusApi.ts', import.meta.url), 'utf8'),
       readFile(new URL('../../api/certification/status.js', import.meta.url), 'utf8'),
+      readFile(new URL('../../scripts/write-static-certification-status.mjs', import.meta.url), 'utf8'),
+      readFile(new URL('../../package.json', import.meta.url), 'utf8'),
       readFile(new URL('../lib/certificationBackendHealthApi.ts', import.meta.url), 'utf8'),
       readFile(new URL('../../api/certification/backend-health.js', import.meta.url), 'utf8'),
       readFile(new URL('../../vercel.json', import.meta.url), 'utf8'),
@@ -59,6 +63,10 @@ describe('public certification access', () => {
       expect(client).not.toContain("credentials: 'include'");
     }
     expect(statusClient).toContain("CERTIFICATION_STATUS_ROUTE = '/api/certification/status'");
+    expect(statusClient).toContain("CERTIFICATION_STATUS_STATIC_ROUTE = '/certification-status.json'");
+    expect(statusClient).toContain('CertificationStatusRouteUnavailable');
+    expect(statusClient).toContain('fetchCertificationStatusRoute(CERTIFICATION_STATUS_STATIC_ROUTE, signal)');
+    expect(statusClient).toContain("contentType.includes('application/json')");
     expect(healthClient).toContain("CERTIFICATION_BACKEND_HEALTH_ROUTE = '/api/certification/backend-health'");
     expect(healthClient).toContain('value.responseBodyRead !== false');
     expect(healthClient).toContain('value.retriesAttempted !== 0');
@@ -73,10 +81,21 @@ describe('public certification access', () => {
       'withdrawalsAllowed: false',
     ]) {
       expect(statusEndpoint).toContain(required);
+      expect(staticStatusWriter).toContain(required);
     }
     expect(statusEndpoint).not.toMatch(/\bfetch\s*\(/i);
     expect(statusEndpoint).not.toMatch(/deploymentAllowed:\s*true/i);
     expect(statusEndpoint).not.toMatch(/executionAllowed:\s*true/i);
+    expect(staticStatusWriter).toContain("channel: 'static-build-candidate'");
+    expect(staticStatusWriter).toContain("certificationMirror: 'static-build'");
+    expect(staticStatusWriter).toContain("new URL('../public/certification-status.json'");
+    expect(staticStatusWriter).not.toMatch(/Allowed:\s*true/i);
+
+    const packageConfig = JSON.parse(packageJson) as { scripts?: Record<string, string> };
+    expect(packageConfig.scripts?.['prepare:certification-static']).toBe(
+      'node scripts/write-static-certification-status.mjs',
+    );
+    expect(packageConfig.scripts?.build).toMatch(/^npm run prepare:certification-static && /);
 
     for (const required of [
       "DEFAULT_BACKEND_URL = 'https://crypto-signal-bot-api.gr8r9bfzry.workers.dev'",
