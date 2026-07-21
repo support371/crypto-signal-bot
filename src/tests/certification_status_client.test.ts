@@ -77,14 +77,8 @@ describe('certification status client', () => {
   it('falls back to the generated static snapshot when the API route is unavailable', async () => {
     const staticSnapshot = {
       ...VALID_SNAPSHOT,
-      release: {
-        ...VALID_SNAPSHOT.release,
-        channel: 'static-build-candidate',
-      },
-      services: {
-        ...VALID_SNAPSHOT.services,
-        certificationMirror: 'static-build',
-      },
+      release: { ...VALID_SNAPSHOT.release, channel: 'static-build-candidate' },
+      services: { ...VALID_SNAPSHOT.services, certificationMirror: 'static-build' },
     };
     const fetchMock = vi
       .fn()
@@ -102,10 +96,7 @@ describe('certification status client', () => {
   it('rejects a response that enables any locked capability without accepting the static route', async () => {
     const payload = {
       ...VALID_SNAPSHOT,
-      capabilities: {
-        ...VALID_SNAPSHOT.capabilities,
-        executionAllowed: true,
-      },
+      capabilities: { ...VALID_SNAPSHOT.capabilities, executionAllowed: true },
     };
     const fetchMock = vi.fn().mockResolvedValue(responseWith(payload));
     vi.stubGlobal('fetch', fetchMock);
@@ -116,11 +107,50 @@ describe('certification status client', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('rejects malformed nested response data without accepting the static route', async () => {
+  it('rejects a production-looking version without accepting the static route', async () => {
     const payload = {
       ...VALID_SNAPSHOT,
-      services: 'not-an-object',
+      release: { ...VALID_SNAPSHOT.release, packageVersion: '1.0.0' },
     };
+    const fetchMock = vi.fn().mockResolvedValue(responseWith(payload));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchCertificationStatus(new AbortController().signal)).rejects.toThrow(
+      'Certification status response has an invalid development build version',
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a build label whose commit suffix does not match the release commit', async () => {
+    const payload = {
+      ...VALID_SNAPSHOT,
+      release: { ...VALID_SNAPSHOT.release, commit: 'aaaaaaaaaaaa' },
+    };
+    const fetchMock = vi.fn().mockResolvedValue(responseWith(payload));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchCertificationStatus(new AbortController().signal)).rejects.toThrow(
+      'Certification status response has inconsistent release identity',
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an unexpected service state without accepting the static route', async () => {
+    const payload = {
+      ...VALID_SNAPSHOT,
+      services: { ...VALID_SNAPSHOT.services, operatorGateway: 'connected' },
+    };
+    const fetchMock = vi.fn().mockResolvedValue(responseWith(payload));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchCertificationStatus(new AbortController().signal)).rejects.toThrow(
+      'Certification status response has an invalid literal field: operatorGateway',
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects malformed nested response data without accepting the static route', async () => {
+    const payload = { ...VALID_SNAPSHOT, services: 'not-an-object' };
     const fetchMock = vi.fn().mockResolvedValue(responseWith(payload));
     vi.stubGlobal('fetch', fetchMock);
 
