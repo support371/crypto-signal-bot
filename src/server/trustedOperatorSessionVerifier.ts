@@ -245,38 +245,72 @@ export function createTrustedOperatorSessionVerifier(
   return async (request: Request, signal: AbortSignal): Promise<OperatorSessionDecision> => {
     if (signal.aborted) return unavailable('trusted session verification was aborted');
 
+    let verification: SignedSessionVerificationDecision;
     try {
-      const verification = await dependencies.verifySignedSession(request, signal);
-      if (verification.status === 'UNAUTHENTICATED') {
-        return unauthenticated('signed operator session is missing or invalid');
-      }
-      if (verification.status === 'UNAVAILABLE') {
-        return unavailable('signed operator session verification is unavailable');
-      }
-
-      const claims = normalizeClaims(verification.claims, config, now());
-      if (signal.aborted) return unavailable('trusted session verification was aborted');
-
-      const state = await dependencies.inspectSessionState(claims, signal);
-      if (state.status === 'REVOKED') return unauthenticated('operator session is revoked');
-      if (state.status === 'REPLAYED') return unauthenticated('operator session replay was rejected');
-      if (state.status === 'UNAVAILABLE') {
-        return unavailable('operator session state verification is unavailable');
-      }
-      if (signal.aborted) return unavailable('trusted session verification was aborted');
-
-      const subject = await dependencies.resolveSubject(claims, signal);
-      if (subject.status === 'DISABLED') {
-        return unauthenticated('operator subject is disabled or unmapped');
-      }
-      if (subject.status === 'UNAVAILABLE') {
-        return unavailable('operator subject mapping is unavailable');
-      }
-      return authenticatedSession(subject.subjectId, claims);
+      verification = await dependencies.verifySignedSession(request, signal);
     } catch {
       return signal.aborted
         ? unavailable('trusted session verification was aborted')
-        : unauthenticated('trusted operator session failed validation');
+        : unavailable('signed operator session verification is unavailable');
+    }
+    if (verification.status === 'UNAUTHENTICATED') {
+      return unauthenticated('signed operator session is missing or invalid');
+    }
+    if (verification.status === 'UNAVAILABLE') {
+      return unavailable('signed operator session verification is unavailable');
+    }
+    if (signal.aborted) return unavailable('trusted session verification was aborted');
+
+    let evaluationTime: Date;
+    try {
+      evaluationTime = now();
+      if (!Number.isFinite(evaluationTime.getTime())) throw new TypeError('invalid clock');
+    } catch {
+      return unavailable('trusted session clock is unavailable');
+    }
+
+    let claims: NormalizedClaims;
+    try {
+      claims = normalizeClaims(verification.claims, config, evaluationTime);
+    } catch {
+      return unauthenticated('trusted operator session failed validation');
+    }
+    if (signal.aborted) return unavailable('trusted session verification was aborted');
+
+    let state: TrustedSessionStateDecision;
+    try {
+      state = await dependencies.inspectSessionState(claims, signal);
+    } catch {
+      return signal.aborted
+        ? unavailable('trusted session verification was aborted')
+        : unavailable('operator session state verification is unavailable');
+    }
+    if (state.status === 'REVOKED') return unauthenticated('operator session is revoked');
+    if (state.status === 'REPLAYED') return unauthenticated('operator session replay was rejected');
+    if (state.status === 'UNAVAILABLE') {
+      return unavailable('operator session state verification is unavailable');
+    }
+    if (signal.aborted) return unavailable('trusted session verification was aborted');
+
+    let subject: OperatorSubjectDecision;
+    try {
+      subject = await dependencies.resolveSubject(claims, signal);
+    } catch {
+      return signal.aborted
+        ? unavailable('trusted session verification was aborted')
+        : unavailable('operator subject mapping is unavailable');
+    }
+    if (subject.status === 'DISABLED') {
+      return unauthenticated('operator subject is disabled or unmapped');
+    }
+    if (subject.status === 'UNAVAILABLE') {
+      return unavailable('operator subject mapping is unavailable');
+    }
+
+    try {
+      return authenticatedSession(subject.subjectId, claims);
+    } catch {
+      return unavailable('operator subject mapping is malformed');
     }
   };
 }
