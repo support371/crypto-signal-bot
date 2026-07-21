@@ -42,13 +42,21 @@ function parseCertificationStatus(value: unknown): CertificationStatusSnapshot {
     throw new Error('Certification status response has an invalid envelope');
   }
 
-  const release = value.release;
-  if (!isRecord(release) || !['packageVersion', 'channel', 'commit', 'environment'].every((key) => hasString(release, key))) {
+  const releaseValue = value.release;
+  if (!isRecord(releaseValue)) {
+    throw new Error('Certification status response has invalid release metadata');
+  }
+  const release = releaseValue;
+  if (!['packageVersion', 'channel', 'commit', 'environment'].every((key) => hasString(release, key))) {
     throw new Error('Certification status response has invalid release metadata');
   }
 
-  const services = value.services;
-  if (!isRecord(services) || !['publicApplication', 'certificationMirror', 'connectedDashboard', 'userAuthentication', 'operatorGateway'].every((key) => hasString(services, key))) {
+  const servicesValue = value.services;
+  if (!isRecord(servicesValue)) {
+    throw new Error('Certification status response has invalid service metadata');
+  }
+  const services = servicesValue;
+  if (!['publicApplication', 'certificationMirror', 'connectedDashboard', 'userAuthentication', 'operatorGateway'].every((key) => hasString(services, key))) {
     throw new Error('Certification status response has invalid service metadata');
   }
 
@@ -66,7 +74,6 @@ function parseCertificationStatus(value: unknown): CertificationStatusSnapshot {
     'withdrawalsAllowed',
     'automaticRetryAllowed',
   ]) {
-    // Equivalent validated form: value.capabilities[key] !== false.
     if (capabilities[key] !== false) {
       throw new Error(`Certification capability lock is invalid: ${key}`);
     }
