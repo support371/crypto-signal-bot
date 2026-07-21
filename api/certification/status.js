@@ -6,6 +6,8 @@ const RESPONSE_HEADERS = Object.freeze({
   'X-Certification-Mirror': 'read-only',
 });
 
+const PACKAGE_VERSION = '0.0.0';
+
 const CAPABILITY_LOCKS = Object.freeze({
   deploymentAllowed: false,
   providerMutationAllowed: false,
@@ -22,6 +24,10 @@ function safeDeploymentEnvironment(value) {
 
 function safeCommit(value) {
   return typeof value === 'string' && /^[a-f0-9]{7,40}$/i.test(value) ? value.slice(0, 12) : 'unknown';
+}
+
+function certificationBuildVersion(commit) {
+  return commit === 'unknown' ? `${PACKAGE_VERSION}-dev` : `${PACKAGE_VERSION}-dev+${commit}`;
 }
 
 function sendJson(response, status, payload, suppressBody = false) {
@@ -53,15 +59,17 @@ export default function handler(request, response) {
     return;
   }
 
+  const commit = safeCommit(process.env.VERCEL_GIT_COMMIT_SHA);
+
   sendJson(response, 200, {
     schemaVersion: 'certification-status.v1',
     mode: 'CERTIFICATION',
     readOnly: true,
     generatedAt: new Date().toISOString(),
     release: {
-      packageVersion: '0.0.0',
+      packageVersion: certificationBuildVersion(commit),
       channel: 'preview-candidate',
-      commit: safeCommit(process.env.VERCEL_GIT_COMMIT_SHA),
+      commit,
       environment: safeDeploymentEnvironment(process.env.VERCEL_ENV),
     },
     services: {
