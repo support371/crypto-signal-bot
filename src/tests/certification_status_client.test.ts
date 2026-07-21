@@ -7,7 +7,7 @@ const VALID_SNAPSHOT = {
   readOnly: true,
   generatedAt: '2026-07-21T01:34:01.652Z',
   release: {
-    packageVersion: '0.0.0',
+    packageVersion: '0.0.0-dev+fc01c50313ef',
     channel: 'preview-candidate',
     commit: 'fc01c50313ef',
     environment: 'preview',
