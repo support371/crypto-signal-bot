@@ -331,31 +331,57 @@ function evidenceStatus(root: JsonRecord | undefined): string | null {
   return boundedText(optionalRecord(root?.evidence)?.status, 128);
 }
 
+function minimizedChecks(value: unknown): Readonly<{ total: number; passed: number }> {
+  const checks = optionalRecord(value);
+  const total = boundedInteger(checks?.total, 10_000) ?? 0;
+  const passed = Math.min(total, boundedInteger(checks?.passed, 10_000) ?? 0);
+  return Object.freeze({ total, passed });
+}
+
+function minimizedTextArray(value: unknown, limit: number): readonly string[] {
+  if (!Array.isArray(value)) return Object.freeze([]);
+  return Object.freeze(value
+    .map((item) => boundedText(item, 512))
+    .filter((item): item is string => item !== null)
+    .slice(0, limit));
+}
+
 function minimizedDeployment(root: JsonRecord | undefined): unknown {
   const evidence = optionalRecord(root?.evidence);
   if (!evidence) return null;
   return Object.freeze({
-    status: evidence.status,
-    readyForNonLiveDeploymentReview: evidence.readyForNonLiveDeploymentReview,
-    checks: evidence.checks,
-    blockers: evidence.blockers,
-    externalReadOnlyAttestationPresent: evidence.externalReadOnlyAttestationPresent,
-    gitSha: evidence.gitSha,
-    preparedAt: evidence.preparedAt,
+    status: boundedText(evidence.status, 128),
+    readyForNonLiveDeploymentReview: evidence.readyForNonLiveDeploymentReview === true,
+    checks: minimizedChecks(evidence.checks),
+    blockers: minimizedTextArray(evidence.blockers, 14),
+    externalReadOnlyAttestationPresent: evidence.externalReadOnlyAttestationPresent === true,
+    gitSha: boundedText(evidence.gitSha, 64),
+    preparedAt: boundedText(evidence.preparedAt, 64),
   });
 }
 
 function minimizedOperational(root: JsonRecord | undefined): unknown {
   const evidence = optionalRecord(root?.evidence);
   if (!evidence) return null;
+  const scenarios = Array.isArray(evidence.scenarios)
+    ? evidence.scenarios.slice(0, 5).map((item) => {
+        const scenario = optionalRecord(item);
+        return Object.freeze({
+          name: boundedText(scenario?.name, 128),
+          passed: scenario?.passed === true,
+          evidencePresent: scenario?.evidencePresent === true,
+          observedAt: boundedText(scenario?.observedAt, 64),
+        });
+      })
+    : [];
   return Object.freeze({
-    status: evidence.status,
-    readyForIndependentReview: evidence.readyForIndependentReview,
-    checks: evidence.checks,
-    scenarios: evidence.scenarios,
-    blockers: evidence.blockers,
-    gitSha: evidence.gitSha,
-    preparedAt: evidence.preparedAt,
+    status: boundedText(evidence.status, 128),
+    readyForIndependentReview: evidence.readyForIndependentReview === true,
+    checks: minimizedChecks(evidence.checks),
+    scenarios: Object.freeze(scenarios),
+    blockers: minimizedTextArray(evidence.blockers, 5),
+    gitSha: boundedText(evidence.gitSha, 64),
+    preparedAt: boundedText(evidence.preparedAt, 64),
   });
 }
 
