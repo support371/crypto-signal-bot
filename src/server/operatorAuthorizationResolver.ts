@@ -65,15 +65,20 @@ const ACCOUNT_RESOURCES = new Set<OperatorGatewayResource>([
   'ALERTS',
   'AUDIT_HEAD',
 ]);
+
+function roleList(...roles: OperatorGatewayRole[]): readonly OperatorGatewayRole[] {
+  return Object.freeze(roles);
+}
+
 const RESOURCE_ROLES: Readonly<Record<OperatorGatewayResource, readonly OperatorGatewayRole[]>> = Object.freeze({
-  ACTIVATION_GATE: Object.freeze(['RISK_ADMIN', 'AUDITOR', 'RELEASE_ADMIN']),
-  DEPLOYMENT_READINESS: Object.freeze(['RISK_ADMIN', 'AUDITOR', 'RELEASE_ADMIN']),
-  OPERATIONAL_REHEARSAL: Object.freeze(['RISK_ADMIN', 'AUDITOR', 'RELEASE_ADMIN']),
-  CERTIFICATION: Object.freeze(['VIEWER', 'RISK_OPERATOR', 'RISK_ADMIN', 'AUDITOR', 'RELEASE_ADMIN']),
-  RECOVERY_READINESS: Object.freeze(['VIEWER', 'RISK_OPERATOR', 'RISK_ADMIN', 'AUDITOR', 'RELEASE_ADMIN']),
-  RECONCILIATION: Object.freeze(['VIEWER', 'RISK_OPERATOR', 'RISK_ADMIN', 'AUDITOR', 'RELEASE_ADMIN']),
-  ALERTS: Object.freeze(['VIEWER', 'RISK_OPERATOR', 'RISK_ADMIN', 'AUDITOR', 'RELEASE_ADMIN']),
-  AUDIT_HEAD: Object.freeze(['RISK_ADMIN', 'AUDITOR', 'RELEASE_ADMIN']),
+  ACTIVATION_GATE: roleList('RISK_ADMIN', 'AUDITOR', 'RELEASE_ADMIN'),
+  DEPLOYMENT_READINESS: roleList('RISK_ADMIN', 'AUDITOR', 'RELEASE_ADMIN'),
+  OPERATIONAL_REHEARSAL: roleList('RISK_ADMIN', 'AUDITOR', 'RELEASE_ADMIN'),
+  CERTIFICATION: roleList('VIEWER', 'RISK_OPERATOR', 'RISK_ADMIN', 'AUDITOR', 'RELEASE_ADMIN'),
+  RECOVERY_READINESS: roleList('VIEWER', 'RISK_OPERATOR', 'RISK_ADMIN', 'AUDITOR', 'RELEASE_ADMIN'),
+  RECONCILIATION: roleList('VIEWER', 'RISK_OPERATOR', 'RISK_ADMIN', 'AUDITOR', 'RELEASE_ADMIN'),
+  ALERTS: roleList('VIEWER', 'RISK_OPERATOR', 'RISK_ADMIN', 'AUDITOR', 'RELEASE_ADMIN'),
+  AUDIT_HEAD: roleList('RISK_ADMIN', 'AUDITOR', 'RELEASE_ADMIN'),
 });
 
 function boundedText(value: unknown, field: string, maximum = 256): string {
