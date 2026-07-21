@@ -1,6 +1,9 @@
 export const CERTIFICATION_STATUS_ROUTE = '/api/certification/status' as const;
 export const CERTIFICATION_STATUS_STATIC_ROUTE = '/certification-status.json' as const;
 
+const BUILD_VERSION_PATTERN = /^(\d+\.\d+\.\d+)-dev(?:\+([a-f0-9]{7,12}))?$/i;
+const COMMIT_PATTERN = /^[a-f0-9]{7,12}$/i;
+
 export type CertificationStatusSnapshot = {
   schemaVersion: 'certification-status.v1';
   mode: 'CERTIFICATION';
@@ -8,16 +11,16 @@ export type CertificationStatusSnapshot = {
   generatedAt: string;
   release: {
     packageVersion: string;
-    channel: string;
+    channel: 'preview-candidate' | 'static-build-candidate';
     commit: string;
-    environment: string;
+    environment: 'production' | 'preview' | 'development' | 'static' | 'unknown';
   };
   services: {
-    publicApplication: string;
-    certificationMirror: string;
-    connectedDashboard: string;
-    userAuthentication: string;
-    operatorGateway: string;
+    publicApplication: 'available';
+    certificationMirror: 'available' | 'static-build';
+    connectedDashboard: 'external-health-required';
+    userAuthentication: 'configuration-required';
+    operatorGateway: 'disconnected';
   };
   capabilities: {
     deploymentAllowed: false;
@@ -57,6 +60,55 @@ function requireString(record: Record<string, unknown>, key: string): string {
   return value;
 }
 
+function requireLiteral<const T extends string>(
+  record: Record<string, unknown>,
+  key: string,
+  allowed: readonly T[],
+): T {
+  const value = requireString(record, key);
+  if (!allowed.includes(value as T)) {
+    throw new Error(`Certification status response has an invalid literal field: ${key}`);
+  }
+  return value as T;
+}
+
+function parseRelease(release: Record<string, unknown>): CertificationStatusSnapshot['release'] {
+  const packageVersion = requireString(release, 'packageVersion');
+  const channel = requireLiteral(release, 'channel', ['preview-candidate', 'static-build-candidate'] as const);
+  const commit = requireString(release, 'commit');
+  const environment = requireLiteral(
+    release,
+    'environment',
+    ['production', 'preview', 'development', 'static', 'unknown'] as const,
+  );
+
+  const versionMatch = BUILD_VERSION_PATTERN.exec(packageVersion);
+  if (!versionMatch) {
+    throw new Error('Certification status response has an invalid development build version');
+  }
+
+  const versionCommit = versionMatch[2]?.toLowerCase();
+  if (commit === 'unknown') {
+    if (versionCommit !== undefined) {
+      throw new Error('Certification status response has inconsistent release identity');
+    }
+  } else if (!COMMIT_PATTERN.test(commit) || versionCommit !== commit.toLowerCase()) {
+    throw new Error('Certification status response has inconsistent release identity');
+  }
+
+  return { packageVersion, channel, commit, environment };
+}
+
+function parseServices(services: Record<string, unknown>): CertificationStatusSnapshot['services'] {
+  return {
+    publicApplication: requireLiteral(services, 'publicApplication', ['available'] as const),
+    certificationMirror: requireLiteral(services, 'certificationMirror', ['available', 'static-build'] as const),
+    connectedDashboard: requireLiteral(services, 'connectedDashboard', ['external-health-required'] as const),
+    userAuthentication: requireLiteral(services, 'userAuthentication', ['configuration-required'] as const),
+    operatorGateway: requireLiteral(services, 'operatorGateway', ['disconnected'] as const),
+  };
+}
+
 function parseCertificationStatus(value: unknown): CertificationStatusSnapshot {
   if (!isRecord(value)) {
     throw new Error('Certification status response has an invalid envelope');
@@ -88,7 +140,7 @@ function parseCertificationStatus(value: unknown): CertificationStatusSnapshot {
   }
 
   const generatedAt = root.generatedAt;
-  if (typeof generatedAt !== 'string') {
+  if (typeof generatedAt !== 'string' || !Number.isFinite(Date.parse(generatedAt))) {
     throw new Error('Certification status response has an invalid timestamp');
   }
 
@@ -97,19 +149,8 @@ function parseCertificationStatus(value: unknown): CertificationStatusSnapshot {
     mode: 'CERTIFICATION',
     readOnly: true,
     generatedAt,
-    release: {
-      packageVersion: requireString(release, 'packageVersion'),
-      channel: requireString(release, 'channel'),
-      commit: requireString(release, 'commit'),
-      environment: requireString(release, 'environment'),
-    },
-    services: {
-      publicApplication: requireString(services, 'publicApplication'),
-      certificationMirror: requireString(services, 'certificationMirror'),
-      connectedDashboard: requireString(services, 'connectedDashboard'),
-      userAuthentication: requireString(services, 'userAuthentication'),
-      operatorGateway: requireString(services, 'operatorGateway'),
-    },
+    release: parseRelease(release),
+    services: parseServices(services),
     capabilities: {
       deploymentAllowed: false,
       providerMutationAllowed: false,
