@@ -6,6 +6,7 @@ const bounded = await readFile(new URL('../src/server/boundedOperatorIdentityGat
 const aggregator = await readFile(new URL('../src/server/operatorReadOnlyAggregator.ts', import.meta.url), 'utf8');
 const sessionVerifier = await readFile(new URL('../src/server/trustedOperatorSessionVerifier.ts', import.meta.url), 'utf8');
 const authorizationResolver = await readFile(new URL('../src/server/operatorAuthorizationResolver.ts', import.meta.url), 'utf8');
+const composition = await readFile(new URL('../src/server/operatorGatewayFoundation.ts', import.meta.url), 'utf8');
 const placeholder = await readFile(new URL('../api/operator/readiness.js', import.meta.url), 'utf8');
 const schema = await readFile(new URL('../contracts/operator-readiness-response.schema.json', import.meta.url), 'utf8');
 
@@ -210,6 +211,39 @@ for (const forbidden of [
 }
 
 for (const required of [
+  'createTrustedOperatorSessionVerifier',
+  'createOperatorAuthorizationResolver',
+  'createOperatorReadOnlyAggregator',
+  'createBoundedOperatorIdentityGateway',
+  '...dependencies.session',
+  '...dependencies.authorization',
+  '...dependencies.evidence',
+  'now: dependencies.now',
+  'timeoutMs: config.timeoutMs',
+]) {
+  assert.ok(composition.includes(required), `operator gateway composition must include ${required}`);
+}
+
+for (const forbidden of [
+  /process\.env/i,
+  /localStorage/i,
+  /sessionStorage/i,
+  /document\.cookie/i,
+  /window\./i,
+  /\bfetch\s*\(/i,
+  /\baxios\b/i,
+  /X-API-Key/i,
+  /Authorization/i,
+  /\bCookie\b/i,
+  /deploymentAllowed:\s*true/i,
+  /providerMutationAllowed:\s*true/i,
+  /executionAllowed:\s*true/i,
+  /withdrawalsAllowed:\s*true/i,
+]) {
+  assert.doesNotMatch(composition, forbidden, `operator gateway composition must not match ${forbidden}`);
+}
+
+for (const required of [
   "code: 'OPERATOR_IDENTITY_GATEWAY_NOT_CONFIGURED'",
   'sendJson(response, 503',
   "response.setHeader('Allow', 'GET, HEAD, OPTIONS')",
@@ -223,6 +257,8 @@ for (const forbidden of [
   'operatorReadOnlyAggregator',
   'trustedOperatorSessionVerifier',
   'operatorAuthorizationResolver',
+  'operatorGatewayFoundation',
+  'createDisconnectedOperatorGatewayFoundation',
   'verifySession',
   'verifySignedSession',
   'resolveAuthorization',
