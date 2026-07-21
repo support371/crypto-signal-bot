@@ -33,8 +33,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function hasString(record: Record<string, unknown>, key: string): boolean {
-  return typeof record[key] === 'string';
+function requireString(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  if (typeof value !== 'string') {
+    throw new Error(`Certification status response has an invalid string field: ${key}`);
+  }
+  return value;
 }
 
 function parseCertificationStatus(value: unknown): CertificationStatusSnapshot {
@@ -46,17 +50,9 @@ function parseCertificationStatus(value: unknown): CertificationStatusSnapshot {
   if (!isRecord(releaseValue)) {
     throw new Error('Certification status response has invalid release metadata');
   }
-  const release: Record<string, unknown> = releaseValue;
-  if (!['packageVersion', 'channel', 'commit', 'environment'].every((key) => hasString(release, key))) {
-    throw new Error('Certification status response has invalid release metadata');
-  }
 
   const servicesValue = value.services;
   if (!isRecord(servicesValue)) {
-    throw new Error('Certification status response has invalid service metadata');
-  }
-  const services: Record<string, unknown> = servicesValue;
-  if (!['publicApplication', 'certificationMirror', 'connectedDashboard', 'userAuthentication', 'operatorGateway'].every((key) => hasString(services, key))) {
     throw new Error('Certification status response has invalid service metadata');
   }
 
@@ -64,9 +60,8 @@ function parseCertificationStatus(value: unknown): CertificationStatusSnapshot {
   if (!isRecord(capabilitiesValue)) {
     throw new Error('Certification status response is missing capability locks');
   }
-  const capabilities: Record<string, unknown> = capabilitiesValue;
 
-  for (const key of [
+  const capabilityKeys = [
     'deploymentAllowed',
     'providerMutationAllowed',
     'executionAllowed',
@@ -74,8 +69,10 @@ function parseCertificationStatus(value: unknown): CertificationStatusSnapshot {
     'realFundsAllowed',
     'withdrawalsAllowed',
     'automaticRetryAllowed',
-  ]) {
-    if (capabilities[key] !== false) {
+  ] as const;
+
+  for (const key of capabilityKeys) {
+    if (capabilitiesValue[key] !== false) {
       throw new Error(`Certification capability lock is invalid: ${key}`);
     }
   }
@@ -84,7 +81,34 @@ function parseCertificationStatus(value: unknown): CertificationStatusSnapshot {
     throw new Error('Certification status response has an invalid timestamp');
   }
 
-  return value as CertificationStatusSnapshot;
+  return {
+    schemaVersion: 'certification-status.v1',
+    mode: 'CERTIFICATION',
+    readOnly: true,
+    generatedAt: value.generatedAt,
+    release: {
+      packageVersion: requireString(releaseValue, 'packageVersion'),
+      channel: requireString(releaseValue, 'channel'),
+      commit: requireString(releaseValue, 'commit'),
+      environment: requireString(releaseValue, 'environment'),
+    },
+    services: {
+      publicApplication: requireString(servicesValue, 'publicApplication'),
+      certificationMirror: requireString(servicesValue, 'certificationMirror'),
+      connectedDashboard: requireString(servicesValue, 'connectedDashboard'),
+      userAuthentication: requireString(servicesValue, 'userAuthentication'),
+      operatorGateway: requireString(servicesValue, 'operatorGateway'),
+    },
+    capabilities: {
+      deploymentAllowed: false,
+      providerMutationAllowed: false,
+      executionAllowed: false,
+      mainnetAllowed: false,
+      realFundsAllowed: false,
+      withdrawalsAllowed: false,
+      automaticRetryAllowed: false,
+    },
+  };
 }
 
 export async function fetchCertificationStatus(signal: AbortSignal): Promise<CertificationStatusSnapshot> {
