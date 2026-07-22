@@ -11,7 +11,7 @@ const page = await readFile(new URL('../src/pages/CertificationOverview.tsx', im
 const vercel = await readFile(new URL('../vercel.json', import.meta.url), 'utf8');
 
 const packageConfig = JSON.parse(packageJson);
-JSON.parse(vercel);
+const vercelConfig = JSON.parse(vercel);
 
 for (const required of [
   "'Cache-Control': 'no-store'",
@@ -217,6 +217,14 @@ for (const required of [
   assert.ok(page.includes(required), `certification overview must include ${required}`);
 }
 
-assert.ok(vercel.includes('(?!api/|assets/|.*\\..*)'), 'SPA rewrite must continue excluding API routes');
+const spaRewrite = Array.isArray(vercelConfig.rewrites)
+  ? vercelConfig.rewrites.find((rewrite) => rewrite?.destination === '/index.html')
+  : undefined;
+assert.ok(spaRewrite, 'Vercel configuration must preserve the SPA index rewrite');
+assert.equal(
+  spaRewrite.source,
+  '/((?!api/|assets/|.*\\..*).*)',
+  'SPA rewrite must continue excluding API routes, assets, and static files',
+);
 
 console.log('certification status mirror, static fallback, and backend diagnostic verified');
