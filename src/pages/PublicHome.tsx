@@ -13,11 +13,15 @@ export default function PublicHome() {
       >
         Open certification overview
       </Link>
-      <nav className="grid gap-4 sm:grid-cols-2">
+      <nav className="grid gap-4 sm:grid-cols-3">
         <Link className="rounded border p-4 hover:bg-muted" to="/certification">
           <h2 className="font-semibold">Platform Status</h2>
           <p className="text-sm text-muted-foreground">See what is available, blocked, and still being built.</p>
         </Link>
+        <a className="rounded border p-4 hover:bg-muted" href="/browser-network-diagnostic.html">
+          <h2 className="font-semibold">Network Diagnostic</h2>
+          <p className="text-sm text-muted-foreground">Compare the platform server path with this browser&apos;s Worker path.</p>
+        </a>
         <Link className="rounded border p-4 hover:bg-muted" to="/waitlist">
           <h2 className="font-semibold">Join the Waitlist</h2>
           <p className="text-sm text-muted-foreground">Register for product updates.</p>
