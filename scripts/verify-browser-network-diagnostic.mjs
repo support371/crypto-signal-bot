@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 
 const html = await readFile(new URL('../public/browser-network-diagnostic.html', import.meta.url), 'utf8');
 const script = await readFile(new URL('../public/browser-network-diagnostic.js', import.meta.url), 'utf8');
+const home = await readFile(new URL('../src/pages/PublicHome.tsx', import.meta.url), 'utf8');
 
 for (const required of [
   'Browser network diagnostic',
@@ -13,7 +14,7 @@ for (const required of [
   'script-src \'self\'',
   'referrer" content="no-referrer',
   '/browser-network-diagnostic.js',
-  'No body read; zero retries',
+  'Worker response body not read; no automatic retries',
 ]) {
   assert.ok(html.includes(required), `browser diagnostic HTML must include ${required}`);
 }
@@ -42,6 +43,12 @@ for (const required of [
 ]) {
   assert.ok(script.includes(required), `browser diagnostic script must include ${required}`);
 }
+
+assert.ok(
+  home.includes('href="/browser-network-diagnostic.html"'),
+  'public home must link to the browser network diagnostic',
+);
+assert.ok(home.includes('Network Diagnostic'), 'public home must label the diagnostic link');
 
 assert.equal(
   (script.match(/\bfetch\s*\(/g) ?? []).length,
