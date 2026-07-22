@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; connect-src 'self' https://*.workers.dev; script-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    />
+    <meta name="referrer" content="no-referrer" />
+    <title>Certification Network Diagnostic</title>
+    <style>
+      :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #f8fafc; color: #0f172a; }
+      main { width: min(960px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 48px; }
+      a { color: #0369a1; font-weight: 700; text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      h1 { margin: 16px 0 8px; font-size: clamp(1.8rem, 5vw, 2.6rem); }
+      h2 { margin: 0; font-size: 1rem; }
+      p { line-height: 1.6; }
+      .lede { max-width: 760px; color: #475569; }
+      .grid { display: grid; gap: 16px; margin-top: 24px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+      .card { border: 1px solid #cbd5e1; border-radius: 16px; background: white; padding: 20px; box-shadow: 0 1px 2px rgb(15 23 42 / 0.05); }
+      .status { display: inline-flex; margin-top: 12px; border-radius: 999px; padding: 6px 10px; background: #e2e8f0; color: #334155; font-size: 0.78rem; font-weight: 800; }
+      .status[data-tone="ok"] { background: #dcfce7; color: #166534; }
+      .status[data-tone="warn"] { background: #fef3c7; color: #92400e; }
+      .status[data-tone="busy"] { background: #e0f2fe; color: #075985; }
+      .detail { min-height: 52px; color: #475569; font-size: 0.92rem; }
+      .actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 24px; }
+      button { border: 0; border-radius: 10px; background: #0369a1; color: white; padding: 11px 16px; font: inherit; font-weight: 800; cursor: pointer; }
+      button:disabled { cursor: wait; opacity: 0.65; }
+      .target { overflow-wrap: anywhere; color: #475569; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem; }
+      .interpretation { margin-top: 16px; border-left: 4px solid #0284c7; border-radius: 8px; background: #e0f2fe; padding: 14px 16px; color: #0c4a6e; }
+      .contract { margin-top: 20px; color: #64748b; font-size: 0.84rem; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <a href="/certification">← Certification Overview</a>
+      <h1>Browser network diagnostic</h1>
+      <p class="lede">
+        This read-only check compares the platform server’s path to the configured Worker with this browser’s direct path.
+        It uses only the public <code>/health</code> route and does not access account, portfolio, order, or signal data.
+      </p>
+
+      <section class="grid" aria-label="Network path results">
+        <article class="card">
+          <h2>Platform server → Worker</h2>
+          <span id="server-status" class="status" data-tone="idle">Not checked</span>
+          <p id="server-detail" class="detail">Waiting to run the same-origin server diagnostic.</p>
+        </article>
+        <article class="card">
+          <h2>This browser → Worker</h2>
+          <span id="browser-status" class="status" data-tone="idle">Not checked</span>
+          <p id="browser-detail" class="detail">Waiting for the verified Worker hostname.</p>
+        </article>
+      </section>
+
+      <div class="actions">
+        <button id="run-diagnostic" type="button">Run read-only diagnostic</button>
+        <span id="target-host" class="target">Target: pending</span>
+      </div>
+
+      <section id="interpretation" class="interpretation" aria-live="polite">
+        The result will distinguish a Worker deployment problem from a browser, carrier, DNS, VPN, content-filter, CORS, or mobile-network path problem.
+      </section>
+
+      <p class="contract">
+        Contract: one same-origin diagnostic request and one direct credential-free GET to the verified Worker <code>/health</code>
+        route per run; six-second bounds; redirects denied; Worker response body not read; no automatic retries.
+      </p>
+    </main>
+    <script type="module" src="/browser-network-diagnostic.js"></script>
+  </body>
+</html>
