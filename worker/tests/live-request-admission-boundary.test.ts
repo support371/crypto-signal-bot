@@ -23,17 +23,18 @@ type FakeOptions = {
 class FakeD1Database {
   readonly preparedSql: string[] = []
   readonly bindings: unknown[][] = []
+  private readonly options: FakeOptions
 
-  constructor(private readonly options: FakeOptions = {}) {}
+  constructor(options: FakeOptions = {}) {
+    this.options = options
+  }
 
   prepare(sql: string): D1PreparedStatement {
     this.preparedSql.push(sql)
     const database = this
-    let currentBindings: unknown[] = []
 
     return {
       bind(...values: unknown[]) {
-        currentBindings = values
         database.bindings.push(values)
         return this
       },
