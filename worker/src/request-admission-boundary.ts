@@ -16,16 +16,16 @@ export const REQUEST_ADMISSION_RETENTION_MINUTES = 2
 
 export const REQUEST_ADMISSION_SQL = `
 INSERT INTO request_admission_counters (bucket, count, expires_at)
-VALUES (?1, 1, ?2)
+VALUES (?, 1, ?)
 ON CONFLICT(bucket) DO UPDATE SET
   count = request_admission_counters.count + 1,
   expires_at = excluded.expires_at
-WHERE request_admission_counters.count < ?3
+WHERE request_admission_counters.count < ?
 RETURNING count
 `.trim()
 
 const PURGE_EXPIRED_ADMISSION_SQL =
-  'DELETE FROM request_admission_counters WHERE expires_at <= ?1'
+  'DELETE FROM request_admission_counters WHERE expires_at <= ?'
 
 function boundedRateLimit(raw: string | undefined): number {
   const parsed = Number.parseInt(String(raw ?? ''), 10)
