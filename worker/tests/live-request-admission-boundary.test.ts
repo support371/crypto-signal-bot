@@ -77,12 +77,12 @@ function request(
 
 function migrationSql(): string {
   const migrationPath = fileURLToPath(
-    new URL('../migrations/031_request_admission_counters.sql', import.meta.url),
+    new URL('../migrations/paper/003_request_admission_counters.sql', import.meta.url),
   )
   return fs.readFileSync(migrationPath, 'utf8')
 }
 
-test('migration 031 creates a bounded admission counter table and is replay safe', () => {
+test('paper migration 003 creates a bounded admission counter table and is replay safe', () => {
   const database = new DatabaseSync(':memory:')
   const sql = migrationSql()
   database.exec(sql)
