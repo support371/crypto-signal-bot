@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Dict, List, Optional
+from collections import deque
 
 from fastapi import HTTPException, Request
 
@@ -26,12 +26,14 @@ from backend.config.runtime import get_runtime_config
 RUNTIME_CONFIG = get_runtime_config()
 _rate_limit_window_seconds = 60
 _rate_limit_max_requests: int = RUNTIME_CONFIG.rate_limit_rpm
-_rate_limit_store: Dict[str, List[float]] = {}
+_rate_limit_store: dict[str, deque[float]] = {}
 _store_lock = threading.Lock()
+_last_cleanup_time: float = 0.0
+_cleanup_interval = 10.0  # seconds between global stale IP cleanups
 
 # Optional async Redis client (set on first use)
 _redis_client = None
-_redis_available: Optional[bool] = None  # None = not yet tested
+_redis_available: bool | None = None  # None = not yet tested
 
 
 def _get_client_ip(request: Request) -> str:
@@ -44,31 +46,39 @@ def _get_client_ip(request: Request) -> str:
 
 def _rate_limit_memory(client_ip: str) -> None:
     """In-process fallback rate limiter (thread-safe sliding window)."""
+    global _last_cleanup_time
     now: float = time.time()
     window_start: float = now - _rate_limit_window_seconds
 
     with _store_lock:
-        # Evict stale IPs to prevent memory leak
-        stale_keys = [
-            ip for ip, ts_list in _rate_limit_store.items()
-            if not ts_list or ts_list[-1] <= window_start
-        ]
-        for key in stale_keys:
-            del _rate_limit_store[key]
+        # Periodically evict stale IPs to prevent memory leaks, instead of on every request.
+        # This reduces global dictionary sweeps from O(N) per request to O(N) once every 10 seconds.
+        if now - _last_cleanup_time > _cleanup_interval:
+            stale_keys = [
+                ip
+                for ip, ts_dq in _rate_limit_store.items()
+                if not ts_dq or ts_dq[-1] <= window_start
+            ]
+            for key in stale_keys:
+                del _rate_limit_store[key]
+            _last_cleanup_time = now
 
         if client_ip not in _rate_limit_store:
-            _rate_limit_store[client_ip] = []
+            _rate_limit_store[client_ip] = deque()
 
         timestamps = _rate_limit_store[client_ip]
-        _rate_limit_store[client_ip] = [t for t in timestamps if t > window_start]
 
-        if len(_rate_limit_store[client_ip]) >= _rate_limit_max_requests:
+        # O(1) pruning of stale timestamps for the current client from the left
+        while timestamps and timestamps[0] <= window_start:
+            timestamps.popleft()
+
+        if len(timestamps) >= _rate_limit_max_requests:
             raise HTTPException(
                 status_code=429,
                 detail=f"Rate limit exceeded. Max {_rate_limit_max_requests} requests per minute.",
                 headers={"Retry-After": "60"},
             )
-        _rate_limit_store[client_ip].append(now)
+        timestamps.append(now)
 
 
 async def _rate_limit_redis(client_ip: str) -> bool:
@@ -82,7 +92,9 @@ async def _rate_limit_redis(client_ip: str) -> bool:
         if _redis_client is None:
             try:
                 import aioredis  # type: ignore
+
                 from backend.config.settings import get_settings
+
                 settings = get_settings()
                 _redis_client = await aioredis.from_url(
                     settings.redis_url, decode_responses=True, socket_timeout=1.0
