@@ -75,12 +75,18 @@ function request(
   return new Request('https://worker.example/healthz', { headers })
 }
 
-test('migration 031 creates a bounded admission counter table', () => {
+function migrationSql(): string {
   const migrationPath = fileURLToPath(
     new URL('../migrations/031_request_admission_counters.sql', import.meta.url),
   )
+  return fs.readFileSync(migrationPath, 'utf8')
+}
+
+test('migration 031 creates a bounded admission counter table and is replay safe', () => {
   const database = new DatabaseSync(':memory:')
-  database.exec(fs.readFileSync(migrationPath, 'utf8'))
+  const sql = migrationSql()
+  database.exec(sql)
+  database.exec(sql)
 
   const columns = database
     .prepare('PRAGMA table_info(request_admission_counters)')
@@ -98,6 +104,25 @@ test('migration 031 creates a bounded admission counter table', () => {
   assert.ok(indexes.some((index) => index.name === 'request_admission_counters_expires_at_idx'))
 })
 
+test('the real SQLite statement atomically stops at the configured limit', () => {
+  const database = new DatabaseSync(':memory:')
+  database.exec(migrationSql())
+  const statement = database.prepare(REQUEST_ADMISSION_SQL)
+
+  const first = statement.get('203.0.113.10:2', 240_000, 2) as { count: number }
+  const second = statement.get('203.0.113.10:2', 240_000, 2) as { count: number }
+  const blocked = statement.get('203.0.113.10:2', 240_000, 2)
+
+  assert.equal(first.count, 1)
+  assert.equal(second.count, 2)
+  assert.equal(blocked, undefined)
+
+  const persisted = database
+    .prepare('SELECT count, expires_at FROM request_admission_counters WHERE bucket = ?')
+    .get('203.0.113.10:2') as { count: number; expires_at: number }
+  assert.deepEqual({ ...persisted }, { count: 2, expires_at: 240_000 })
+})
+
 test('admission uses one conditional atomic UPSERT and permits a bounded request', async () => {
   const database = new FakeD1Database({ firstResult: { count: 1 } })
   const result = await evaluateRequestAdmission(request(), env(database), 120_000)
@@ -111,7 +136,7 @@ test('admission uses one conditional atomic UPSERT and permits a bounded request
   assert.equal(database.preparedSql.length, 1)
   assert.equal(database.preparedSql[0], REQUEST_ADMISSION_SQL)
   assert.match(REQUEST_ADMISSION_SQL, /ON CONFLICT\(bucket\) DO UPDATE/)
-  assert.match(REQUEST_ADMISSION_SQL, /WHERE request_admission_counters\.count < \?3/)
+  assert.match(REQUEST_ADMISSION_SQL, /WHERE request_admission_counters\.count < \?/)
   assert.match(REQUEST_ADMISSION_SQL, /RETURNING count/)
   assert.deepEqual(database.bindings[0], ['203.0.113.10:2', 240_000, 2])
 })
