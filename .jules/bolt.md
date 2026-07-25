@@ -45,3 +45,7 @@
 ## 2026-07-15 - [Efficient RSI Series Calculation]
 **Learning:** The traditional RSI formula $100 - (100 / (1 + RS))$ involves multiple divisions and nested calculations. It can be simplified to $100 \cdot avg\_gain / (avg\_gain + avg\_loss)$, which is mathematically equivalent and significantly faster.
 **Action:** Use the ratio-based RSI formula to reduce floating-point divisions and simplify the update logic inside hot loops.
+
+## 2026-07-25 - [Rate Limiter Dict-Scan O(N) Bottleneck]
+**Learning:** In-memory fallback rate limiters using sliding windows often scan the entire active client-IP store to clean up stale entries on *every single request*. As the number of concurrent client IPs grows (e.g., to thousands of IPs), this O(U) cleanup introduces extreme latency and lock contention on a hot request path. Utilizing a fast `collections.deque` with `popleft()` allows lazy, O(1) pruning of individual IP queues on access, while the heavy O(U) global store scan can be safely decoupled to run periodically (e.g., every 10 seconds).
+**Action:** Always implement sliding window rate limiters with double-ended queues for O(1) head pruning, and decouple full-store dict scans/evictions to run on a time-gated interval rather than on every single incoming request.
