@@ -45,3 +45,7 @@
 ## 2026-07-15 - [Efficient RSI Series Calculation]
 **Learning:** The traditional RSI formula $100 - (100 / (1 + RS))$ involves multiple divisions and nested calculations. It can be simplified to $100 \cdot avg\_gain / (avg\_gain + avg\_loss)$, which is mathematically equivalent and significantly faster.
 **Action:** Use the ratio-based RSI formula to reduce floating-point divisions and simplify the update logic inside hot loops.
+
+## 2026-07-22 - [In-Memory Fallback Rate Limiter O(N) Bottleneck]
+**Learning:** Representing client request timestamp histories as a list and reconstructing them via list comprehensions (`O(K)`) on every request scales poorly. Even worse, performing a full global sweep to evict stale IP keys (`O(N)`) on every single request leads to catastrophic latency regressions under heavy client load.
+**Action:** Always use a deque (`collections.deque`) for request timestamp histories to perform $O(1)$ pruning using `popleft()`. Decouple and throttle global cleanup operations of the IP store using simple module-level timestamp checks so they run periodically (e.g., every 10 seconds) instead of on every request.

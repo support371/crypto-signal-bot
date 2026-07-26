@@ -1,3 +1,4 @@
+# backend/logic/rate_limit.py
 """Rate limiting logic.
 
 Uses a per-IP sliding window to cap requests per minute.
@@ -17,6 +18,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections import deque
 from typing import Dict, List, Optional
 
 from fastapi import HTTPException, Request
@@ -26,8 +28,13 @@ from backend.config.runtime import get_runtime_config
 RUNTIME_CONFIG = get_runtime_config()
 _rate_limit_window_seconds = 60
 _rate_limit_max_requests: int = RUNTIME_CONFIG.rate_limit_rpm
-_rate_limit_store: Dict[str, List[float]] = {}
+
+# Optimization: Represented as Dict[str, deque[float]] for O(1) sliding window queue operations
+_rate_limit_store: Dict[str, deque[float]] = {}
 _store_lock = threading.Lock()
+
+# Optimization: Keep track of the last time a global sweep of stale IPs was performed
+_last_cleanup_time = 0.0
 
 # Optional async Redis client (set on first use)
 _redis_client = None
@@ -44,31 +51,40 @@ def _get_client_ip(request: Request) -> str:
 
 def _rate_limit_memory(client_ip: str) -> None:
     """In-process fallback rate limiter (thread-safe sliding window)."""
+    global _last_cleanup_time
     now: float = time.time()
     window_start: float = now - _rate_limit_window_seconds
 
     with _store_lock:
-        # Evict stale IPs to prevent memory leak
-        stale_keys = [
-            ip for ip, ts_list in _rate_limit_store.items()
-            if not ts_list or ts_list[-1] <= window_start
-        ]
-        for key in stale_keys:
-            del _rate_limit_store[key]
+        # Optimization: Decouple the O(N) global stale IP sweep so it runs periodically
+        # (every 10 seconds) instead of on every single incoming request.
+        if now - _last_cleanup_time > 10.0:
+            stale_keys = [
+                ip for ip, ts_queue in _rate_limit_store.items()
+                if not ts_queue or ts_queue[-1] <= window_start
+            ]
+            for key in stale_keys:
+                del _rate_limit_store[key]
+            _last_cleanup_time = now
 
-        if client_ip not in _rate_limit_store:
-            _rate_limit_store[client_ip] = []
+        # Get or initialize the IP's timestamp queue
+        timestamps = _rate_limit_store.get(client_ip)
+        if timestamps is None:
+            timestamps = deque()
+            _rate_limit_store[client_ip] = timestamps
 
-        timestamps = _rate_limit_store[client_ip]
-        _rate_limit_store[client_ip] = [t for t in timestamps if t > window_start]
+        # Optimization: O(1) pruning of stale timestamps from the left of the deque
+        # instead of an O(K) list reconstruction.
+        while timestamps and timestamps[0] <= window_start:
+            timestamps.popleft()
 
-        if len(_rate_limit_store[client_ip]) >= _rate_limit_max_requests:
+        if len(timestamps) >= _rate_limit_max_requests:
             raise HTTPException(
                 status_code=429,
                 detail=f"Rate limit exceeded. Max {_rate_limit_max_requests} requests per minute.",
                 headers={"Retry-After": "60"},
             )
-        _rate_limit_store[client_ip].append(now)
+        timestamps.append(now)
 
 
 async def _rate_limit_redis(client_ip: str) -> bool:
