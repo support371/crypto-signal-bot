@@ -101,9 +101,9 @@ export function Header({
             <Button
               variant="outline"
               size="icon"
-              onClick={() => navigate('/card-funding')}
+              onClick={() => navigate('/buy-bitcoin')}
               className="border-border hover:border-primary hover:bg-primary/10"
-              title="Card funding security gateway"
+              title="Buy Bitcoin with card"
             >
               <CreditCard className="w-4 h-4" />
             </Button>
