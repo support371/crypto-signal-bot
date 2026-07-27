@@ -142,15 +142,28 @@ def append_trace(trace_data: Dict[str, Any]):
 
 
 def get_traces(symbol: Optional[str] = None, status: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+    if limit <= 0:
+        return []
+
+    symbol_upper = symbol.upper() if symbol else None
+    matched = []
+
     with _lock:
-        # Copy the list while holding the lock so subsequent appends cannot
-        # mutate the slice we hand back to the caller.
-        traces = list(_load().get("traces", []))
-    if symbol:
-        traces = [t for t in traces if t.get("symbol", "").upper() == symbol.upper()]
-    if status:
-        traces = [t for t in traces if t.get("execution", {}).get("status") == status]
-    return traces[-limit:]
+        traces = _load().get("traces", [])
+        # Iterate backwards to find recent traces matching filters
+        for trace in reversed(traces):
+            if symbol_upper and trace.get("symbol", "").upper() != symbol_upper:
+                continue
+            if status and trace.get("execution", {}).get("status") != status:
+                continue
+            matched.append(trace)
+            if len(matched) == limit:
+                break
+
+    # We collected matching items from newest to oldest.
+    # Reverse matched to restore chronological order (oldest first, newest last).
+    matched.reverse()
+    return matched
 
 
 def get_trace_by_intent_id(intent_id: str) -> Optional[Dict[str, Any]]:
@@ -160,10 +173,11 @@ def get_trace_by_intent_id(intent_id: str) -> Optional[Dict[str, Any]]:
     traces remain retrievable via GET /trace/{intent_id}.
     """
     with _lock:
-        traces = list(_load().get("traces", []))
-    for trace in traces:
-        if trace.get("intent_id") == intent_id:
-            return trace
+        traces = _load().get("traces", [])
+        # Iterate backwards as recent traces are appended to the end of the list.
+        for trace in reversed(traces):
+            if trace.get("intent_id") == intent_id:
+                return trace
     return None
 
 

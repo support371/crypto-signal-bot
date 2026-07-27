@@ -45,3 +45,7 @@
 ## 2026-07-15 - [Efficient RSI Series Calculation]
 **Learning:** The traditional RSI formula $100 - (100 / (1 + RS))$ involves multiple divisions and nested calculations. It can be simplified to $100 \cdot avg\_gain / (avg\_gain + avg\_loss)$, which is mathematically equivalent and significantly faster.
 **Action:** Use the ratio-based RSI formula to reduce floating-point divisions and simplify the update logic inside hot loops.
+
+## 2026-07-22 - [Audit Store Search Optimization]
+**Learning:** Full read-modify-write and forward linear scanning on file-backed lists can cause O(N) performance degradation as log files grow (e.g. 10,000+ traces). By using backward iteration and early stopping (breaking as soon as we meet the query limit or find the target element), we can reduce query complexity to O(limit) or O(1) for recent entries. Additionally, reading list references directly under a lock instead of copying lists with `list(...)` saves substantial memory allocation and GC overhead in hot execution paths.
+**Action:** Always implement backward iteration and early stopping when querying chronological logs, queues, or audit stores. Avoid making shallow copies of long lists unless mutations are strictly required.
