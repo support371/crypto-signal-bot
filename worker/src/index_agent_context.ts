@@ -3,6 +3,10 @@ import {
   handleAgentContextRequest,
   type AgentContextEnv,
 } from './agent-context'
+import {
+  handleSwitchereFundingRequest,
+  type SwitchereFundingEnv,
+} from './switchere-funding'
 
 export default {
   async fetch(
@@ -10,6 +14,12 @@ export default {
     env: AgentContextEnv,
     ctx: ExecutionContext,
   ): Promise<Response> {
+    const switchereResponse = await handleSwitchereFundingRequest(
+      request,
+      env as SwitchereFundingEnv,
+    )
+    if (switchereResponse) return switchereResponse
+
     const url = new URL(request.url)
     if (url.pathname === '/agent/context') {
       return handleAgentContextRequest(request, env)
