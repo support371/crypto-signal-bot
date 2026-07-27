@@ -76,6 +76,14 @@ export default function AppCore() {
               }
             />
             <Route
+              path="/buy-bitcoin"
+              element={
+                <ProtectedPage>
+                  <CardFunding />
+                </ProtectedPage>
+              }
+            />
+            <Route
               path="/backtest"
               element={
                 <ProtectedPage>
