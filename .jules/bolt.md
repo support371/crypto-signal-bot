@@ -45,3 +45,7 @@
 ## 2026-07-15 - [Efficient RSI Series Calculation]
 **Learning:** The traditional RSI formula $100 - (100 / (1 + RS))$ involves multiple divisions and nested calculations. It can be simplified to $100 \cdot avg\_gain / (avg\_gain + avg\_loss)$, which is mathematically equivalent and significantly faster.
 **Action:** Use the ratio-based RSI formula to reduce floating-point divisions and simplify the update logic inside hot loops.
+
+## 2026-07-28 - [Circular Buffer for Sliding Event Excursions]
+**Learning:** In hot streaming paths (such as the feed-health deduplication checking window in `FeedHealthRegistry`), using array `.shift()` to evict stale entries from a tracked array forces CPython or V8 engine to slide elements in memory, which is a $O(N)$ operation where $N$ is the historical sliding window limit. This leads to performance regressions and excessive GC pressure as the maximum tracked IDs scale up.
+**Action:** Implement sliding window order tracking as a fixed-size ring buffer using a write index. Overwriting the oldest element at the write pointer results in $O(1)$ evictions and eliminates array resizing and shift overhead entirely.

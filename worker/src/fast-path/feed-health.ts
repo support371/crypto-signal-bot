@@ -47,9 +47,14 @@ function initialState(event: NormalizedMarketEvent): MutableFeedState {
 export class FeedHealthRegistry {
   private readonly feeds = new Map<string, MutableFeedState>()
   private readonly seenEventIds = new Set<string>()
-  private readonly seenEventOrder: string[] = []
+  // Use a pre-allocated array as a ring buffer (circular buffer) and a write index
+  // to avoid O(N) array shift overhead.
+  private readonly seenEventOrder: string[]
+  private seenEventWriteIndex = 0
 
-  constructor(private readonly thresholds: FastPathThresholds = { ...DEFAULT_FAST_PATH_THRESHOLDS }) {}
+  constructor(private readonly thresholds: FastPathThresholds = { ...DEFAULT_FAST_PATH_THRESHOLDS }) {
+    this.seenEventOrder = new Array(this.thresholds.maxSeenEventIds)
+  }
 
   ingest(event: NormalizedMarketEvent, nowMs = event.receivedTsMs): FeedUpdateResult {
     const key = feedKey(event)
@@ -168,7 +173,8 @@ export class FeedHealthRegistry {
   clear(): void {
     this.feeds.clear()
     this.seenEventIds.clear()
-    this.seenEventOrder.length = 0
+    this.seenEventOrder.fill('')
+    this.seenEventWriteIndex = 0
   }
 
   private getOrCreate(key: string, event: NormalizedMarketEvent): MutableFeedState {
@@ -184,12 +190,14 @@ export class FeedHealthRegistry {
   }
 
   private rememberEventId(eventId: string): void {
-    this.seenEventIds.add(eventId)
-    this.seenEventOrder.push(eventId)
-    while (this.seenEventOrder.length > this.thresholds.maxSeenEventIds) {
-      const oldest = this.seenEventOrder.shift()
-      if (oldest) this.seenEventIds.delete(oldest)
+    // Overwrite oldest item in circular buffer
+    const oldest = this.seenEventOrder[this.seenEventWriteIndex]
+    if (oldest) {
+      this.seenEventIds.delete(oldest)
     }
+    this.seenEventOrder[this.seenEventWriteIndex] = eventId
+    this.seenEventIds.add(eventId)
+    this.seenEventWriteIndex = (this.seenEventWriteIndex + 1) % this.thresholds.maxSeenEventIds
   }
 
   private propagateHeartbeat(event: NormalizedMarketEvent, nowMs: number): void {
