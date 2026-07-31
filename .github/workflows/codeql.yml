@@ -1,14 +1,29 @@
-name: "CodeQL Advanced (manual advisory)"
-# CodeQL is optional defense-in-depth and cannot be a required release check.
-# Required compilation, tests, safety proofs, and audits run in CircleCI.
+name: "CodeQL Advanced (advisory)"
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "worker/**"
+      - "src/**"
+      - "scripts/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/codeql.yml"
+  schedule:
+    - cron: "17 6 * * 1"
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
-    runs-on: [self-hosted, cryptoops, linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       security-events: write
       packages: read
