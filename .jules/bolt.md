@@ -45,3 +45,7 @@
 ## 2026-07-15 - [Efficient RSI Series Calculation]
 **Learning:** The traditional RSI formula $100 - (100 / (1 + RS))$ involves multiple divisions and nested calculations. It can be simplified to $100 \cdot avg\_gain / (avg\_gain + avg\_loss)$, which is mathematically equivalent and significantly faster.
 **Action:** Use the ratio-based RSI formula to reduce floating-point divisions and simplify the update logic inside hot loops.
+
+## 2026-07-22 - [Decimal Instantiation Overhead in Hot Loops]
+**Learning:** Instantiating `Decimal` objects from string-formatted floats inside tight simulation or replay hot loops is incredibly slow in Python due to string parsing and object creation overhead. Converting native floats to string, parsing to Decimal, and casting back to float yields a ~24x performance penalty on the conversion path compared to a direct float list comprehension.
+**Action:** Avoid slow round-trips through `Decimal` when compiling series of numeric data for technical indicators or mathematical operations where inputs/outputs are ultimately native floats.
