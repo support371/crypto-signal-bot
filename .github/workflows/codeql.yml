@@ -1,19 +1,9 @@
-name: "CodeQL Advanced (advisory)"
+name: "CodeQL Advanced (manual advisory)"
+# CodeQL remains an optional manual diagnostic so GitHub Actions billing or
+# runner availability cannot block the CircleCI-owned release gate.
 
 on:
   workflow_dispatch:
-  pull_request:
-    branches: [main]
-    paths:
-      - "backend/**"
-      - "worker/**"
-      - "src/**"
-      - "scripts/**"
-      - "package.json"
-      - "package-lock.json"
-      - ".github/workflows/codeql.yml"
-  schedule:
-    - cron: "17 6 * * 1"
 
 concurrency:
   group: codeql-${{ github.workflow }}-${{ github.ref }}
