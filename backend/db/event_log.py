@@ -13,47 +13,73 @@ class EventLogStore:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._initialized = False
+        self._local = threading.local()
+        self._init_lock = threading.Lock()
 
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.path)
-        conn.row_factory = sqlite3.Row
+    def _get_conn(self) -> sqlite3.Connection:
+        """
+        Retrieve or establish a thread-local SQLite connection.
+        Optimized by reusing the same connection per-thread, avoiding the
+        expensive overhead of repeatedly opening and closing connection handles.
+        """
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            conn = sqlite3.connect(self.path)
+            conn.row_factory = sqlite3.Row
+            # Speed up SQLite drastically with Write-Ahead Logging (WAL) and synchronous = NORMAL
+            conn.execute("PRAGMA journal_mode = WAL")
+            conn.execute("PRAGMA synchronous = NORMAL")
+            self._local.conn = conn
         return conn
 
     def initialize(self) -> None:
+        """
+        Idempotent schema initialization.
+        Optimized by caching the initialization status and protecting the schema creation
+        using an initialization-only Lock (`self._init_lock`) to prevent concurrent schema
+        definition, while allowing subsequent reads and writes to be fully lock-free.
+        """
         if self._initialized:
             return
-        with self._connect() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS event_log (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    kind TEXT NOT NULL,
-                    created_at INTEGER NOT NULL,
-                    payload_json TEXT NOT NULL
+        with self._init_lock:
+            if self._initialized:
+                return
+            conn = self._get_conn()
+            with conn:
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS event_log (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        kind TEXT NOT NULL,
+                        created_at INTEGER NOT NULL,
+                        payload_json TEXT NOT NULL
+                    )
+                    """
                 )
-                """
-            )
-            conn.execute("CREATE INDEX IF NOT EXISTS ix_event_log_kind_time ON event_log(kind, created_at)")
-        self._initialized = True
+                conn.execute("CREATE INDEX IF NOT EXISTS ix_event_log_kind_time ON event_log(kind, created_at)")
+            self._initialized = True
 
     def append(self, kind: str, payload: dict[str, Any] | None = None, created_at: int | None = None) -> int:
         self.initialize()
         timestamp = created_at or int(time.time())
-        with self._connect() as conn:
+        payload_str = json.dumps(payload or {}, sort_keys=True)
+        conn = self._get_conn()
+        with conn:
             cursor = conn.execute(
                 "INSERT INTO event_log (kind, created_at, payload_json) VALUES (?, ?, ?)",
-                (kind, timestamp, json.dumps(payload or {}, sort_keys=True)),
+                (kind, timestamp, payload_str),
             )
             return int(cursor.lastrowid)
 
     def recent(self, limit: int = 100) -> list[dict[str, Any]]:
         self.initialize()
         safe_limit = max(1, min(int(limit), 1000))
-        with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT id, kind, created_at, payload_json FROM event_log ORDER BY created_at DESC, id DESC LIMIT ?",
-                (safe_limit,),
-            ).fetchall()
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT id, kind, created_at, payload_json FROM event_log ORDER BY created_at DESC, id DESC LIMIT ?",
+            (safe_limit,),
+        ).fetchall()
+        # Optimization: Deserialize JSON outside of the DB operations to minimize processing time.
         return [
             {
                 "id": int(row["id"]),
@@ -66,5 +92,5 @@ class EventLogStore:
 
     def count(self) -> int:
         self.initialize()
-        with self._connect() as conn:
-            return int(conn.execute("SELECT COUNT(*) FROM event_log").fetchone()[0])
+        conn = self._get_conn()
+        return int(conn.execute("SELECT COUNT(*) FROM event_log").fetchone()[0])
