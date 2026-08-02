@@ -47,7 +47,10 @@ function initialState(event: NormalizedMarketEvent): MutableFeedState {
 export class FeedHealthRegistry {
   private readonly feeds = new Map<string, MutableFeedState>()
   private readonly seenEventIds = new Set<string>()
+  // Optimization: Pre-allocated circular ring buffer replacing shift-based sliding history queue
+  // of event IDs. Avoids O(N) array shift overhead by keeping a write index pointer.
   private readonly seenEventOrder: string[] = []
+  private seenEventWriteIdx = 0
 
   constructor(private readonly thresholds: FastPathThresholds = { ...DEFAULT_FAST_PATH_THRESHOLDS }) {}
 
@@ -169,6 +172,7 @@ export class FeedHealthRegistry {
     this.feeds.clear()
     this.seenEventIds.clear()
     this.seenEventOrder.length = 0
+    this.seenEventWriteIdx = 0
   }
 
   private getOrCreate(key: string, event: NormalizedMarketEvent): MutableFeedState {
@@ -184,11 +188,21 @@ export class FeedHealthRegistry {
   }
 
   private rememberEventId(eventId: string): void {
+    const limit = this.thresholds.maxSeenEventIds
     this.seenEventIds.add(eventId)
-    this.seenEventOrder.push(eventId)
-    while (this.seenEventOrder.length > this.thresholds.maxSeenEventIds) {
-      const oldest = this.seenEventOrder.shift()
-      if (oldest) this.seenEventIds.delete(oldest)
+
+    if (this.seenEventOrder.length < limit) {
+      // Buffer is not full yet, simply append and track normally
+      this.seenEventOrder.push(eventId)
+    } else {
+      // Buffer is full. Overwrite the oldest element at current write pointer.
+      // O(1) eviction and reuse, completely eliminating O(N) Array.prototype.shift() overhead.
+      const oldest = this.seenEventOrder[this.seenEventWriteIdx]
+      if (oldest) {
+        this.seenEventIds.delete(oldest)
+      }
+      this.seenEventOrder[this.seenEventWriteIdx] = eventId
+      this.seenEventWriteIdx = (this.seenEventWriteIdx + 1) % limit
     }
   }
 
