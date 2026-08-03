@@ -71,6 +71,7 @@ jobs:
           ISSUE_TITLE: ${{ github.event.issue.title }}
           PR_URL: ${{ github.event.issue.pull_request.url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
 
