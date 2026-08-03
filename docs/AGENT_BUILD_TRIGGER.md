@@ -42,7 +42,7 @@ Allowed scopes:
 - `worker`: Worker TypeScript, paper-safety verification, and Worker tests
 - `full`: all scopes in sequence
 
-Only comments from a repository owner, member, or collaborator are accepted. Other comments do not start a job.
+Only a comment made by the repository owner can start the issue-comment route. Other comments do not start a job. Validation has read-only repository permissions and checks out code without persisted Git credentials. A separate job receives issue-write permission only to post the final result and never executes repository code.
 
 The workflow can also be started manually from **GitHub → Actions → Agent Build Command Trigger → Run workflow**, where a ref, scope, and task can be selected.
 
