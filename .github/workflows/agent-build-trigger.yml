@@ -1,0 +1,232 @@
+name: Agent Build Command Trigger
+
+# This workflow diagnoses and validates repository code only.
+# It does not deploy, merge, migrate remote data, enable live trading,
+# connect exchange write credentials, place orders, transfer funds, or withdraw.
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: Validation scope
+        required: true
+        default: diagnose
+        type: choice
+        options:
+          - diagnose
+          - frontend
+          - backend
+          - worker
+          - full
+      ref:
+        description: Branch, tag, or commit to validate
+        required: true
+        default: main
+        type: string
+      task:
+        description: Optional task to copy into the local Codex command flow
+        required: false
+        type: string
+  issue_comment:
+    types:
+      - created
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: agent-build-${{ github.event.issue.number || github.run_id }}
+  cancel-in-progress: false
+
+env:
+  TRADING_MODE: paper
+  EXCHANGE_MODE: paper
+  NETWORK: testnet
+  ALLOW_MAINNET: "false"
+
+jobs:
+  validate-and-generate-command:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'issue_comment' &&
+        startsWith(github.event.comment.body, '/agent-build') &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Resolve request
+        id: request
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_SCOPE: ${{ inputs.scope }}
+          MANUAL_REF: ${{ inputs.ref }}
+          MANUAL_TASK: ${{ inputs.task }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          PR_URL: ${{ github.event.issue.pull_request.url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            scope="$MANUAL_SCOPE"
+            ref="$MANUAL_REF"
+            task="$MANUAL_TASK"
+          else
+            first_line="$(printf '%s' "$COMMENT_BODY" | tr -d '\r' | head -n 1)"
+            remainder="${first_line#/agent-build}"
+            remainder="$(printf '%s' "$remainder" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+
+            requested_scope="${remainder%% *}"
+            case "$requested_scope" in
+              diagnose|frontend|backend|worker|full)
+                scope="$requested_scope"
+                task="${remainder#"$requested_scope"}"
+                task="$(printf '%s' "$task" | sed -e 's/^[[:space:]]*//')"
+                ;;
+              *)
+                scope="diagnose"
+                task="$remainder"
+                ;;
+            esac
+
+            if [[ -n "$PR_URL" ]]; then
+              ref="$(gh pr view "$ISSUE_NUMBER" --json headRefName --jq '.headRefName')"
+            else
+              ref="main"
+            fi
+
+            if [[ -z "$task" ]]; then
+              task="$ISSUE_TITLE"
+            fi
+          fi
+
+          case "$scope" in
+            diagnose|frontend|backend|worker|full) ;;
+            *)
+              echo "Unsupported scope: $scope" >&2
+              exit 2
+              ;;
+          esac
+
+          if [[ -z "$ref" ]]; then
+            echo "A Git ref is required." >&2
+            exit 2
+          fi
+
+          task_b64="$(printf '%s' "$task" | base64 | tr -d '\n')"
+          echo "scope=$scope" >> "$GITHUB_OUTPUT"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "task_b64=$task_b64" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout requested ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.request.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run guarded validation
+        id: validation
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          ./scripts/agent-build.ps1 -Scope '${{ steps.request.outputs.scope }}'
+
+      - name: Publish command flow summary
+        if: always()
+        shell: bash
+        env:
+          SCOPE: ${{ steps.request.outputs.scope }}
+          REF: ${{ steps.request.outputs.ref }}
+          TASK_B64: ${{ steps.request.outputs.task_b64 }}
+          VALIDATION_OUTCOME: ${{ steps.validation.outcome }}
+        run: |
+          set -euo pipefail
+          task="$(printf '%s' "$TASK_B64" | base64 --decode 2>/dev/null || true)"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          {
+            echo "## Agent build command"
+            echo
+            echo "- Ref: \`$REF\`"
+            echo "- Scope: \`$SCOPE\`"
+            echo "- Hosted validation: **$VALIDATION_OUTCOME**"
+            echo "- Safety: paper mode, testnet, mainnet disabled"
+            echo
+            echo "### Direct terminal validation"
+            echo '```powershell'
+            echo "git clone https://github.com/${GITHUB_REPOSITORY}.git"
+            echo "cd crypto-signal-bot"
+            echo "git fetch --all --prune"
+            echo "git checkout '$REF'"
+            echo ".\\scripts\\agent-build.ps1 -Scope '$SCOPE'"
+            echo '```'
+            echo
+            echo "### Codex agent build"
+            echo '```powershell'
+            echo "\$task = @'"
+            printf '%s\n' "$task"
+            echo "'@"
+            echo ".\\scripts\\agent-build.ps1 -Scope '$SCOPE' -Task \$task -UseCodex"
+            echo '```'
+            echo
+            echo "The Codex command uses a workspace-write sandbox with approval prompts and leaves changes uncommitted for review."
+            echo
+            echo "Run details: $run_url"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment command flow on issue or pull request
+        if: always() && github.event_name == 'issue_comment'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          SCOPE: ${{ steps.request.outputs.scope }}
+          REF: ${{ steps.request.outputs.ref }}
+          VALIDATION_OUTCOME: ${{ steps.validation.outcome }}
+        run: |
+          set -euo pipefail
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          cat > /tmp/agent-build-comment.md <<EOF
+          **Agent build trigger completed**
+
+          - Ref: \`$REF\`
+          - Scope: \`$SCOPE\`
+          - Hosted validation: **$VALIDATION_OUTCOME**
+          - Safety state: paper mode, testnet, mainnet disabled
+
+          Local terminal command:
+
+          \`\`\`powershell
+          .\\scripts\\agent-build.ps1 -Scope '$SCOPE'
+          \`\`\`
+
+          To hand the task to Codex locally, rerun the script with \`-UseCodex -Task "your task"\`. The agent remains restricted to workspace writes and cannot deploy or enable live operations through this workflow.
+
+          [Open workflow run]($run_url)
+          EOF
+          gh issue comment "$ISSUE_NUMBER" --body-file /tmp/agent-build-comment.md
+
+      - name: Preserve validation failure
+        if: steps.validation.outcome != 'success'
+        shell: bash
+        run: |
+          echo "Guarded validation failed. Review the failed step and use the generated terminal/Codex command flow." >&2
+          exit 1
