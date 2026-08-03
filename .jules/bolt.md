@@ -45,3 +45,7 @@
 ## 2026-07-15 - [Efficient RSI Series Calculation]
 **Learning:** The traditional RSI formula $100 - (100 / (1 + RS))$ involves multiple divisions and nested calculations. It can be simplified to $100 \cdot avg\_gain / (avg\_gain + avg\_loss)$, which is mathematically equivalent and significantly faster.
 **Action:** Use the ratio-based RSI formula to reduce floating-point divisions and simplify the update logic inside hot loops.
+
+## 2026-07-22 - [In-memory Rate Limiter O(N) dict scanning and list-copying bottleneck]
+**Learning:** An in-memory rate limiter that filters lists of timestamps and scans/evicts stale IPs from the entire dictionary on every single request becomes extremely slow under simulated active load (e.g., 10,000 unique clients). Re-allocating lists of timestamps and doing O(N) scans on every request introduces significant overhead.
+**Action:** Replace timestamp lists with `collections.deque` and use `popleft()` for O(1) sliding window eviction. Decouple global stale IP cleanups to run periodically (e.g., every 10 seconds) instead of on every request.
