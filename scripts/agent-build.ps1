@@ -14,6 +14,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$RunningOnWindows = $env:OS -eq 'Windows_NT'
 Set-Location $RepoRoot
 
 $env:TRADING_MODE = 'paper'
@@ -142,8 +143,9 @@ function Run-CodexAgent {
     Write-Section 'Codex workspace agent'
 
     $codex = Require-Command 'codex'
-    if ([string]::IsNullOrWhiteSpace($Task)) {
-        $Task = "Inspect the $Scope scope, locate the highest-priority reproducible build or test failure, fix it without broadening product scope, and verify the correction."
+    $requestedTask = $Task
+    if ([string]::IsNullOrWhiteSpace($requestedTask)) {
+        $requestedTask = "Inspect the $Scope scope, locate the highest-priority reproducible build or test failure, fix it without broadening product scope, and verify the correction."
     }
 
     $prompt = @"
@@ -151,7 +153,7 @@ Read AGENTS.md and the authoritative SAFE_FAST_PATH documents before editing.
 
 Requested scope: $Scope
 Requested task:
-$Task
+$requestedTask
 
 Mandatory constraints:
 - Keep TRADING_MODE=paper, EXCHANGE_MODE=paper, NETWORK=testnet, and ALLOW_MAINNET=false.
@@ -163,15 +165,14 @@ Mandatory constraints:
 - Leave changes uncommitted for human review and report exact files, tests, and remaining blockers.
 "@
 
-    Invoke-External \
-        -Label 'Run Codex in workspace-write sandbox' \
-        -FilePath $codex.Source \
-        -Arguments @(
-            '-C', $RepoRoot,
-            '--sandbox', 'workspace-write',
-            '--ask-for-approval', 'on-request',
-            'exec', '--ephemeral', $prompt
-        )
+    $codexArguments = @(
+        '-C', $RepoRoot,
+        '--sandbox', 'workspace-write',
+        '--ask-for-approval', 'on-request',
+        'exec', '--ephemeral', $prompt
+    )
+
+    Invoke-External -Label 'Run Codex in workspace-write sandbox' -FilePath $codex.Source -Arguments $codexArguments
 }
 
 function Run-Diagnostics {
@@ -202,7 +203,7 @@ function Run-BackendValidation {
     Write-Section 'Backend validation'
 
     $venvPath = Join-Path $RepoRoot '.venv-agent'
-    $venvPython = if ($IsWindows) {
+    $venvPython = if ($RunningOnWindows) {
         Join-Path $venvPath 'Scripts/python.exe'
     }
     else {
