@@ -104,7 +104,7 @@ jobs:
             esac
 
             if [[ -n "$PR_URL" ]]; then
-              ref="$(gh pr view "$ISSUE_NUMBER" --json headRefName --jq '.headRefName')"
+              ref="$(gh api "repos/${GH_REPO}/pulls/${ISSUE_NUMBER}" --jq '.head.sha')"
             else
               ref="main"
             fi
@@ -127,6 +127,7 @@ jobs:
             exit 2
           fi
 
+          task="${task:0:4000}"
           task_b64="$(printf '%s' "$task" | base64 | tr -d '\n')"
           echo "scope=$scope" >> "$GITHUB_OUTPUT"
           echo "ref=$ref" >> "$GITHUB_OUTPUT"
