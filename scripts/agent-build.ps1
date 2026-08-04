@@ -139,8 +139,41 @@ function Ensure-WorkerDependencies {
     $script:WorkerDependenciesReady = $true
 }
 
+function Prepare-CodexWorkspace {
+    Write-Section 'Codex workspace isolation'
+
+    $git = Require-Command 'git'
+    $insideWorkTree = (& $git.Source rev-parse --is-inside-work-tree 2>$null).Trim()
+    if ($LASTEXITCODE -ne 0 -or $insideWorkTree -ne 'true') {
+        throw 'Codex mode requires a valid Git working tree.'
+    }
+
+    $status = (& $git.Source status --porcelain=v1 --untracked-files=all)
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Unable to inspect the Git working tree before Codex execution.'
+    }
+    if ($status) {
+        throw "Codex mode refuses to run over existing changes. Commit, stash, or remove them first.`n$status"
+    }
+
+    $currentBranch = (& $git.Source symbolic-ref --quiet --short HEAD 2>$null).Trim()
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($currentBranch)) {
+        throw 'Codex mode refuses to run from a detached HEAD. Check out a named branch first.'
+    }
+
+    if ($currentBranch -in @('main', 'master')) {
+        $branchName = 'agent/local-codex-' + (Get-Date -Format 'yyyyMMdd-HHmmss')
+        Invoke-External -Label "Create isolated agent branch $branchName" -FilePath $git.Source -Arguments @('switch', '-c', $branchName)
+        $currentBranch = $branchName
+    }
+
+    Write-Host "Codex changes will remain isolated on branch '$currentBranch'." -ForegroundColor Green
+}
+
 function Run-CodexAgent {
     Write-Section 'Codex workspace agent'
+
+    Prepare-CodexWorkspace
 
     $codex = Require-Command 'codex'
     $requestedTask = $Task
