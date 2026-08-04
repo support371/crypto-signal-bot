@@ -84,17 +84,12 @@ function Invoke-Python {
     Invoke-External -Label $Label -FilePath $resolved.FilePath -Arguments @($resolved.Prefix + $Arguments)
 }
 
-function Assert-Environment {
-    Write-Section 'Environment checks'
-
-    $git = Require-Command 'git'
+function Assert-NodeEnvironment {
     $node = Require-Command 'node'
     $npm = Require-Command 'npm'
 
-    Invoke-External -Label 'Git version' -FilePath $git.Source -Arguments @('--version')
     Invoke-External -Label 'Node version' -FilePath $node.Source -Arguments @('--version')
     Invoke-External -Label 'npm version' -FilePath $npm.Source -Arguments @('--version')
-    Invoke-Python -Label 'Python version' -Arguments @('--version')
 
     $nodeText = (& $node.Source --version).Trim().TrimStart('v')
     $nodeVersion = [version]$nodeText
@@ -103,6 +98,36 @@ function Assert-Environment {
     }
     if ($nodeVersion.Major -ne 22) {
         Write-Warning "Node.js 22.x is the verified project line. Found $nodeText."
+    }
+}
+
+function Assert-PythonEnvironment {
+    Invoke-Python -Label 'Python version' -Arguments @('--version')
+}
+
+function Assert-Environment {
+    Write-Section 'Environment checks'
+
+    $git = Require-Command 'git'
+    Invoke-External -Label 'Git version' -FilePath $git.Source -Arguments @('--version')
+
+    switch ($Scope) {
+        'diagnose' {
+            Assert-NodeEnvironment
+        }
+        'frontend' {
+            Assert-NodeEnvironment
+        }
+        'backend' {
+            Assert-PythonEnvironment
+        }
+        'worker' {
+            Assert-NodeEnvironment
+        }
+        'full' {
+            Assert-NodeEnvironment
+            Assert-PythonEnvironment
+        }
     }
 
     if ($env:TRADING_MODE -ne 'paper' -or
