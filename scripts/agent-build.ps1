@@ -169,10 +169,12 @@ Mandatory constraints:
         '-C', $RepoRoot,
         '--sandbox', 'workspace-write',
         '--ask-for-approval', 'on-request',
+        '--ignore-user-config',
+        '--disable', 'plugins',
         'exec', '--ephemeral', $prompt
     )
 
-    Invoke-External -Label 'Run Codex in workspace-write sandbox' -FilePath $codex.Source -Arguments $codexArguments
+    Invoke-External -Label 'Run Codex in isolated workspace-write sandbox' -FilePath $codex.Source -Arguments $codexArguments
 }
 
 function Run-Diagnostics {
