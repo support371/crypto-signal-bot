@@ -174,6 +174,7 @@ jobs:
           set -euo pipefail
           task="$(printf '%s' "$TASK_B64" | base64 --decode 2>/dev/null || true)"
           run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          local_branch="agent/trigger-${GITHUB_RUN_ID}"
 
           {
             echo "## Agent build command"
@@ -188,7 +189,7 @@ jobs:
             echo "git clone https://github.com/${GITHUB_REPOSITORY}.git"
             echo "cd crypto-signal-bot"
             echo "git fetch --all --prune"
-            echo "git checkout '$REF'"
+            echo "git switch -c '$local_branch' '$REF'"
             echo ".\\scripts\\agent-build.ps1 -Scope '$SCOPE'"
             echo '```'
             echo
@@ -200,6 +201,7 @@ jobs:
             echo ".\\scripts\\agent-build.ps1 -Scope '$SCOPE' -Task \$task -UseCodex"
             echo '```'
             echo
+            echo "The exact validated ref is checked out onto a named local branch so Codex does not run from detached HEAD."
             echo "The Codex command uses a workspace-write sandbox with approval prompts and leaves changes uncommitted for review."
             echo
             echo "Run details: $run_url"
@@ -240,6 +242,7 @@ jobs:
           ref="${REF:-unresolved}"
           outcome="${VALIDATION_OUTCOME:-not-run}"
           run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          local_branch="agent/trigger-${GITHUB_RUN_ID}"
 
           cat > /tmp/agent-build-comment.md <<EOF
           **Agent build trigger completed**
@@ -252,10 +255,12 @@ jobs:
           Local terminal command:
 
           \`\`\`powershell
+          git fetch --all --prune
+          git switch -c '$local_branch' '$ref'
           .\\scripts\\agent-build.ps1 -Scope '$scope'
           \`\`\`
 
-          To hand the task to Codex locally, rerun the script with \`-UseCodex -Task "your task"\`. The agent remains restricted to workspace writes and cannot deploy or enable live operations through this workflow.
+          To hand the task to Codex locally, rerun the script with \`-UseCodex -Task "your task"\`. The exact validated ref is placed on a named local branch, and the agent remains restricted to workspace writes without deployment or live-operation authority.
 
           [Open workflow run]($run_url)
           EOF
