@@ -151,7 +151,11 @@ jobs:
           # through GitHub and pin checkout plus generated local commands to the
           # resulting immutable commit SHA. PR comments already supply a SHA,
           # but resolving it here also verifies that the commit is accessible.
-          ref="$(gh api "repos/${GH_REPO}/commits/${ref}" --jq '.sha')"
+          # Percent-encode the validated ref before placing it in the REST path;
+          # otherwise normal branch names such as feat/example are split into
+          # extra URL path segments and cannot be resolved.
+          encoded_ref="$(jq -rn --arg ref "$ref" '$ref | @uri')"
+          ref="$(gh api "repos/${GH_REPO}/commits/${encoded_ref}" --jq '.sha')"
           if [[ ! "$ref" =~ ^[0-9a-f]{40}$ ]]; then
             echo "Unable to resolve the requested ref to an exact commit SHA." >&2
             exit 2
