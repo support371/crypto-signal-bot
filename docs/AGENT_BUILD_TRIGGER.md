@@ -92,6 +92,8 @@ Locate the first reproducible build or test failure in the selected scope. Make 
 .\scripts\agent-build.ps1 -Scope full -Task $task -UseCodex
 ```
 
+Before Codex starts, the launcher verifies that the repository is a named Git working tree with no tracked or untracked changes. It refuses to run over existing work or from a detached HEAD. When started from `main` or `master`, it automatically creates a timestamped `agent/local-codex-*` branch so generated edits cannot land directly on the default branch. When started from another clean named branch, it preserves that existing isolation boundary.
+
 The launcher starts Codex with:
 
 - repository root as the working directory
