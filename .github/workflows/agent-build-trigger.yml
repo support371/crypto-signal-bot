@@ -104,6 +104,11 @@ jobs:
             esac
 
             if [[ -n "$PR_URL" ]]; then
+              pr_head_repo="$(gh api "repos/${GH_REPO}/pulls/${ISSUE_NUMBER}" --jq '.head.repo.full_name // ""')"
+              if [[ "$pr_head_repo" != "$GH_REPO" ]]; then
+                echo "Fork pull requests are not eligible for agent-build execution." >&2
+                exit 3
+              fi
               ref="$(gh api "repos/${GH_REPO}/pulls/${ISSUE_NUMBER}" --jq '.head.sha')"
             else
               ref="main"
