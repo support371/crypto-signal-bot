@@ -175,7 +175,6 @@ jobs:
           VALIDATION_OUTCOME: ${{ steps.validation.outcome }}
         run: |
           set -euo pipefail
-          task="$(printf '%s' "$TASK_B64" | base64 --decode 2>/dev/null || true)"
           run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           local_branch="agent/trigger-${GITHUB_RUN_ID}"
 
@@ -198,12 +197,12 @@ jobs:
             echo
             echo "### Codex agent build"
             echo '```powershell'
-            echo "\$task = @'"
-            printf '%s\n' "$task"
-            echo "'@"
+            echo "\$taskBase64 = '$TASK_B64'"
+            echo "\$task = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(\$taskBase64))"
             echo ".\\scripts\\agent-build.ps1 -Scope '$SCOPE' -Task \$task -UseCodex"
             echo '```'
             echo
+            echo "The task is reconstructed from Base64 instead of being embedded as executable PowerShell text."
             echo "The exact validated ref is checked out onto a named local branch so Codex does not run from detached HEAD."
             echo "The Codex command uses a workspace-write sandbox with approval prompts and leaves changes uncommitted for review."
             echo
