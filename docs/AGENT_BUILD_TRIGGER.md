@@ -7,8 +7,9 @@ This repository supports one guarded entry point for diagnosis, builds, tests, a
 1. A GitHub issue or pull-request comment can request a validation scope.
 2. GitHub Actions checks out the requested ref and runs the guarded PowerShell launcher.
 3. The workflow returns a copyable terminal command and the validation result.
-4. The same launcher can optionally hand a task to Codex on the operator's computer.
-5. Codex is restricted to workspace writes, asks for approval when required, and leaves changes uncommitted for review.
+4. The generated terminal flow places the exact validated ref onto a named local `agent/trigger-*` branch instead of detached HEAD.
+5. The same launcher can optionally hand a task to Codex on the operator's computer.
+6. Codex is restricted to workspace writes, asks for approval when required, and leaves changes uncommitted for review.
 
 The workflow itself never invokes a paid model API and does not require an OpenAI API key. Agent execution occurs locally through the signed-in Codex CLI when `-UseCodex` is selected.
 
@@ -46,6 +47,8 @@ Only a comment made by the repository owner can start the issue-comment route. O
 
 The workflow can also be started manually from **GitHub → Actions → Agent Build Command Trigger → Run workflow**, where a ref, scope, and task can be selected.
 
+For pull-request triggers, the workflow validates the exact head SHA. The returned local command creates a named branch such as `agent/trigger-<run-id>` from that exact SHA. This preserves commit identity while satisfying the launcher's rule that Codex must never run from detached HEAD.
+
 ## Direct Windows terminal flow
 
 Prerequisites:
@@ -61,7 +64,7 @@ Run:
 git clone https://github.com/support371/crypto-signal-bot.git
 cd crypto-signal-bot
 git fetch --all --prune
-git checkout main
+git switch main
 .\scripts\agent-build.ps1 -Scope diagnose
 ```
 
@@ -92,7 +95,7 @@ Locate the first reproducible build or test failure in the selected scope. Make 
 .\scripts\agent-build.ps1 -Scope full -Task $task -UseCodex
 ```
 
-Before Codex starts, the launcher verifies that the repository is a named Git working tree with no tracked or untracked changes. It refuses to run over existing work or from a detached HEAD. When started from `main` or `master`, it automatically creates a timestamped `agent/local-codex-*` branch so generated edits cannot land directly on the default branch. When started from another clean named branch, it preserves that existing isolation boundary.
+Before Codex starts, the launcher verifies that the repository is a named Git working tree with no tracked or untracked changes. It refuses to run over existing work or from a detached HEAD. When started from `main` or `master`, it automatically creates a timestamped `agent/local-codex-*` branch so generated edits cannot land directly on the default branch. When started from another clean named branch, including a generated `agent/trigger-*` branch, it preserves that existing isolation boundary.
 
 The launcher starts Codex with:
 
