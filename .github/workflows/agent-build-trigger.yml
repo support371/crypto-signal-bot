@@ -135,6 +135,18 @@ jobs:
             exit 2
           fi
 
+          # The ref is later rendered into copyable PowerShell. Accept only a
+          # conservative GitHub branch/tag/SHA character set so quote or shell
+          # metacharacters can never become executable terminal source.
+          if [[ ! "$ref" =~ ^[0-9A-Za-z][0-9A-Za-z._/@+-]{0,254}$ ||
+                "$ref" == *".."* ||
+                "$ref" == *"@{"* ||
+                "$ref" == */ ||
+                "$ref" == *.lock ]]; then
+            echo "Unsafe or unsupported Git ref syntax." >&2
+            exit 2
+          fi
+
           task="${task:0:4000}"
           task_b64="$(printf '%s' "$task" | base64 | tr -d '\n')"
           echo "scope=$scope" >> "$GITHUB_OUTPUT"
@@ -203,6 +215,7 @@ jobs:
             echo '```'
             echo
             echo "The task is reconstructed from Base64 instead of being embedded as executable PowerShell text."
+            echo "The ref is restricted to a conservative Git branch/tag/SHA syntax before it is rendered into PowerShell."
             echo "The exact validated ref is checked out onto a named local branch so Codex does not run from detached HEAD."
             echo "The Codex command uses a workspace-write sandbox with approval prompts and leaves changes uncommitted for review."
             echo
