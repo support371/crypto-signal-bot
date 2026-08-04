@@ -147,15 +147,14 @@ jobs:
             exit 2
           fi
 
-          # Manual branch and tag names are mutable. Resolve them once through
-          # GitHub and pin the remainder of the run and generated local command
-          # to the resulting immutable commit SHA.
-          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            ref="$(gh api "repos/${GH_REPO}/commits/${ref}" --jq '.sha')"
-            if [[ ! "$ref" =~ ^[0-9a-f]{40}$ ]]; then
-              echo "Unable to resolve the requested ref to an exact commit SHA." >&2
-              exit 2
-            fi
+          # Branch and tag names are mutable. Resolve every trigger route once
+          # through GitHub and pin checkout plus generated local commands to the
+          # resulting immutable commit SHA. PR comments already supply a SHA,
+          # but resolving it here also verifies that the commit is accessible.
+          ref="$(gh api "repos/${GH_REPO}/commits/${ref}" --jq '.sha')"
+          if [[ ! "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Unable to resolve the requested ref to an exact commit SHA." >&2
+            exit 2
           fi
 
           task="${task:0:4000}"
@@ -227,7 +226,7 @@ jobs:
             echo
             echo "The task is reconstructed from Base64 instead of being embedded as executable PowerShell text."
             echo "The ref is restricted to a conservative Git branch/tag/SHA syntax before it is rendered into PowerShell."
-            echo "Manual branch and tag inputs are resolved to an immutable commit SHA before checkout."
+            echo "Every trigger route is resolved to an immutable commit SHA before checkout."
             echo "The exact validated ref is checked out onto a named local branch so Codex does not run from detached HEAD."
             echo "The Codex command uses a workspace-write sandbox with approval prompts and leaves changes uncommitted for review."
             echo
