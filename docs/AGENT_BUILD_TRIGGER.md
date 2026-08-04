@@ -51,12 +51,13 @@ For pull-request triggers, the workflow validates the exact head SHA. The return
 
 ## Direct Windows terminal flow
 
-Prerequisites:
+PowerShell 7 is recommended. Git is required for every scope. Additional prerequisites are limited to the selected scope:
 
-- Git
-- Node.js 22.12.0 or later; Node 22.x is the verified line
-- Python 3.11
-- PowerShell 7 recommended
+- `diagnose`, `frontend`, or `worker`: Node.js 22.12.0 or later and npm; Node 22.x is the verified line
+- `backend`: Python 3.11
+- `full`: Node.js 22.12.0 or later, npm, and Python 3.11
+
+A missing tool that is unrelated to the selected scope does not block that validation route.
 
 Run:
 
