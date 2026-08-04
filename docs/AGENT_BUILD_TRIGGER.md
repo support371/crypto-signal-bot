@@ -98,9 +98,11 @@ The launcher starts Codex with:
 - `workspace-write` sandbox
 - `on-request` approval policy
 - ephemeral execution history for the task
+- user configuration ignored for the one-shot run, so local defaults cannot loosen the repository safety contract
+- plugin loading disabled for the one-shot run, preventing unrelated plugin synchronization or workspace scaffolding
 - the repository `AGENTS.md` safety contract
 
-It does not use danger-full-access or bypass approval and sandbox controls.
+It does not use danger-full-access, load user-level execution defaults, enable plugins, or bypass approval and sandbox controls. Authentication remains available even though user configuration is ignored.
 
 ## Permanent safety boundaries
 
