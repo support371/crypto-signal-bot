@@ -186,7 +186,7 @@ function Prepare-CodexWorkspace {
         throw 'Codex mode refuses to run from a detached HEAD. Check out a named branch first.'
     }
 
-    if ($currentBranch -in @('main', 'master')) {
+    if ($currentBranch -notlike 'agent/*') {
         $branchName = 'agent/local-codex-' + (Get-Date -Format 'yyyyMMdd-HHmmss')
         Invoke-External -Label "Create isolated agent branch $branchName" -FilePath $git.Source -Arguments @('switch', '-c', $branchName)
         $currentBranch = $branchName
