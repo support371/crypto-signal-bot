@@ -102,7 +102,28 @@ function Assert-NodeEnvironment {
 }
 
 function Assert-PythonEnvironment {
-    Invoke-Python -Label 'Python version' -Arguments @('--version')
+    $resolved = Resolve-Python
+    $pythonArguments = @($resolved.Prefix + @('--version'))
+    $pythonText = (& $resolved.FilePath @pythonArguments 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        throw "Python 3.11 could not be started. Install Python 3.11 and ensure it is available in PATH."
+    }
+
+    Write-Host "--> Python version" -ForegroundColor Yellow
+    Write-Host $pythonText
+
+    if ($pythonText -notmatch 'Python\s+(\d+)\.(\d+)\.(\d+)') {
+        throw "Unable to parse the Python runtime version from '$pythonText'."
+    }
+
+    $pythonVersion = [version]::new(
+        [int]$Matches[1],
+        [int]$Matches[2],
+        [int]$Matches[3]
+    )
+    if ($pythonVersion.Major -ne 3 -or $pythonVersion.Minor -ne 11) {
+        throw "Python 3.11.x is required for the verified backend validation path. Found $pythonVersion."
+    }
 }
 
 function Assert-Environment {
