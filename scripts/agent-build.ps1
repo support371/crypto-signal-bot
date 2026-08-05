@@ -84,6 +84,43 @@ function Invoke-Python {
     Invoke-External -Label $Label -FilePath $resolved.FilePath -Arguments @($resolved.Prefix + $Arguments)
 }
 
+function Get-PythonVersion {
+    param(
+        [Parameter(Mandatory)][string]$FilePath,
+        [string[]]$Arguments = @('--version'),
+        [Parameter(Mandatory)][string]$RuntimeLabel
+    )
+
+    $pythonText = (& $FilePath @Arguments 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        throw "$RuntimeLabel could not be started. Install Python 3.11 and ensure the selected runtime is usable."
+    }
+
+    Write-Host "--> $RuntimeLabel version" -ForegroundColor Yellow
+    Write-Host $pythonText
+
+    if ($pythonText -notmatch 'Python\s+(\d+)\.(\d+)\.(\d+)') {
+        throw "Unable to parse the $RuntimeLabel version from '$pythonText'."
+    }
+
+    return [version]::new(
+        [int]$Matches[1],
+        [int]$Matches[2],
+        [int]$Matches[3]
+    )
+}
+
+function Assert-Python311 {
+    param(
+        [Parameter(Mandatory)][version]$Version,
+        [Parameter(Mandatory)][string]$RuntimeLabel
+    )
+
+    if ($Version.Major -ne 3 -or $Version.Minor -ne 11) {
+        throw "Python 3.11.x is required for the verified backend validation path. $RuntimeLabel is $Version."
+    }
+}
+
 function Assert-NodeEnvironment {
     $node = Require-Command 'node'
     $npm = Require-Command 'npm'
@@ -104,26 +141,8 @@ function Assert-NodeEnvironment {
 function Assert-PythonEnvironment {
     $resolved = Resolve-Python
     $pythonArguments = @($resolved.Prefix + @('--version'))
-    $pythonText = (& $resolved.FilePath @pythonArguments 2>&1 | Out-String).Trim()
-    if ($LASTEXITCODE -ne 0) {
-        throw "Python 3.11 could not be started. Install Python 3.11 and ensure it is available in PATH."
-    }
-
-    Write-Host "--> Python version" -ForegroundColor Yellow
-    Write-Host $pythonText
-
-    if ($pythonText -notmatch 'Python\s+(\d+)\.(\d+)\.(\d+)') {
-        throw "Unable to parse the Python runtime version from '$pythonText'."
-    }
-
-    $pythonVersion = [version]::new(
-        [int]$Matches[1],
-        [int]$Matches[2],
-        [int]$Matches[3]
-    )
-    if ($pythonVersion.Major -ne 3 -or $pythonVersion.Minor -ne 11) {
-        throw "Python 3.11.x is required for the verified backend validation path. Found $pythonVersion."
-    }
+    $pythonVersion = Get-PythonVersion -FilePath $resolved.FilePath -Arguments $pythonArguments -RuntimeLabel 'Python'
+    Assert-Python311 -Version $pythonVersion -RuntimeLabel 'Selected Python runtime'
 }
 
 function Assert-Environment {
@@ -133,18 +152,10 @@ function Assert-Environment {
     Invoke-External -Label 'Git version' -FilePath $git.Source -Arguments @('--version')
 
     switch ($Scope) {
-        'diagnose' {
-            Assert-NodeEnvironment
-        }
-        'frontend' {
-            Assert-NodeEnvironment
-        }
-        'backend' {
-            Assert-PythonEnvironment
-        }
-        'worker' {
-            Assert-NodeEnvironment
-        }
+        'diagnose' { Assert-NodeEnvironment }
+        'frontend' { Assert-NodeEnvironment }
+        'backend' { Assert-PythonEnvironment }
+        'worker' { Assert-NodeEnvironment }
         'full' {
             Assert-NodeEnvironment
             Assert-PythonEnvironment
@@ -162,26 +173,18 @@ function Assert-Environment {
 }
 
 function Ensure-RootDependencies {
-    if ($script:RootDependenciesReady) {
-        return
-    }
-
+    if ($script:RootDependenciesReady) { return }
     if (-not $SkipInstall) {
         Invoke-External -Label 'Install root dependencies' -FilePath 'npm' -Arguments @('ci')
     }
-
     $script:RootDependenciesReady = $true
 }
 
 function Ensure-WorkerDependencies {
-    if ($script:WorkerDependenciesReady) {
-        return
-    }
-
+    if ($script:WorkerDependenciesReady) { return }
     if (-not $SkipInstall) {
         Invoke-External -Label 'Install Worker dependencies' -FilePath 'npm' -Arguments @('--prefix', 'worker', 'ci')
     }
-
     $script:WorkerDependenciesReady = $true
 }
 
@@ -218,7 +221,6 @@ function Prepare-CodexWorkspace {
 
 function Run-CodexAgent {
     Write-Section 'Codex workspace agent'
-
     Prepare-CodexWorkspace
 
     $codex = Require-Command 'codex'
@@ -295,6 +297,12 @@ function Run-BackendValidation {
         Invoke-Python -Label 'Create isolated Python environment' -Arguments @('-m', 'venv', $venvPath)
     }
 
+    # Existing local environments may have been created by a different Python
+    # release. Validate the actual venv interpreter instead of assuming the
+    # presence of .venv-agent means it is compatible with this repository.
+    $venvVersion = Get-PythonVersion -FilePath $venvPython -RuntimeLabel 'Isolated Python'
+    Assert-Python311 -Version $venvVersion -RuntimeLabel 'Isolated Python runtime'
+
     if (-not $SkipInstall) {
         Invoke-External -Label 'Upgrade isolated pip' -FilePath $venvPython -Arguments @('-m', 'pip', 'install', '--upgrade', 'pip')
         Invoke-External -Label 'Install backend dependencies' -FilePath $venvPython -Arguments @('-m', 'pip', 'install', '-r', 'backend/requirements.txt')
@@ -312,18 +320,10 @@ if ($UseCodex) {
 }
 
 switch ($Scope) {
-    'diagnose' {
-        Run-Diagnostics
-    }
-    'frontend' {
-        Run-FrontendValidation
-    }
-    'backend' {
-        Run-BackendValidation
-    }
-    'worker' {
-        Run-WorkerValidation
-    }
+    'diagnose' { Run-Diagnostics }
+    'frontend' { Run-FrontendValidation }
+    'backend' { Run-BackendValidation }
+    'worker' { Run-WorkerValidation }
     'full' {
         Run-Diagnostics
         Run-FrontendValidation
