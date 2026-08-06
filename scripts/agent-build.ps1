@@ -192,7 +192,7 @@ function Prepare-CodexWorkspace {
     Write-Section 'Codex workspace isolation'
 
     $git = Require-Command 'git'
-    $insideWorkTree = (& $git.Source rev-parse --is-inside-work-tree 2>$null).Trim()
+    $insideWorkTree = (& $git.Source rev-parse --is-inside-work-tree 2>$null | Out-String).Trim()
     if ($LASTEXITCODE -ne 0 -or $insideWorkTree -ne 'true') {
         throw 'Codex mode requires a valid Git working tree.'
     }
@@ -205,7 +205,7 @@ function Prepare-CodexWorkspace {
         throw "Codex mode refuses to run over existing changes. Commit, stash, or remove them first.`n$status"
     }
 
-    $currentBranch = (& $git.Source symbolic-ref --quiet --short HEAD 2>$null).Trim()
+    $currentBranch = (& $git.Source symbolic-ref --quiet --short HEAD 2>$null | Out-String).Trim()
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($currentBranch)) {
         throw 'Codex mode refuses to run from a detached HEAD. Check out a named branch first.'
     }
