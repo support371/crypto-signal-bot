@@ -8,20 +8,21 @@ function agentMemoryCorsHeaders(request: Request, env: AgentContextEnv): Headers
   const configured = env.CORS_ALLOWED_ORIGINS
     ? env.CORS_ALLOWED_ORIGINS.split(',').map((value) => value.trim()).filter(Boolean)
     : ['*']
-  const origin = request.headers.get('Origin') ?? '*'
-  const allowedOrigin = configured.includes('*')
-    ? origin
-    : configured.includes(origin)
-      ? origin
-      : configured[0] ?? 'null'
-
-  return new Headers({
-    'Access-Control-Allow-Origin': allowedOrigin,
+  const origin = request.headers.get('Origin')
+  const headers = new Headers({
     'Access-Control-Allow-Methods': 'GET, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key',
     'Cache-Control': 'no-store',
     Vary: 'Origin',
   })
+
+  if (configured.includes('*')) {
+    headers.set('Access-Control-Allow-Origin', origin ?? '*')
+  } else if (origin && configured.includes(origin)) {
+    headers.set('Access-Control-Allow-Origin', origin)
+  }
+
+  return headers
 }
 
 export default {
