@@ -20,3 +20,15 @@ test('deployed Worker entrypoint keeps agent memory read-only and browser-readab
   assert.match(entrypoint, /const response = await worker\.fetch\(request, env, ctx\)/)
   assert.match(entrypoint, /agentMemoryCorsHeaders\(request, env\)/)
 })
+
+test('agent memory CORS does not authorize an unlisted browser origin', async () => {
+  const entrypoint = await readFile(
+    new URL('../src/index_agent_context.ts', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(entrypoint, /const origin = request\.headers\.get\('Origin'\)/)
+  assert.match(entrypoint, /configured\.includes\('\*'\)/)
+  assert.match(entrypoint, /origin && configured\.includes\(origin\)/)
+  assert.doesNotMatch(entrypoint, /configured\[0\]/)
+})
