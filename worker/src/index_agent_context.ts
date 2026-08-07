@@ -14,6 +14,20 @@ export default {
     if (url.pathname === '/agent/context') {
       return handleAgentContextRequest(request, env)
     }
+
+    if (/^\/agent\/memory\/[^/]+$/.test(url.pathname) && request.method !== 'GET') {
+      return Response.json(
+        { error: 'Agent memory is read-only in this deployment' },
+        {
+          status: 405,
+          headers: {
+            Allow: 'GET',
+            'Cache-Control': 'no-store',
+          },
+        },
+      )
+    }
+
     return worker.fetch(request, env, ctx)
   },
 
