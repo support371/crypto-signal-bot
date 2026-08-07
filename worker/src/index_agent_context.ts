@@ -4,6 +4,26 @@ import {
   type AgentContextEnv,
 } from './agent-context'
 
+function agentMemoryCorsHeaders(request: Request, env: AgentContextEnv): Headers {
+  const configured = env.CORS_ALLOWED_ORIGINS
+    ? env.CORS_ALLOWED_ORIGINS.split(',').map((value) => value.trim()).filter(Boolean)
+    : ['*']
+  const origin = request.headers.get('Origin') ?? '*'
+  const allowedOrigin = configured.includes('*')
+    ? origin
+    : configured.includes(origin)
+      ? origin
+      : configured[0] ?? 'null'
+
+  return new Headers({
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key',
+    'Cache-Control': 'no-store',
+    Vary: 'Origin',
+  })
+}
+
 export default {
   async fetch(
     request: Request,
@@ -15,17 +35,34 @@ export default {
       return handleAgentContextRequest(request, env)
     }
 
-    if (/^\/agent\/memory\/[^/]+$/.test(url.pathname) && request.method !== 'GET') {
-      return Response.json(
-        { error: 'Agent memory is read-only in this deployment' },
-        {
-          status: 405,
-          headers: {
-            Allow: 'GET',
-            'Cache-Control': 'no-store',
-          },
-        },
-      )
+    if (/^\/agent\/memory\/[^/]+$/.test(url.pathname)) {
+      if (request.method === 'OPTIONS') {
+        return new Response(null, {
+          status: 204,
+          headers: agentMemoryCorsHeaders(request, env),
+        })
+      }
+
+      if (request.method !== 'GET') {
+        const headers = agentMemoryCorsHeaders(request, env)
+        headers.set('Allow', 'GET, OPTIONS')
+        headers.set('Content-Type', 'application/json; charset=utf-8')
+        return new Response(
+          JSON.stringify({ error: 'Agent memory is read-only in this deployment' }),
+          { status: 405, headers },
+        )
+      }
+
+      const response = await worker.fetch(request, env, ctx)
+      const headers = new Headers(response.headers)
+      for (const [name, value] of agentMemoryCorsHeaders(request, env)) {
+        headers.set(name, value)
+      }
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      })
     }
 
     return worker.fetch(request, env, ctx)
