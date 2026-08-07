@@ -72,7 +72,7 @@ jobs:
       - name: Verify paper safety
         run: cd worker && npm run verify:paper-safety
       - name: Validate Wrangler bundle
-        run: npx wrangler deploy --dry-run --outdir /tmp/crypto-signal-bot-worker-dry-run --config wrangler.toml
+        run: cd worker && npx --no-install wrangler deploy --dry-run --outdir /tmp/crypto-signal-bot-worker-dry-run --config ../wrangler.toml
 
   deploy-worker:
     needs: validate
