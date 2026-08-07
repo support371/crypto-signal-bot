@@ -2,8 +2,10 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { beforeEach, test, vi } from 'vitest'
 
-const workerFetch = vi.fn()
-const workerScheduled = vi.fn()
+const { workerFetch, workerScheduled } = vi.hoisted(() => ({
+  workerFetch: vi.fn(),
+  workerScheduled: vi.fn(),
+}))
 
 vi.mock('../src/index_with_d1', () => ({
   default: {
