@@ -41,6 +41,8 @@ GitHub Actions workflows accept `workflow_dispatch` only. They may be run manual
 
 CircleCI also defines an opt-in `deploy-paper-worker-manual` workflow. It is disabled by default and runs only when an owner starts a pipeline on `main` with the boolean pipeline parameter `deploy_paper_worker=true`.
 
+An authenticated repository maintainer may alternatively create the exact branch `release/paper-worker-<7-character-main-SHA>`. The release job fetches `origin/main`, requires the release branch commit to equal the current main commit, and rejects every other branch name. This provides a reviewable one-commit manual trigger when the CircleCI API is not connected.
+
 Before deployment, the job reruns the Worker and provider typechecks, foundation and provider suites, paper/regulated/certification safety gates, migrations, and a Wrangler dry-run bundle. It then deploys the existing paper Worker and runs the public smoke checks. The job does not enable live trading, mainnet, withdrawals, provider mutation, or real funds.
 
 The CircleCI project must hold `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as masked project environment variables or in an owner-managed restricted context. Never place either value in repository files, pipeline parameters, job output, or chat messages.
