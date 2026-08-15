@@ -1,0 +1,11 @@
+{
+  "application": "crypto-signal-bot",
+  "release_contract": "paper-certification-2026-08-15",
+  "dashboard_path": "/dashboard",
+  "backend_url": "https://crypto-signal-bot-api.gr8r9bfzry.workers.dev",
+  "trading_mode": "paper",
+  "network": "testnet",
+  "live_trading_enabled": false,
+  "withdrawals_enabled": false,
+  "real_funds_enabled": false
+}
