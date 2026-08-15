@@ -23,7 +23,7 @@ The CircleCI context `billing-independent-release-gate` succeeds only after:
   certification-evidence verifiers, including their runtime-import, binding,
   default-network-client, live-mode, deletion, credential-binding, multi-use
   credential-callback, recovery-replay, and retry prohibitions;
-- clean-database and upgrade migration verification through migration 026;
+- clean-database and upgrade migration verification through migration 030;
 - all three disabled Worker dry-run bundles, including the route-less Bitget
   trade-credential quarantine;
 - committed-secret and permanent release-lock verification;
@@ -46,6 +46,18 @@ An authenticated repository maintainer may alternatively create the exact branch
 Before deployment, the job reruns the Worker and provider typechecks, foundation and provider suites, paper/regulated/certification safety gates, migrations, and a Wrangler dry-run bundle. It then deploys the existing paper Worker and runs the public smoke checks. The job does not enable live trading, mainnet, withdrawals, provider mutation, or real funds.
 
 The CircleCI project must hold `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as masked project environment variables or in an owner-managed restricted context. Never place either value in repository files, pipeline parameters, job output, or chat messages.
+
+### Native Cloudflare fallback
+
+Cloudflare Workers Builds is the credential-free CI fallback for mobile operators. Connect the existing `crypto-signal-bot-api` Worker directly to the GitHub repository, select `main` as the production branch, keep the repository root as the root directory, and set the deploy command to:
+
+```text
+npm run deploy:paper-worker
+```
+
+That single command installs the isolated Worker dependencies, typechecks both Worker surfaces, runs the complete foundation and provider suites, enforces the paper, regulated-foundation, and certification safety contracts, verifies migrations through 030, produces a Wrangler dry-run bundle, deploys the existing Worker, and finishes with public smoke checks. Cloudflare owns deployment authentication after the one-time Git connection, so no Cloudflare token is stored in CircleCI or the repository.
+
+The Worker project name must remain `crypto-signal-bot-api`, matching `wrangler.toml`. The integration must target the existing Worker; do not use the Deploy to Cloudflare button because that path creates a separate repository and application.
 
 ## Runtime monitoring
 
