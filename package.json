@@ -18,6 +18,7 @@
     "test:run": "vitest run",
     "test:worker": "vitest run -c worker/vitest.config.ts",
     "verify:ci-independence": "node scripts/verify-ci-independence.mjs && node scripts/verify-release-lock.mjs",
+    "verify:deployment": "node scripts/verify-deployed-paper-release.mjs",
     "verify:operator-frontend-safety": "node scripts/verify-operator-frontend-safety.mjs",
     "verify:frontend-performance": "node scripts/verify-frontend-performance.mjs"
   },
