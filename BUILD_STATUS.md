@@ -1,6 +1,6 @@
 # Build Status
 
-Status recorded on 2026-08-15 for repository baseline `18c3f2f` plus the production-readiness reconciliation branch.
+Status recorded on 2026-08-15 for merged production-readiness baseline `8f7f95d` plus the audited dependency refresh.
 
 ## Verified locally
 
@@ -13,6 +13,8 @@ Status recorded on 2026-08-15 for repository baseline `18c3f2f` plus the product
 - Worker provider-contract tests: 179/179 passed.
 - Worker migrations: empty and upgrade paths passed through migration 030.
 - Paper, live-candidate, regulated-foundation, certification, provider, recovery, accounting, and operator-read-only safety verifiers: passed.
+- Frontend and Worker `npm audit --audit-level=low`: zero known vulnerabilities.
+- Dependency refresh retained 49/49 frontend tests, 418/418 Worker foundation tests, 179/179 provider-contract tests, and 34/34 safety verifier scripts.
 
 ## Release state
 
