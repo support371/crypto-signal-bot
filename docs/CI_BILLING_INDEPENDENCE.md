@@ -37,6 +37,14 @@ Repository rules must not require a GitHub Actions job. The required engineering
 
 GitHub Actions workflows accept `workflow_dispatch` only. They may be run manually when GitHub service availability permits, but failure to start them is not engineering evidence and cannot block continued non-live development.
 
+## Billing-independent Worker deployment
+
+CircleCI also defines an opt-in `deploy-paper-worker-manual` workflow. It is disabled by default and runs only when an owner starts a pipeline on `main` with the boolean pipeline parameter `deploy_paper_worker=true`.
+
+Before deployment, the job reruns the Worker and provider typechecks, foundation and provider suites, paper/regulated/certification safety gates, migrations, and a Wrangler dry-run bundle. It then deploys the existing paper Worker and runs the public smoke checks. The job does not enable live trading, mainnet, withdrawals, provider mutation, or real funds.
+
+The CircleCI project must hold `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as masked project environment variables or in an owner-managed restricted context. Never place either value in repository files, pipeline parameters, job output, or chat messages.
+
 ## Runtime monitoring
 
 The legacy GitHub issue-creating monitor is manual and advisory. Runtime safety remains enforced by Worker health/readiness surfaces, Guardian controls, immutable metrics and alerts, and independent operational monitoring established during deployment certification. GitHub issue creation is not an accounting, Guardian, or execution authority.
