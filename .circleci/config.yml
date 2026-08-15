@@ -348,9 +348,12 @@ jobs:
     steps:
       - install-worker
       - run:
-          name: Require main and owner-managed Cloudflare credentials
+          name: Require current main release and owner-managed Cloudflare credentials
           command: |
-            test "$CIRCLE_BRANCH" = "main"
+            git fetch origin main --depth=1
+            test "$CIRCLE_SHA1" = "$(git rev-parse FETCH_HEAD)"
+            short_sha="$(printf '%s' "$CIRCLE_SHA1" | cut -c1-7)"
+            test "$CIRCLE_BRANCH" = "main" || test "$CIRCLE_BRANCH" = "release/paper-worker-$short_sha"
             test -n "$CLOUDFLARE_API_TOKEN"
             test -n "$CLOUDFLARE_ACCOUNT_ID"
       - run:
@@ -419,6 +422,12 @@ workflows:
     when: << pipeline.parameters.deploy_paper_worker >>
     jobs:
       - deploy-paper-worker
+  deploy-paper-worker-release-branch:
+    jobs:
+      - deploy-paper-worker:
+          filters:
+            branches:
+              only: /^release\/paper-worker-[0-9a-f]{7}$/
   stabilize-production-runtime:
     jobs:
       - ci-billing-independence
