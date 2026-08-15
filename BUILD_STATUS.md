@@ -1,13 +1,36 @@
 # Build Status
 
-## Executed in this package
-- Added repeatable repo audit automation via `scripts/repo_audit.py`
-- Added backend regression coverage to keep the import graph free of circular dependencies
-- Added a persistent audit report for repo-level structural verification work
-- Prepared ignore-rule hardening to block archive and local database artifacts from drifting into the repository
+Status recorded on 2026-08-15 for repository baseline `18c3f2f` plus the production-readiness reconciliation branch.
 
-## Still blocked by external dependencies
-- Real branch-by-branch salvage and merge against all historical refs
-- Real Supabase JWKS/JWT verification against production identity config
-- Exchange-specific testnet/mainnet credential validation for Binance, Bitget, and BTCC
-- Full CI/CD wiring against live deployment credentials and environments
+## Verified locally
+
+- Frontend scoped lint: passed.
+- Frontend architecture typecheck: passed.
+- Frontend tests: 49/49 passed.
+- Frontend production build and performance budget: passed.
+- Worker typecheck and provider-contract typecheck: passed.
+- Worker foundation tests: 418/418 passed.
+- Worker provider-contract tests: 179/179 passed.
+- Worker migrations: empty and upgrade paths passed through migration 030.
+- Paper, live-candidate, regulated-foundation, certification, provider, recovery, accounting, and operator-read-only safety verifiers: passed.
+
+## Release state
+
+- Repository implementation: ready for a paper/certification deployment.
+- Live trading: deliberately unavailable.
+- Mainnet execution: deliberately unavailable.
+- Withdrawals: deliberately unavailable.
+- Real-funds release: not authorized and not represented as complete.
+
+## Deployment drift found during the audit
+
+The public Vercel site and Cloudflare Worker were reachable but behind the repository main branch. The stale Worker did not expose `/v2/infrastructure/status`, and its `/agent/context` response was the older degraded contract. The stale Vercel landing page did not expose the certification dashboard link present in main.
+
+Use `npm run verify:deployment` after deployment. A release is not complete until that command passes against the public URLs.
+
+## Owner-controlled items
+
+- Cloudflare and Vercel credentials and billing remain external account responsibilities.
+- Production deployment is manual through `.github/workflows/deploy.yml`.
+- Authenticated operator identity is optional for public demo mode and requires owner-managed identity configuration.
+- Any future live-money release requires a separate design, audit, approvals, and acceptance gates.
