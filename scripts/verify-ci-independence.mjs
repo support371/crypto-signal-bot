@@ -59,6 +59,15 @@ if (!circle.includes('image: cimg/node:22.12.0')) {
 if (!packageJson.scripts?.build?.includes('verify:frontend-performance')) {
   throw new Error('frontend production build must enforce the performance budget')
 }
+if (!packageJson.scripts?.['verify:paper-worker-release']?.includes('verify:paper-safety')) {
+  throw new Error('native Cloudflare Worker release must enforce paper safety')
+}
+if (!packageJson.scripts?.['deploy:paper-worker']?.includes('verify:paper-worker-release')) {
+  throw new Error('native Cloudflare Worker deployment must require the release verifier')
+}
+if (!packageJson.scripts?.['deploy:paper-worker']?.includes('smoke')) {
+  throw new Error('native Cloudflare Worker deployment must finish with public smoke checks')
+}
 const requiredCircleContracts = [
   'frontend-build:',
   'backend-test-audit:',
