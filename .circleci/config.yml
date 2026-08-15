@@ -1,5 +1,10 @@
 version: 2.1
 
+parameters:
+  deploy_paper_worker:
+    type: boolean
+    default: false
+
 executors:
   node-worker:
     docker:
@@ -333,6 +338,42 @@ jobs:
           name: Confirm billing-independent aggregate release gate passed
           command: echo "All required non-live validation passed without GitHub Actions."
 
+  deploy-paper-worker:
+    executor: node-worker
+    environment:
+      WORKER_URL: https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
+      TRADING_MODE: paper
+      EXCHANGE_MODE: paper
+      ALLOW_MAINNET: "false"
+    steps:
+      - install-worker
+      - run:
+          name: Require main and owner-managed Cloudflare credentials
+          command: |
+            test "$CIRCLE_BRANCH" = "main"
+            test -n "$CLOUDFLARE_API_TOKEN"
+            test -n "$CLOUDFLARE_ACCOUNT_ID"
+      - run:
+          name: Revalidate paper Worker release
+          command: |
+            npm --prefix worker run build
+            npm --prefix worker run build:provider-contracts
+            npm --prefix worker run test:live-foundation
+            npm --prefix worker run test:provider-contracts
+            npm --prefix worker run verify:paper-safety
+            npm --prefix worker run verify:regulated-foundation-safety
+            npm --prefix worker run verify:certification-safety
+            npm --prefix worker run verify:migrations
+      - run:
+          name: Validate production Worker bundle
+          command: cd worker && ./node_modules/.bin/wrangler deploy --dry-run --outdir /tmp/crypto-signal-bot-worker-dry-run --config ../wrangler.toml
+      - run:
+          name: Deploy paper Worker to Cloudflare
+          command: cd worker && ./node_modules/.bin/wrangler deploy --config ../wrangler.toml
+      - run:
+          name: Verify deployed paper Worker
+          command: npm --prefix worker run smoke -- "$WORKER_URL"
+
   backend-test-audit:
     docker:
       - image: cimg/python:3.11
@@ -374,6 +415,10 @@ jobs:
 
 workflows:
   version: 2
+  deploy-paper-worker-manual:
+    when: << pipeline.parameters.deploy_paper_worker >>
+    jobs:
+      - deploy-paper-worker
   stabilize-production-runtime:
     jobs:
       - ci-billing-independence
