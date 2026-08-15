@@ -8,7 +8,10 @@ const checks = [
   ["GET", "/portfolio/summary", 200, (body) => body.mode === "paper"],
   ["GET", "/market/feed/status", 200, (body) => body.primary === "coinbase"],
   ["GET", "/exchange/circuit-breakers", 200, (body) => Array.isArray(body.adapters)],
+  ["GET", "/v2/infrastructure/status", 200, (body) => body.version === "2.0" && body.runtime?.trading_mode === "paper" && body.runtime?.allow_mainnet === false],
+  ["GET", "/agent/context", [200, 207], (body) => body.certification_mode === true && body.provider_mutation_enabled === false && body.real_funds_enabled === false],
   ["POST", "/intent/live", 403, (body) => body.code === 403],
+  ["POST", "/live/order", 403, (body) => body.code === 403],
   ["POST", "/withdraw", 403, (body) => body.code === 403],
 ];
 
@@ -24,7 +27,8 @@ for (const [method, path, expectedStatus, validateBody] of checks) {
     body = undefined;
   }
 
-  const ok = response.status === expectedStatus && body !== undefined && validateBody(body);
+  const expectedStatuses = Array.isArray(expectedStatus) ? expectedStatus : [expectedStatus];
+  const ok = expectedStatuses.includes(response.status) && body !== undefined && validateBody(body);
   console.log(`${ok ? "PASS" : "FAIL"} ${method} ${path} -> ${response.status}`);
   if (!ok) {
     failed = true;

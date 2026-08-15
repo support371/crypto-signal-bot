@@ -1,95 +1,78 @@
-# Crypto Signal Bot V2 - Frontend
+# Crypto Signal Bot V2
 
-A React/TypeScript frontend application for the Crypto Signal Bot V2 trading system with paper trading mode.
+Crypto Signal Bot V2 is a React/Vite dashboard backed by a Cloudflare Worker, D1, R2, and KV. The current release is deliberately limited to paper trading and certification. It can observe public market data, calculate signals and risk evidence, rehearse paper orders, maintain a certification ledger, run backtests, and expose operational status.
 
-## Features
+It cannot place live exchange orders, move real funds, use mainnet execution, or withdraw assets. Those routes are blocked at the frontend and Worker boundaries.
 
-- **Paper Trading Mode**: All API calls return mock data, no real funds at risk
-- **Operator Boundary**: Live trading, withdrawals, and privileged operations are blocked
-- **Real-time Signals**: WebSocket integration for live signal updates
-- **Portfolio Management**: Track your paper trading portfolio performance
-- **Advanced Analytics**: Historical performance, backtesting, and signal analysis
-- **Multi-Exchange**: Support for Binance, Coinbase, Kraken, and more
+## Current architecture
 
-## Tech Stack
+- **Frontend:** React, TypeScript, Vite, TanStack Query, Zustand; deployed on Vercel.
+- **Certification API:** Cloudflare Worker using the `index_agent_context.ts` entrypoint.
+- **State:** Cloudflare D1, R2, and KV for the deployed certification path.
+- **Safety:** paper/testnet locks, Guardian state, risk approval, audit evidence, immutable certification records, and explicit HTTP 403 responses for live/withdrawal routes.
+- **Candidate modules:** regulated-provider, recovery, accounting, and demo-transport code exists behind permanent capability locks and is not part of a live-money release.
 
-- **Framework**: React 18 + TypeScript
-- **Build Tool**: Vite
-- **Styling**: Tailwind CSS
-- **State Management**: TanStack Query + Zustand
-- **Database**: Supabase (with mock implementation for paper trading)
-- **Testing**: Vitest
+## Public service
 
-## Getting Started
+- Frontend: `https://crypto-signal-bot-indol.vercel.app`
+- Dashboard: `https://crypto-signal-bot-indol.vercel.app/dashboard`
+- Worker: `https://crypto-signal-bot-api.gr8r9bfzry.workers.dev`
+- Release manifest: `https://crypto-signal-bot-indol.vercel.app/release.json`
 
-### Prerequisites
+Run `npm run verify:deployment` to verify the deployed release contract and the Worker safety locks.
 
-- Node.js 18+
-- npm 9+
+## Local development
 
-### Installation
+Requirements: Node.js 22 or later and npm 10 or later.
 
 ```bash
-npm install
+npm ci
+cd worker && npm ci && cd ..
 ```
 
-### Development
-
-```bash
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) in your browser.
-
-### Build
-
-```bash
-npm run build
-```
-
-### Testing
-
-```bash
-npm test
-```
-
-## Project Structure
-
-```
-crypto-signal-v2/
-├── src/
-│   ├── components/       # Reusable UI components
-│   ├── hooks/           # Custom React hooks
-│   ├── lib/             # Utility functions and types
-│   ├── pages/           # Page components
-│   ├── providers/       # React context providers
-│   ├── test/            # Test files
-│   ├── App.tsx          # Main app component
-│   ├── main.tsx         # Entry point
-│   └── index.css        # Global styles
-├── package.json
-├── vite.config.ts
-├── tsconfig.json
-└── tailwind.config.js
-```
-
-## Safety Features
-
-1. **Paper Trading Enforcement**: All trading operations use mock data
-2. **Operator Boundary Checks**: Blocks live trading at the API level
-3. **Withdrawal Disabled**: Withdrawal functionality is completely disabled
-4. **No Real API Keys**: Only mock exchange connections are allowed
-
-## Configuration
-
-Create a `.env` file in the project root:
+Create a local frontend environment without secrets:
 
 ```env
-VITE_SUPABASE_URL=your-supabase-url
-VITE_SUPABASE_ANON_KEY=your-supabase-key
+VITE_BACKEND_URL=http://127.0.0.1:8787
+VITE_DEMO_MODE=true
 VITE_PAPER_TRADING_MODE=true
 ```
 
+Then run the Worker and frontend in separate terminals:
+
+```bash
+cd worker && npm run dev:local
+npm run dev
+```
+
+## Required validation
+
+```bash
+npm run lint
+npm run test:run
+npm run build
+npm run verify:ci-independence
+
+cd worker
+npm run build
+npm run test:live-foundation
+npm run test:provider-contracts
+npm run verify:paper-safety
+npm run verify:live-candidate-safety
+npm run verify:regulated-foundation-safety
+npm run verify:certification-safety
+npm run verify:migrations
+```
+
+The production deployment is manual-only. See [Production readiness](docs/production-readiness.md) and [Operator quick start](docs/OPERATOR_QUICKSTART.md).
+
+## Safety boundary
+
+- `/intent/paper` is the only dashboard order-rehearsal path.
+- `/intent/live`, `/live/order`, and `/withdraw` must return HTTP 403.
+- Public or stale market prices are display/certification inputs, never authority to move funds.
+- A successful backtest or paper result does not guarantee future returns.
+
 ## License
 
-Private - GEM Cybersecurity & Monitoring Assist
+Private — GEM Cybersecurity & Monitoring Assist
