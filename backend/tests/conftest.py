@@ -25,6 +25,21 @@ def clean_env():
     os.environ.update(original_env)
 
 
+@pytest.fixture(autouse=True)
+def clean_process_signal_state():
+    """Prevent process-wide signal and override caches leaking between tests."""
+    from backend.engine import signal_override
+    from backend.services.signal_service import service as signal_service
+
+    signal_service._signal_cache.clear()
+    signal_service._last_eval.clear()
+    signal_override._signal_overrides.clear()
+    yield
+    signal_service._signal_cache.clear()
+    signal_service._last_eval.clear()
+    signal_override._signal_overrides.clear()
+
+
 def pytest_configure(config):
     """Configure pytest with custom markers and options."""
     config.addinivalue_line(
