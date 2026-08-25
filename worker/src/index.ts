@@ -466,8 +466,10 @@ async function placePaperOrder(env: Env, input: OrderInput) {
 // Auth middleware
 // ─────────────────────────────────────────────────────────────────────────────
 
-function requireApiKey(env: Env, req: Request): boolean {
-  if (!env.BACKEND_API_KEY) return true   // key not configured → open (dev mode)
+export function requireApiKey(env: Env, req: Request): boolean {
+  // Privileged routes must fail closed in every runtime. Local development uses
+  // a value from .dev.vars; an absent binding must never publish write access.
+  if (!env.BACKEND_API_KEY) return false
   const fromHeader = req.headers.get('X-API-Key') ?? req.headers.get('Authorization')?.replace(/^Bearer\s+/i, '')
   return fromHeader === env.BACKEND_API_KEY
 }
