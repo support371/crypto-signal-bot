@@ -1,6 +1,6 @@
 # Build Status
 
-Status recorded on 2026-08-15 for merged production-readiness baseline `8f7f95d` plus the audited dependency refresh.
+Status refreshed on 2026-08-25 from `main` baseline `2c9a890` plus the production auth and release hardening in this change.
 
 ## Verified locally
 
@@ -9,12 +9,16 @@ Status recorded on 2026-08-15 for merged production-readiness baseline `8f7f95d`
 - Frontend tests: 49/49 passed.
 - Frontend production build and performance budget: passed.
 - Worker typecheck and provider-contract typecheck: passed.
-- Worker foundation tests: 418/418 passed.
+- Worker contract tests: 26/26 passed.
+- Worker foundation tests: 421/421 passed.
 - Worker provider-contract tests: 179/179 passed.
+- Legacy backend compatibility tests: 438/438 passed.
 - Worker migrations: empty and upgrade paths passed through migration 030.
 - Paper, live-candidate, regulated-foundation, certification, provider, recovery, accounting, and operator-read-only safety verifiers: passed.
 - Frontend and Worker `npm audit --audit-level=low`: zero known vulnerabilities.
 - Dependency refresh retained 49/49 frontend tests, 418/418 Worker foundation tests, 179/179 provider-contract tests, and 34/34 safety verifier scripts.
+- Privileged Worker writes, agent memory, and arbitrary read-only D1 queries now fail closed when the server API-key binding is absent or invalid.
+- Vercel uses the committed npm lockfile through `npm ci`.
 
 ## Release state
 
@@ -26,7 +30,7 @@ Status recorded on 2026-08-15 for merged production-readiness baseline `8f7f95d`
 
 ## Deployment drift found during the audit
 
-The public Vercel site and Cloudflare Worker were reachable but behind the repository main branch. The stale Worker did not expose `/v2/infrastructure/status`, and its `/agent/context` response was the older degraded contract. The stale Vercel landing page did not expose the certification dashboard link present in main.
+The public Vercel site is reachable and exposes the expected release contract and dashboard. The public Cloudflare Worker remains behind the repository main branch: it does not expose `/v2/infrastructure/status`, its `/agent/context` response is the older contract, and it does not yet enforce the new privileged helper-route probes.
 
 Use `npm run verify:deployment` after deployment. A release is not complete until that command passes against the public URLs.
 
