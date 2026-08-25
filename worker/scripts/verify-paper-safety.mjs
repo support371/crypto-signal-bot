@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 const files = [
   "../../wrangler.toml",
   "../src/index.ts",
+  "../src/index_with_d1.ts",
 ];
 
 const checks = [
@@ -13,6 +14,8 @@ const checks = [
   ["stable preview CORS origin", /CORS_ALLOWED_ORIGINS\s*=\s*"[^"]*https:\/\/crypto-signal-bot-git-feat-regu-a5487f-admin-25521151s-projects\.vercel\.app/],
   ["live route blocked", /\/intent\/live[\s\S]*403/],
   ["withdraw route blocked", /\/withdraw[\s\S]*403/],
+  ["missing backend key fails closed", /if \(!env\.BACKEND_API_KEY\) return false/],
+  ["privileged helper routes require API key", /\(memoryMatch \|\| isPrivilegedD1Query\) && !requireApiKey\(env, request\)/],
 ];
 
 const contents = files.map((file) => readFileSync(new URL(file, import.meta.url), "utf8")).join("\n");
