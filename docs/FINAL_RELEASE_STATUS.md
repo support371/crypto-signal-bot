@@ -2,67 +2,35 @@
 
 ## Project
 
-- Repo: `support371/crypto-signal-bot`
-- Status: release candidate finalized
-- Date: `2026-04-12`
+- Repository: `support371/crypto-signal-bot`
+- Release: paper certification production
+- Status date: `2026-08-25`
+- Baseline: `main` at `2c9a890` plus the production hardening in this change
 
-## Finalized Build Scope
+## Verified release scope
 
-- Frontend install, lint, and production build verified
-- Backend test suite verified (`129` passing tests)
-- Windows backend bootstrap verified
-- Windows release verification path verified
-- Windows testnet doctor and certification wrapper added
-- GitHub `main` updated with the final readiness fixes
+- Vercel Vite frontend builds from the committed npm lockfile.
+- Cloudflare Worker typechecks and preserves the v2 infrastructure and rich agent-context contracts.
+- D1 migrations pass clean-install and upgrade replay through migration 030.
+- R2, D1, KV, scheduled triggers, Guardian controls, audit, accounting, recovery, and operator read models retain their existing architecture.
+- Privileged writes, agent memory, and arbitrary read-only D1 queries require the server-side `BACKEND_API_KEY` and fail closed when it is absent.
+- Live trading, mainnet, provider mutation, real funds, and withdrawals remain unavailable.
 
-## Validated Runtime Shape
+## Validation evidence
 
-- Safe default mode remains `paper`
-- Hybrid paper mode supports:
-  - execution exchange selection via `EXCHANGE`
-  - public market-data exchange selection via `MARKET_DATA_PUBLIC_EXCHANGE`
-- Confirmed intended hybrid configuration:
+- Frontend tests: 49 passed.
+- Worker contract tests: 26 passed.
+- Worker foundation tests: 421 passed.
+- Legacy backend compatibility tests: 438 passed.
+- Worker and provider typechecks: passed.
+- Paper, regulated-foundation, certification, provider, recovery, accounting, migration, and release-lock verifiers: passed.
+- Frontend lint, production build, performance budget, and repository audit: passed.
 
-```env
-TRADING_MODE=paper
-EXCHANGE=bitget
-PAPER_USE_LIVE_MARKET_DATA=true
-MARKET_DATA_PUBLIC_EXCHANGE=btcc
-NETWORK=testnet
-```
+## Public deployment state
 
-## Finalization Result
+- Frontend release manifest and `/dashboard`: reachable.
+- Worker health and paper runtime locks: reachable and safe.
+- Worker live intent, live order, and withdrawal routes: HTTP 403.
+- The public Worker is behind the current repository code until the guarded Cloudflare release completes; `/v2/infrastructure/status` and the current agent-context/auth probes do not yet pass publicly.
 
-The application build is finalized.
-
-Remaining blockers are environment and network certification issues on the current workstation, not missing application features or unresolved build defects.
-
-## Current Host Findings
-
-- `api.bitget.com` is blocked by DNS failure on this workstation
-- `api.btcc.com` resolves, but outbound TCP/HTTPS connection to port `443` times out on this workstation
-- Docker Compose v2 is not installed on this workstation
-- A separate local service is already bound to port `8000`, so isolated verification should prefer a different backend port such as `8011`
-
-## Operational Meaning
-
-- `bitget` remains the intended authenticated exchange path
-- `btcc` remains the intended public market-data path for hybrid paper mode
-- Full Bitget/BTCC exchange certification must be performed from a network that can actually resolve and reach those hosts
-
-## Recommended Next Step
-
-1. Move to a network that allows access to `api.bitget.com` and `api.btcc.com`
-2. Re-run:
-
-```powershell
-.\scripts\testnet_certify_windows.ps1 -Doctor -Exchange bitget
-.\scripts\testnet_certify_windows.ps1 -Doctor -Exchange btcc -DryRun
-```
-
-3. If Bitget credentials are available and connectivity is restored:
-
-```powershell
-.\scripts\testnet_certify_windows.ps1 -InstallCcxt -Exchange bitget -DryRun
-.\scripts\testnet_certify_windows.ps1 -Exchange bitget
-```
+The release is complete only when `node scripts/verify-deployed-paper-release.mjs` passes every public check after deployment.
