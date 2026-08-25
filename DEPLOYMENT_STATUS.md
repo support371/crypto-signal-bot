@@ -18,7 +18,9 @@
 
 ## Release Lane
 
-Prefer `.github/workflows/self-hosted-release.yml` for guarded releases. It is manual, paper-safe, and verifies live/withdrawal blocks after Worker checks.
+Prefer the connected Cloudflare Workers Build using `npm run deploy:paper-worker`. CircleCI and `.github/workflows/self-hosted-release.yml` remain guarded alternatives. Every lane is paper-safe and verifies live/withdrawal blocks after Worker checks.
+
+`BACKEND_API_KEY` must be present as a Cloudflare secret. If it is absent, all privileged write, agent-memory, and D1-query routes fail closed.
 
 Avoid legacy Render release paths. Render keepalive is disabled after migration to Cloudflare Workers.
 
