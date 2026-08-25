@@ -115,6 +115,19 @@ await check('Worker agent context contract', async () => {
   return response.status === 200 ? 'all subchecks healthy' : 'contract current; one or more subchecks degraded'
 })
 
+await check('Worker privileged helper routes fail closed', async () => {
+  const memory = await request(backendUrl, '/agent/memory/release-auth-probe')
+  assert(memory.response.status === 401, `agent memory expected HTTP 401, received ${memory.response.status}`)
+
+  const d1 = await request(backendUrl, '/d1/query/readonly', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sql: 'SELECT 1 AS ok' }),
+  })
+  assert(d1.response.status === 401, `D1 query expected HTTP 401, received ${d1.response.status}`)
+  return 'agent memory and D1 query require server credentials'
+})
+
 for (const [path, label] of [['/intent/live', 'live intent'], ['/live/order', 'live order'], ['/withdraw', 'withdrawal']]) {
   await check(`Worker blocks ${label}`, async () => {
     const { response, body } = await request(backendUrl, path, { method: 'POST' })

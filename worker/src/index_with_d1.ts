@@ -1,4 +1,4 @@
-import worker, { type Env } from './index'
+import worker, { requireApiKey, type Env } from './index'
 import { fastPathDecisionMetrics, fastPathFeedRegistry } from './fast-path'
 import { buildV2InfrastructureStatus } from './routes/v2-infrastructure'
 import { buildV2MarketFeedsStatus } from './routes/v2-market-feeds'
@@ -46,7 +46,7 @@ function corsHeaders(request: Request, env: Env): Headers {
       : configured[0] ?? 'null'
   const headers = new Headers({
     'Access-Control-Allow-Origin': allowedOrigin,
-    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key',
     'Cache-Control': 'no-store',
     'Content-Type': 'application/json; charset=utf-8',
@@ -60,6 +60,10 @@ function jsonResponse(request: Request, env: Env, payload: unknown, status = 200
     status,
     headers: corsHeaders(request, env),
   })
+}
+
+function unauthorizedResponse(request: Request, env: Env): Response {
+  return jsonResponse(request, env, { error: 'Unauthorized', code: 401 }, 401)
 }
 
 async function handleReadonlyD1Query(request: Request, env: Env): Promise<Response> {
@@ -169,8 +173,19 @@ export default {
   async fetch(request: Request, env: AgentEnv, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url)
 
-    if (request.method === 'OPTIONS' && url.pathname.startsWith('/v2/')) {
+    const memoryMatch = url.pathname.match(/^\/agent\/memory\/([^/]+)$/)
+    const isPrivilegedD1Query = url.pathname === '/d1/query/readonly'
+
+    if (request.method === 'OPTIONS' && (
+      url.pathname.startsWith('/v2/')
+      || Boolean(memoryMatch)
+      || isPrivilegedD1Query
+    )) {
       return new Response(null, { status: 204, headers: corsHeaders(request, env) })
+    }
+
+    if ((memoryMatch || isPrivilegedD1Query) && !requireApiKey(env, request)) {
+      return unauthorizedResponse(request, env)
     }
 
     if (request.method === 'GET' && url.pathname === '/v2/infrastructure/status') {
@@ -185,7 +200,6 @@ export default {
       return handleV2DecisionMetrics(request, env)
     }
 
-    const memoryMatch = url.pathname.match(/^\/agent\/memory\/([^/]+)$/)
     if (memoryMatch) {
       return handleAgentMemory(request, env, decodeURIComponent(memoryMatch[1]))
     }

@@ -95,7 +95,10 @@ class BasePublicMarketDataService(ABC):
     async def start(self) -> None:
         if self._task is not None:
             return
-        self._http = httpx.AsyncClient(timeout=10.0)
+        # Preserve an explicitly injected client (tests, custom transports, or
+        # hardened proxy configuration) instead of silently replacing it.
+        if self._http is None:
+            self._http = httpx.AsyncClient(timeout=10.0)
         await self._seed_from_rest()
         self._task = asyncio.create_task(self._run(), name=f"{self.exchange}-public-market-data")
 

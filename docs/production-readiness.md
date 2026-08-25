@@ -34,7 +34,7 @@ LIVE_TRADING_ENABLED=false
 WITHDRAWALS_ENABLED=false
 ```
 
-Production secrets, when required for privileged read-only operator functions, belong in Cloudflare secret bindings and must never be committed.
+`BACKEND_API_KEY` is required as a Cloudflare secret for every privileged write, agent-memory, and D1-query route. Missing or invalid credentials fail closed. Production secrets belong in Cloudflare secret bindings and must never be committed.
 
 ## Release procedure
 
@@ -53,6 +53,7 @@ Production secrets, when required for privileged read-only operator functions, b
 - `/runtime/status` reports paper, testnet, mainnet disabled, live trading disabled, and withdrawals disabled.
 - `/v2/infrastructure/status` returns the v2 contract.
 - `/agent/context` returns the rich certification context (HTTP 200 or 207 when a subcheck is degraded).
+- Anonymous `/agent/memory/*` and `/d1/query/readonly` probes return HTTP 401.
 - `/intent/live`, `/live/order`, and `/withdraw` return HTTP 403.
 - No browser bundle contains private credentials.
 - The dashboard can create paper intents and display certification ledger results without calling a mutation-capable exchange client.
