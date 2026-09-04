@@ -7,7 +7,8 @@ import { QueryClientProvider } from './providers/QueryClientProvider';
 
 const Auth = lazy(() => import('./pages/Auth'));
 const Backtest = lazy(() => import('./pages/Backtest'));
-const Index = lazy(() => import('./pages/Index'));
+const CertificationOverview = lazy(() => import('./pages/CertificationOverview'));
+const DashboardEntry = lazy(() => import('./pages/DashboardEntry'));
 const Infrastructure = lazy(() => import('./pages/Infrastructure'));
 const IntegrationsStatus = lazy(() => import('./pages/IntegrationsStatus'));
 const NotFound = lazy(() => import('./pages/NotFound'));
@@ -56,13 +57,14 @@ export default function AppCore() {
         <Suspense fallback={<RouteLoading />}>
           <Routes>
             <Route path="/" element={<PublicHome />} />
+            <Route path="/certification" element={<CertificationOverview />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/waitlist" element={<Waitlist />} />
             <Route
               path="/dashboard"
               element={
                 <ProtectedPage>
-                  <Index />
+                  <DashboardEntry />
                 </ProtectedPage>
               }
             />

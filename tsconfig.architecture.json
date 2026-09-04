@@ -1,18 +1,1 @@
-{
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "noEmit": true,
-    "types": ["vite/client"]
-  },
-  "include": [
-    "src/lib/env.ts",
-    "src/lib/backendRuntime.ts",
-    "src/lib/infrastructureApi.ts",
-    "src/lib/operatorReadinessApi.ts",
-    "src/pages/OperatorReadiness.tsx",
-    "src/types/**/*.d.ts"
-  ],
-  "references": []
-}
+{"extends":"./tsconfig.json","compilerOptions":{"noUnusedLocals":false,"noUnusedParameters":false,"noEmit":true,"types":["vite/client"]},"include":["src/AppCore.tsx","src/lib/env.ts","src/lib/backendRuntime.ts","src/lib/infrastructureApi.ts","src/lib/operatorReadinessApi.ts","src/lib/certificationStatusApi.ts","src/lib/certificationBackendHealthApi.ts","src/server/operatorIdentityGateway.ts","src/server/boundedOperatorIdentityGateway.ts","src/server/operatorReadOnlyAggregator.ts","src/server/trustedOperatorSessionVerifier.ts","src/server/operatorAuthorizationResolver.ts","src/server/operatorGatewayFoundation.ts","src/pages/PublicHome.tsx","src/pages/CertificationOverview.tsx","src/pages/DashboardEntry.tsx","src/pages/OperatorReadiness.tsx","src/types/**/*.d.ts"],"references":[]}
