@@ -23,9 +23,14 @@ type RuntimeEnv = Record<string, string | boolean | undefined>;
 const runtimeEnv = import.meta.env as RuntimeEnv;
 
 export const CURRENT_PRODUCTION_BACKEND_URL = 'https://crypto-signal-bot-api.analyzer-d94.workers.dev';
+export const CURRENT_PRODUCTION_WS_URL = 'wss://crypto-signal-bot-api.analyzer-d94.workers.dev';
 const LEGACY_PRODUCTION_BACKEND_URLS = new Set([
   'https://crypto-signal-bot-api.gr8r9bfzry.workers.dev',
   'https://crypto-signal-bot-api.workers.dev',
+]);
+const LEGACY_PRODUCTION_WS_URLS = new Set([
+  'wss://crypto-signal-bot-api.gr8r9bfzry.workers.dev',
+  'wss://crypto-signal-bot-api.workers.dev',
 ]);
 
 function readString(...keys: string[]): string | undefined {
@@ -44,6 +49,13 @@ function normalizeBackendUrl(value: string): string {
   const normalized = trimTrailingSlash(value);
   return LEGACY_PRODUCTION_BACKEND_URLS.has(normalized)
     ? CURRENT_PRODUCTION_BACKEND_URL
+    : normalized;
+}
+
+function normalizeWebSocketUrl(value: string): string {
+  const normalized = trimTrailingSlash(value);
+  return LEGACY_PRODUCTION_WS_URLS.has(normalized)
+    ? CURRENT_PRODUCTION_WS_URL
     : normalized;
 }
 
@@ -74,7 +86,7 @@ export function getConfiguredBackendUrl(): string {
 
 export function getConfiguredWebSocketUrl(): string {
   const configured = readString('VITE_WS_URL', 'VITE_WS_BASE_URL');
-  if (configured) return trimTrailingSlash(configured);
+  if (configured) return normalizeWebSocketUrl(configured);
   return toWebSocketBase(getConfiguredBackendUrl());
 }
 
@@ -88,6 +100,7 @@ export function validateFrontendEnv(): FrontendEnvValidation {
     'VITE_API_BASE_URL',
   );
   const backendUrl = configuredBackendUrl ? normalizeBackendUrl(configuredBackendUrl) : undefined;
+  const configuredWsUrl = readString('VITE_WS_URL', 'VITE_WS_BASE_URL');
   const supabaseUrl = readString('VITE_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL');
   const supabaseKey = readString(
     'VITE_SUPABASE_PUBLISHABLE_KEY',
@@ -106,6 +119,9 @@ export function validateFrontendEnv(): FrontendEnvValidation {
   }
   if (configuredBackendUrl && LEGACY_PRODUCTION_BACKEND_URLS.has(trimTrailingSlash(configuredBackendUrl))) {
     warnings.push('A legacy Cloudflare Worker URL was configured and has been redirected to the current migrated Worker.');
+  }
+  if (configuredWsUrl && LEGACY_PRODUCTION_WS_URLS.has(trimTrailingSlash(configuredWsUrl))) {
+    warnings.push('A legacy Worker WebSocket URL was configured and has been redirected to the current migrated Worker.');
   }
   if (backendUrl && import.meta.env.PROD && !backendUrl.startsWith('https://')) {
     warnings.push('The production backend URL should use HTTPS.');
