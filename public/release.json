@@ -3,6 +3,7 @@
   "release_contract": "paper-certification-2026-08-15",
   "canonical_frontend_url": "https://crypto-signal-bot-indol.vercel.app",
   "dashboard_path": "/dashboard",
+  "status_path": "/status",
   "attestation_path": "/api/release-attestation",
   "backend_url": "https://crypto-signal-bot-api.analyzer-d94.workers.dev",
   "execution_exchange_primary": "btcc",
