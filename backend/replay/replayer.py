@@ -294,9 +294,8 @@ class Replayer:
             )
 
         # Pre-compute all indicator series (O(N))
-        # Use Decimal-to-float conversion to match original precision behavior
-        closes_dec = [Decimal(str(c.close)) for c in candles]
-        closes = [float(c) for c in closes_dec]
+        # Direct float conversion is significantly faster than slow float->str->Decimal->float round-trip
+        closes = [float(c.close) for c in candles]
         highs = [float(c.high) for c in candles]
         lows = [float(c.low) for c in candles]
 
