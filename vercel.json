@@ -4,6 +4,10 @@
   "installCommand": "npm ci",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "alias": [
+    "crypto-signal-bot-indol.vercel.app",
+    "crypto-signal-bot-admin-25521151s-projects.vercel.app"
+  ],
   "rewrites": [
     {
       "source": "/((?!api/|assets/|.*\\..*).*)",
