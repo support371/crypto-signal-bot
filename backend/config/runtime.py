@@ -19,6 +19,7 @@ import yaml
 @dataclass(frozen=True)
 class ServerConfig:
     cors_origins: list[str]
+    trusted_proxy_cidrs: list[str]
 
 
 @dataclass(frozen=True)
@@ -214,7 +215,8 @@ def get_runtime_config() -> RuntimeConfig:
         rate_limit_rpm=_env_int("RATE_LIMIT_RPM", 120),
         allow_mainnet=_env_bool("ALLOW_MAINNET", False),
         server=ServerConfig(
-            cors_origins=_env_csv_any(("CORS_ALLOWED_ORIGINS", "CORS_ORIGINS"), default_cors)
+            cors_origins=_env_csv_any(("CORS_ALLOWED_ORIGINS", "CORS_ORIGINS"), default_cors),
+            trusted_proxy_cidrs=_env_csv("TRUSTED_PROXY_CIDRS", []),
         ),
         guardian=GuardianConfig(
             max_api_errors=_env_int("GUARDIAN_MAX_API_ERRORS", guardian_defaults.max_api_errors),
