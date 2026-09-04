@@ -29,3 +29,4 @@ crons = ["*/20 * * * *", "*/5 * * * *", "0 * * * *", "0 0 * * *"]
 
 [[kv_namespaces]]
 binding = "AGENT_MEMORY"
+id = "2dcb1050b9c846a7bba8cd1c3c43df62"
