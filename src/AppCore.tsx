@@ -13,6 +13,7 @@ const IntegrationsStatus = lazy(() => import('./pages/IntegrationsStatus'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 const OperatorReadiness = lazy(() => import('./pages/OperatorReadiness'));
 const Portfolio = lazy(() => import('./pages/Portfolio'));
+const ProductionStatus = lazy(() => import('./pages/ProductionStatus'));
 const PublicHome = lazy(() => import('./pages/PublicHome'));
 const Settings = lazy(() => import('./pages/Settings'));
 const Waitlist = lazy(() => import('./pages/Waitlist'));
@@ -58,6 +59,7 @@ export default function AppCore() {
             <Route path="/" element={<PublicHome />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/waitlist" element={<Waitlist />} />
+            <Route path="/status" element={<ProductionStatus />} />
             <Route
               path="/dashboard"
               element={
