@@ -16,7 +16,7 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:worker": "npm --prefix worker ci && vitest run -c worker/vitest.config.ts",
+    "test:worker": "npm --prefix worker ci --omit=dev --ignore-scripts --no-audit --no-fund && vitest run -c worker/vitest.config.ts",
     "verify:ci-independence": "node scripts/verify-ci-independence.mjs && node scripts/verify-release-lock.mjs",
     "verify:deployment": "node scripts/verify-deployed-paper-release.mjs",
     "verify:paper-worker-release": "npm --prefix worker ci && npm --prefix worker run build && npm --prefix worker run build:provider-contracts && npm --prefix worker run test:live-foundation && npm --prefix worker run test:provider-contracts && npm --prefix worker run verify:paper-safety && npm --prefix worker run verify:regulated-foundation-safety && npm --prefix worker run verify:certification-safety && npm --prefix worker run verify:migrations && cd worker && ./node_modules/.bin/wrangler deploy --dry-run --outdir /tmp/crypto-signal-bot-worker-dry-run --config ../wrangler.toml",
