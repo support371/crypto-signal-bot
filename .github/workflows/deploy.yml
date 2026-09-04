@@ -48,6 +48,11 @@ jobs:
             worker/package-lock.json
       - name: Install frontend dependencies
         run: npm ci
+      - name: Validate release selections
+        if: ${{ github.event.inputs.update_vercel == 'true' && github.event.inputs.deploy_worker != 'true' }}
+        run: |
+          echo "update_vercel=true requires deploy_worker=true so the Worker is verified before Vercel is updated."
+          exit 1
       - name: Lint frontend
         run: npm run lint
       - name: Build frontend
@@ -87,8 +92,8 @@ jobs:
         run: cd worker && npm run smoke -- "$WORKER_URL"
 
   update-vercel:
-    needs: validate
-    if: ${{ github.event.inputs.update_vercel == 'true' }}
+    needs: [validate, deploy-worker]
+    if: ${{ always() && needs.validate.result == 'success' && needs.deploy-worker.result == 'success' && github.event.inputs.deploy_worker == 'true' && github.event.inputs.update_vercel == 'true' }}
     runs-on: ubuntu-latest
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -100,5 +105,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22.12.0"
-      - name: Update Vercel backend URL and trigger deploy
+      - name: Update Vercel public backend URLs and trigger deploy
         run: node scripts/vercel-sync-backend-url.mjs
