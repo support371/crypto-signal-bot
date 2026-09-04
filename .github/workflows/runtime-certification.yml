@@ -1,0 +1,26 @@
+name: Runtime certification (temporary ops branch)
+
+on:
+  push:
+    branches:
+      - ops/runtime-certification-c9041d7
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-production-paper-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact certification branch
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+
+      - name: Verify deployed paper certification release
+        run: node scripts/verify-deployed-paper-release.mjs
