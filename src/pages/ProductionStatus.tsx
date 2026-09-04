@@ -76,9 +76,11 @@ async function fetchJson<T>(path: string, signal: AbortSignal): Promise<T> {
   }
   const body = await response.json() as T;
   if (!response.ok) {
-    const detail = body && typeof body === 'object' && 'failures' in body
-      ? JSON.stringify((body as ReleaseAttestation).failures ?? [])
-      : `HTTP ${response.status}`;
+    let detail = `HTTP ${response.status}`;
+    if (body !== null && typeof body === 'object') {
+      const failures = (body as Record<string, unknown>).failures;
+      if (Array.isArray(failures)) detail = JSON.stringify(failures);
+    }
     throw new Error(`${path} returned HTTP ${response.status}: ${detail}`);
   }
   return body;
