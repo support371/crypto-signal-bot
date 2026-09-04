@@ -8,6 +8,7 @@ set -e
 ACCOUNT_ID="5918df72bfd0d0389a1894adec5db58f"
 DB_NAME="crypto-signal-bot-db"
 BUCKET_NAME="crypto-signal-bot-storage"
+WORKER_URL="https://crypto-signal-bot-api.gr8r9bfzry.workers.dev"
 
 echo "=== Step 1: Verifying Cloudflare token ==="
 VERIFY=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
@@ -82,13 +83,13 @@ echo ""
 echo "=== Step 7: Verify endpoints ==="
 sleep 5
 for endpoint in healthz "runtime/status" "guardian/status" "portfolio/summary"; do
-  STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://crypto-signal-bot-api.workers.dev/$endpoint")
+  STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$WORKER_URL/$endpoint")
   echo "  /$endpoint: HTTP $STATUS $([ "$STATUS" = "200" ] && echo ✅ || echo ❌)"
 done
 
 echo ""
 echo "=== DEPLOY COMPLETE ==="
-echo "Worker URL: https://crypto-signal-bot-api.workers.dev"
+echo "Worker URL: $WORKER_URL"
 echo "Database ID: $DB_ID"
 echo ""
 echo "Next: Add CLOUDFLARE_API_TOKEN to GitHub secrets to enable auto-deploy on push"
