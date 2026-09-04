@@ -32,12 +32,25 @@ env:
   VERCEL_BACKEND_URL: https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
   TRADING_MODE: paper
   EXCHANGE_MODE: paper
+  NETWORK: testnet
   ALLOW_MAINNET: "false"
 
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
+      - name: Enforce manual release boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Deployment validation is restricted to the main branch; got $GITHUB_REF" >&2
+            exit 1
+          fi
+          if [[ "$TRADING_MODE" != "paper" || "$EXCHANGE_MODE" != "paper" || "$NETWORK" != "testnet" || "$ALLOW_MAINNET" != "false" ]]; then
+            echo "Release safety environment is not fail-closed." >&2
+            exit 1
+          fi
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
@@ -59,11 +72,11 @@ jobs:
       - name: Verify paper safety
         run: cd worker && npm run verify:paper-safety
       - name: Validate Wrangler bundle
-        run: npx wrangler deploy --dry-run --outdir /tmp/crypto-signal-bot-worker-dry-run --config wrangler.toml
+        run: cd worker && npx --no-install wrangler deploy --dry-run --outdir /tmp/crypto-signal-bot-worker-dry-run --config ../wrangler.toml
 
   deploy-worker:
     needs: validate
-    if: ${{ github.event.inputs.deploy_worker == 'true' }}
+    if: ${{ github.event.inputs.deploy_worker == 'true' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -88,7 +101,7 @@ jobs:
 
   update-vercel:
     needs: validate
-    if: ${{ github.event.inputs.update_vercel == 'true' }}
+    if: ${{ github.event.inputs.update_vercel == 'true' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}

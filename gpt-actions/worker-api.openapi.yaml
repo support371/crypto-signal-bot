@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: crypto-signal-bot Worker API Action
-  version: 2.2.0
+  version: 2.2.1
   description: Worker/API action schema. System operates in paper mode by default and graduates to live mode only after verified performance criteria are met and the owner explicitly approves. Coinbase is public read-only market data only.
 servers:
   - url: https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
@@ -245,6 +245,7 @@ paths:
     get:
       operationId: getAgentMemory
       summary: Read a value from persistent agent memory (Cloudflare KV)
+      description: This deployed route is read-only. Mutation methods are rejected by the Worker entrypoint.
       parameters:
         - name: key
           in: path
@@ -258,49 +259,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GenericObject"
-    post:
-      operationId: setAgentMemory
-      summary: Write a value to persistent agent memory (30-day TTL)
-      parameters:
-        - name: key
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - value
-              properties:
-                value:
-                  description: Any JSON-serializable value to store
-      responses:
-        "200":
-          description: Value stored
+        "405":
+          description: Mutation method rejected; only GET and CORS OPTIONS are allowed
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/GenericObject"
-    delete:
-      operationId: deleteAgentMemory
-      summary: Delete a key from persistent agent memory
-      parameters:
-        - name: key
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Key deleted
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericObject"
+                $ref: "#/components/schemas/ErrorObject"
   /agent/context:
     get:
       operationId: getAgentContext
