@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "npm run verify:production-contract && npm run typecheck:architecture && npm run verify:operator-frontend-safety && vite build && npm run verify:frontend-performance",
-    "lint": "eslint src/App.tsx src/AppCore.tsx src/main.tsx src/context/AuthContext.ts src/context/AuthProvider.tsx src/providers/QueryClientProvider.tsx src/lib/env.ts src/lib/backendRuntime.ts src/lib/infrastructureApi.ts src/lib/operatorReadinessApi.ts src/pages/Infrastructure.tsx src/pages/OperatorReadiness.tsx src/components/LayoutCore.tsx --report-unused-disable-directives --max-warnings 0",
+    "lint": "eslint src/App.tsx src/AppCore.tsx src/main.tsx src/context/AuthContext.ts src/context/AuthProvider.tsx src/providers/QueryClientProvider.tsx src/lib/env.ts src/lib/backendRuntime.ts src/lib/infrastructureApi.ts src/lib/operatorReadinessApi.ts src/pages/Infrastructure.tsx src/pages/OperatorReadiness.tsx src/pages/ProductionStatus.tsx src/components/LayoutCore.tsx --report-unused-disable-directives --max-warnings 0",
     "lint:legacy": "eslint src --report-unused-disable-directives --max-warnings 0",
     "typecheck": "tsc --noEmit",
     "typecheck:architecture": "tsc -p tsconfig.architecture.json",
