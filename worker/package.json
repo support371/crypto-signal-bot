@@ -57,6 +57,8 @@
     "migrate:028:local": "wrangler d1 execute crypto-signal-bot-live-candidate-db --config ../wrangler.live-candidate.toml --local --file=migrations/028_live_bitget_demo_deployment_readiness.sql",
     "migrate:029:local": "wrangler d1 execute crypto-signal-bot-live-candidate-db --config ../wrangler.live-candidate.toml --local --file=migrations/029_live_bitget_demo_operational_rehearsals.sql",
     "migrate:030:local": "wrangler d1 execute crypto-signal-bot-live-candidate-db --config ../wrangler.live-candidate.toml --local --file=migrations/030_live_certification_market_simulations.sql",
+    "migrate:paper:003:local": "wrangler d1 execute crypto-signal-bot-db --config ../wrangler.toml --local --file=migrations/paper/003_request_admission_counters.sql",
+    "migrate:paper:003:remote": "wrangler d1 execute crypto-signal-bot-db --config ../wrangler.toml --remote --file=migrations/paper/003_request_admission_counters.sql",
     "smoke": "node scripts/smoke-check.mjs"
   },
   "dependencies": {
