@@ -1,16 +1,77 @@
 version: 2.1
 
-jobs:
-  runtime-certification:
+executors:
+  node-runtime:
     docker:
       - image: cimg/node:22.12.0
+
+commands:
+  checkout-probe:
     steps:
       - checkout
-      - run:
-          name: Verify deployed paper certification release
-          command: node scripts/verify-deployed-paper-release.mjs
+
+jobs:
+  frontend-release:
+    executor: node-runtime
+    steps:
+      - checkout-probe
+      - run: node scripts/runtime-certification-probe.mjs frontend-release
+  worker-health:
+    executor: node-runtime
+    steps:
+      - checkout-probe
+      - run: node scripts/runtime-certification-probe.mjs worker-health
+  worker-runtime:
+    executor: node-runtime
+    steps:
+      - checkout-probe
+      - run: node scripts/runtime-certification-probe.mjs worker-runtime
+  worker-v2:
+    executor: node-runtime
+    steps:
+      - checkout-probe
+      - run: node scripts/runtime-certification-probe.mjs worker-v2
+  worker-agent-context:
+    executor: node-runtime
+    steps:
+      - checkout-probe
+      - run: node scripts/runtime-certification-probe.mjs worker-agent-context
+  worker-memory-auth:
+    executor: node-runtime
+    steps:
+      - checkout-probe
+      - run: node scripts/runtime-certification-probe.mjs worker-memory-auth
+  worker-d1-auth:
+    executor: node-runtime
+    steps:
+      - checkout-probe
+      - run: node scripts/runtime-certification-probe.mjs worker-d1-auth
+  worker-block-live-intent:
+    executor: node-runtime
+    steps:
+      - checkout-probe
+      - run: node scripts/runtime-certification-probe.mjs worker-block-live-intent
+  worker-block-live-order:
+    executor: node-runtime
+    steps:
+      - checkout-probe
+      - run: node scripts/runtime-certification-probe.mjs worker-block-live-order
+  worker-block-withdraw:
+    executor: node-runtime
+    steps:
+      - checkout-probe
+      - run: node scripts/runtime-certification-probe.mjs worker-block-withdraw
 
 workflows:
   runtime-certification:
     jobs:
-      - runtime-certification
+      - frontend-release
+      - worker-health
+      - worker-runtime
+      - worker-v2
+      - worker-agent-context
+      - worker-memory-auth
+      - worker-d1-auth
+      - worker-block-live-intent
+      - worker-block-live-order
+      - worker-block-withdraw
