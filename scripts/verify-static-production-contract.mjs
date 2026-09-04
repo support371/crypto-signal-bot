@@ -13,7 +13,17 @@ function assert(condition, message) {
   if (!condition) throw new Error(`Production contract drift: ${message}`);
 }
 
-const [releaseText, envSource, packageText, wrangler, vercelText, probeSource, verifierSource] = await Promise.all([
+const [
+  releaseText,
+  envSource,
+  packageText,
+  wrangler,
+  vercelText,
+  probeSource,
+  verifierSource,
+  appSource,
+  statusSource,
+] = await Promise.all([
   text('public/release.json'),
   text('src/lib/env.ts'),
   text('package.json'),
@@ -21,6 +31,8 @@ const [releaseText, envSource, packageText, wrangler, vercelText, probeSource, v
   text('vercel.json'),
   text('api/new-backend-probe.js'),
   text('scripts/verify-deployed-paper-release.mjs'),
+  text('src/AppCore.tsx'),
+  text('src/pages/ProductionStatus.tsx'),
 ]);
 
 const release = JSON.parse(releaseText);
@@ -30,6 +42,7 @@ const vercel = JSON.parse(vercelText);
 assert(release.application === 'crypto-signal-bot', 'release application identity changed');
 assert(release.canonical_frontend_url === CURRENT_FRONTEND, 'canonical frontend URL is stale');
 assert(release.dashboard_path === '/dashboard', 'dashboard path must remain /dashboard');
+assert(release.status_path === '/status', 'production status path is missing');
 assert(release.attestation_path === '/api/release-attestation', 'attestation endpoint is missing');
 assert(release.backend_url === CURRENT_WORKER, 'release manifest points to the wrong Worker');
 assert(release.execution_exchange_primary === PRIMARY, 'BTCC must remain the primary execution exchange');
@@ -51,6 +64,9 @@ assert(envSource.includes(`CURRENT_PRODUCTION_BACKEND_URL = '${CURRENT_WORKER}'`
 assert(probeSource.includes(`const WORKER = '${CURRENT_WORKER}'`), 'Vercel attestation Worker drifted');
 assert(verifierSource.includes(`DEFAULT_BACKEND_URL = '${CURRENT_WORKER}'`), 'deployment verifier Worker drifted');
 assert(verifierSource.includes(`DEFAULT_FRONTEND_URL = '${CURRENT_FRONTEND}'`), 'deployment verifier frontend drifted');
+assert(appSource.includes('path="/status"'), 'public production status route is not registered');
+assert(statusSource.includes("'/api/release-attestation'"), 'production status page is not bound to release attestation');
+assert(statusSource.includes('BTCC primary · Bitget secondary'), 'production status page lost the canonical execution hierarchy');
 
 assert(wrangler.includes('TRADING_MODE = "paper"'), 'Wrangler trading mode must remain paper');
 assert(wrangler.includes('EXCHANGE_MODE = "paper"'), 'Wrangler exchange mode must remain paper');
@@ -67,6 +83,7 @@ assert(vercel.framework === 'vite', 'Vercel framework must remain Vite');
 assert(vercel.buildCommand === 'npm run build', 'Vercel must execute the guarded npm build command');
 
 assert(pkg.scripts?.build?.includes('verify:production-contract'), 'production drift verifier must gate frontend builds');
+assert(pkg.scripts?.['verify:deployment']?.includes('verify-production-attestation.mjs'), 'deployment verification must include production attestation');
 assert(pkg.scripts?.['deploy:paper-worker']?.includes(CURRENT_WORKER), 'Worker deploy smoke target is stale');
 
-console.log('Static production contract verified: Vercel→Cloudflare wiring, BTCC→Bitget hierarchy, KV binding, and paper/testnet locks are aligned.');
+console.log('Static production contract verified: Vercel→Cloudflare wiring, public status surface, BTCC→Bitget hierarchy, KV binding, and paper/testnet locks are aligned.');
