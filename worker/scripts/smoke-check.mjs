@@ -1,15 +1,15 @@
-const baseUrl = process.argv[2] ?? "https://crypto-signal-bot-api.gr8r9bfzry.workers.dev";
+const baseUrl = process.argv[2] ?? "https://crypto-signal-bot-api.analyzer-d94.workers.dev";
 
 const checks = [
-  ["GET", "/healthz", 200, (body) => body.status === "ok"],
-  ["GET", "/runtime/status", 200, (body) => body.trading_mode === "paper" && body.allow_mainnet === false],
+  ["GET", "/healthz", 200, (body) => body.status === "ok" && body.execution_exchange_primary === "btcc" && body.execution_exchange_secondary === "bitget"],
+  ["GET", "/runtime/status", 200, (body) => body.trading_mode === "paper" && body.allow_mainnet === false && body.execution_exchange_primary === "btcc" && body.execution_exchange_secondary === "bitget"],
   ["GET", "/surge/status", 200, (body) => body.scanner_active === true],
   ["GET", "/guardian/status", 200, (body) => Object.prototype.hasOwnProperty.call(body, "triggered")],
   ["GET", "/portfolio/summary", 200, (body) => body.mode === "paper"],
-  ["GET", "/market/feed/status", 200, (body) => body.primary === "coinbase"],
-  ["GET", "/exchange/circuit-breakers", 200, (body) => Array.isArray(body.adapters)],
+  ["GET", "/market/feed/status", 200, (body) => body.primary === "coinbase" && body.execution_exchange_primary === "btcc" && body.execution_exchange_secondary === "bitget"],
+  ["GET", "/exchange/circuit-breakers", 200, (body) => Array.isArray(body.adapters) && body.execution_exchange_primary === "btcc" && body.execution_exchange_secondary === "bitget"],
   ["GET", "/v2/infrastructure/status", 200, (body) => body.version === "2.0" && body.runtime?.trading_mode === "paper" && body.runtime?.allow_mainnet === false],
-  ["GET", "/agent/context", [200, 207], (body) => body.certification_mode === true && body.provider_mutation_enabled === false && body.real_funds_enabled === false],
+  ["GET", "/agent/context", [200, 207], (body) => body.certification_mode === true && body.provider_mutation_enabled === false && body.real_funds_enabled === false && body.execution_exchange_primary === "btcc" && body.execution_exchange_secondary === "bitget"],
   ["POST", "/intent/live", 403, (body) => body.code === 403],
   ["POST", "/live/order", 403, (body) => body.code === 403],
   ["POST", "/withdraw", 403, (body) => body.code === 403],
