@@ -22,6 +22,12 @@ type RuntimeEnv = Record<string, string | boolean | undefined>;
 
 const runtimeEnv = import.meta.env as RuntimeEnv;
 
+export const CURRENT_PRODUCTION_BACKEND_URL = 'https://crypto-signal-bot-api.analyzer-d94.workers.dev';
+const LEGACY_PRODUCTION_BACKEND_URLS = new Set([
+  'https://crypto-signal-bot-api.gr8r9bfzry.workers.dev',
+  'https://crypto-signal-bot-api.workers.dev',
+]);
+
 function readString(...keys: string[]): string | undefined {
   for (const key of keys) {
     const value = runtimeEnv[key];
@@ -32,6 +38,13 @@ function readString(...keys: string[]): string | undefined {
 
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, '');
+}
+
+function normalizeBackendUrl(value: string): string {
+  const normalized = trimTrailingSlash(value);
+  return LEGACY_PRODUCTION_BACKEND_URLS.has(normalized)
+    ? CURRENT_PRODUCTION_BACKEND_URL
+    : normalized;
 }
 
 function toWebSocketBase(value: string): string {
@@ -51,7 +64,7 @@ export function getConfiguredBackendUrl(): string {
     'VITE_API_BASE_URL',
   );
 
-  if (configured) return trimTrailingSlash(configured);
+  if (configured) return normalizeBackendUrl(configured);
   if (import.meta.env.DEV) return 'http://localhost:8000';
 
   throw new Error(
@@ -69,11 +82,12 @@ export function validateFrontendEnv(): FrontendEnvValidation {
   const missingRequired: string[] = [];
   const warnings: string[] = [];
   const demoMode = isDemoModeEnabled();
-  const backendUrl = readString(
+  const configuredBackendUrl = readString(
     'VITE_BACKEND_URL',
     'VITE_CRYPTOCORE_API_BASE',
     'VITE_API_BASE_URL',
   );
+  const backendUrl = configuredBackendUrl ? normalizeBackendUrl(configuredBackendUrl) : undefined;
   const supabaseUrl = readString('VITE_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL');
   const supabaseKey = readString(
     'VITE_SUPABASE_PUBLISHABLE_KEY',
@@ -90,6 +104,9 @@ export function validateFrontendEnv(): FrontendEnvValidation {
   if (readString('VITE_API_BASE_URL') && !readString('VITE_BACKEND_URL')) {
     warnings.push('VITE_API_BASE_URL is a legacy alias; migrate to VITE_BACKEND_URL.');
   }
+  if (configuredBackendUrl && LEGACY_PRODUCTION_BACKEND_URLS.has(trimTrailingSlash(configuredBackendUrl))) {
+    warnings.push('A legacy Cloudflare Worker URL was configured and has been redirected to the current migrated Worker.');
+  }
   if (backendUrl && import.meta.env.PROD && !backendUrl.startsWith('https://')) {
     warnings.push('The production backend URL should use HTTPS.');
   }
@@ -101,7 +118,7 @@ export function validateFrontendEnv(): FrontendEnvValidation {
     ok: missingRequired.length === 0,
     missingRequired,
     warnings,
-    backendUrl: backendUrl ? trimTrailingSlash(backendUrl) : null,
+    backendUrl: backendUrl ?? null,
     supabaseConfigured: Boolean(supabaseUrl && supabaseKey),
     demoMode,
   };
