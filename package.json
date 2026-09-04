@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "npm run typecheck:architecture && npm run verify:operator-frontend-safety && vite build && npm run verify:frontend-performance",
+    "build": "npm run verify:production-contract && npm run typecheck:architecture && npm run verify:operator-frontend-safety && vite build && npm run verify:frontend-performance",
     "lint": "eslint src/App.tsx src/AppCore.tsx src/main.tsx src/context/AuthContext.ts src/context/AuthProvider.tsx src/providers/QueryClientProvider.tsx src/lib/env.ts src/lib/backendRuntime.ts src/lib/infrastructureApi.ts src/lib/operatorReadinessApi.ts src/pages/Infrastructure.tsx src/pages/OperatorReadiness.tsx src/components/LayoutCore.tsx --report-unused-disable-directives --max-warnings 0",
     "lint:legacy": "eslint src --report-unused-disable-directives --max-warnings 0",
     "typecheck": "tsc --noEmit",
@@ -19,6 +19,7 @@
     "test:worker": "npm --prefix worker ci --omit=dev --ignore-scripts --no-audit --no-fund && vitest run -c worker/vitest.config.ts",
     "verify:ci-independence": "node scripts/verify-ci-independence.mjs && node scripts/verify-release-lock.mjs",
     "verify:deployment": "node scripts/verify-deployed-paper-release.mjs",
+    "verify:production-contract": "node scripts/verify-static-production-contract.mjs",
     "verify:paper-worker-release": "npm --prefix worker ci && npm --prefix worker run build && npm --prefix worker run build:provider-contracts && npm --prefix worker run test:live-foundation && npm --prefix worker run test:provider-contracts && npm --prefix worker run verify:paper-safety && npm --prefix worker run verify:regulated-foundation-safety && npm --prefix worker run verify:certification-safety && npm --prefix worker run verify:migrations && cd worker && ./node_modules/.bin/wrangler deploy --dry-run --outdir /tmp/crypto-signal-bot-worker-dry-run --config ../wrangler.toml",
     "deploy:paper-worker": "npm run verify:paper-worker-release && npm --prefix worker run deploy && npm --prefix worker run smoke -- https://crypto-signal-bot-api.analyzer-d94.workers.dev",
     "verify:operator-frontend-safety": "node scripts/verify-operator-frontend-safety.mjs",
