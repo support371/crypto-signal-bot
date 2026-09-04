@@ -7,11 +7,13 @@
     "types": ["vite/client"]
   },
   "include": [
+    "src/AppCore.tsx",
     "src/lib/env.ts",
     "src/lib/backendRuntime.ts",
     "src/lib/infrastructureApi.ts",
     "src/lib/operatorReadinessApi.ts",
     "src/pages/OperatorReadiness.tsx",
+    "src/pages/ProductionStatus.tsx",
     "src/types/**/*.d.ts"
   ],
   "references": []
