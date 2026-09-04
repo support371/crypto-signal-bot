@@ -143,23 +143,3 @@ for (const dependency of [
 console.log(
   `CI billing independence verified (${workflowFiles.length} GitHub workflows are manual-only; CircleCI owns the aggregate gate).`,
 )
-
-// One-time release recovery: if CircleCI has the owner-managed Vercel token,
-// promote the already-certified clean deployment. This block is removed after
-// the recovery attempt and never prints the token.
-if (process.env.CIRCLECI === 'true' && process.env.VERCEL_TOKEN) {
-  const projectId = 'prj_sdk3k44uV3pCj5p5njSzHzm1vOJX'
-  const teamId = 'team_7lMXW95WSLeyK4yAObe8FptW'
-  const deploymentId = 'dpl_H9iqdZY1z2oH7PJVm9mgJyPrNUpg'
-  const response = await fetch(
-    `https://api.vercel.com/v10/projects/${projectId}/promote/${deploymentId}?teamId=${teamId}`,
-    {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${process.env.VERCEL_TOKEN}`,
-        'content-type': 'application/json',
-      },
-    },
-  )
-  console.log(`One-time CircleCI Vercel promotion request: HTTP ${response.status}`)
-}
