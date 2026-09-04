@@ -30,22 +30,25 @@ async function vercel(path, init = {}) {
   return body;
 }
 
+const publicBackendKeys = ["VITE_BACKEND_URL", "VITE_API_BASE_URL"];
 const envResponse = await vercel(`${projectPath}/env`);
-const existing = envResponse.envs?.filter((env) => env.key === "VITE_BACKEND_URL") ?? [];
 
-for (const env of existing) {
-  await vercel(`${projectPath}/env/${env.id}`, { method: "DELETE" });
+for (const key of publicBackendKeys) {
+  const existing = envResponse.envs?.filter((env) => env.key === key) ?? [];
+  for (const env of existing) {
+    await vercel(`${projectPath}/env/${env.id}`, { method: "DELETE" });
+  }
+
+  await vercel(`${projectPath}/env`, {
+    method: "POST",
+    body: JSON.stringify({
+      key,
+      value: backendUrl,
+      type: "plain",
+      target: ["production", "preview", "development"],
+    }),
+  });
 }
-
-await vercel(`${projectPath}/env`, {
-  method: "POST",
-  body: JSON.stringify({
-    key: "VITE_BACKEND_URL",
-    value: backendUrl,
-    type: "plain",
-    target: ["production", "preview", "development"],
-  }),
-});
 
 await vercel("/v13/deployments", {
   method: "POST",
@@ -62,4 +65,4 @@ await vercel("/v13/deployments", {
   }),
 });
 
-console.log(`Vercel VITE_BACKEND_URL set to ${backendUrl} and production deployment requested.`);
+console.log(`Vercel public backend URLs set to ${backendUrl} and production deployment requested.`);

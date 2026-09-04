@@ -1,6 +1,6 @@
 # Crypto Signal Bot Cloudflare/Vercel Deploy Handoff
 
-This repo is configured for a paper-only Cloudflare Workers backend at `https://crypto-signal-bot-api.workers.dev` with Cloudflare D1, R2, Durable Objects, cron triggers, and a Vercel-hosted frontend.
+This repo is configured for a paper-only Cloudflare Workers backend at `https://crypto-signal-bot-api.gr8r9bfzry.workers.dev` with Cloudflare D1, R2, KV, cron triggers, and a Vercel-hosted frontend. The safe-fast-path Durable Object and Queue authority remain future migration phases and are not represented as active production bindings.
 
 ## Security note
 
@@ -27,12 +27,12 @@ npm run verify:paper-safety
 ## Deployment sequence
 
 1. Export Cloudflare credentials in your terminal or CI secret store without printing them.
-2. Create the D1 database:
+2. Confirm the configured D1 database exists (create it only for a new Cloudflare account):
    ```bash
    wrangler d1 create crypto-signal-bot-db
    ```
-3. Replace `REPLACE_AFTER_D1_CREATE` in `wrangler.toml` with the returned database id.
-4. Create the R2 bucket:
+3. Confirm that the returned database id matches the committed `database_id` in `wrangler.toml`; do not rewrite a valid production binding.
+4. Confirm the R2 bucket exists (create it only when absent):
    ```bash
    wrangler r2 bucket create crypto-signal-bot-storage
    ```
@@ -55,19 +55,19 @@ npm run verify:paper-safety
    ```bash
    npm run deploy
    ```
-9. Update Vercel so `VITE_BACKEND_URL=https://crypto-signal-bot-api.workers.dev`, then trigger a production redeploy.
+9. Update Vercel so both `VITE_BACKEND_URL` and `VITE_API_BASE_URL` equal `https://crypto-signal-bot-api.gr8r9bfzry.workers.dev`, then trigger a production redeploy only after Worker smoke checks pass.
 10. Add `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `VERCEL_TOKEN`, `VERCEL_PROJECT_ID`, and optional `VERCEL_TEAM_ID` values to GitHub Actions secrets.
 
 ## Post-deploy checks
 
 ```bash
-curl https://crypto-signal-bot-api.workers.dev/healthz
-curl https://crypto-signal-bot-api.workers.dev/runtime/status
-curl https://crypto-signal-bot-api.workers.dev/surge/status
-curl https://crypto-signal-bot-api.workers.dev/guardian/status
-curl https://crypto-signal-bot-api.workers.dev/portfolio/summary
-curl https://crypto-signal-bot-api.workers.dev/market/feed/status
-curl https://crypto-signal-bot-api.workers.dev/exchange/circuit-breakers
-curl -i -X POST https://crypto-signal-bot-api.workers.dev/intent/live
-curl -i -X POST https://crypto-signal-bot-api.workers.dev/withdraw
+curl https://crypto-signal-bot-api.gr8r9bfzry.workers.dev/healthz
+curl https://crypto-signal-bot-api.gr8r9bfzry.workers.dev/runtime/status
+curl https://crypto-signal-bot-api.gr8r9bfzry.workers.dev/surge/status
+curl https://crypto-signal-bot-api.gr8r9bfzry.workers.dev/guardian/status
+curl https://crypto-signal-bot-api.gr8r9bfzry.workers.dev/portfolio/summary
+curl https://crypto-signal-bot-api.gr8r9bfzry.workers.dev/market/feed/status
+curl https://crypto-signal-bot-api.gr8r9bfzry.workers.dev/exchange/circuit-breakers
+curl -i -X POST https://crypto-signal-bot-api.gr8r9bfzry.workers.dev/intent/live
+curl -i -X POST https://crypto-signal-bot-api.gr8r9bfzry.workers.dev/withdraw
 ```
