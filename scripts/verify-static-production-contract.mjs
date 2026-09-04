@@ -83,7 +83,8 @@ assert(vercel.framework === 'vite', 'Vercel framework must remain Vite');
 assert(vercel.buildCommand === 'npm run build', 'Vercel must execute the guarded npm build command');
 
 assert(pkg.scripts?.build?.includes('verify:production-contract'), 'production drift verifier must gate frontend builds');
+assert(pkg.scripts?.lint?.includes('src/pages/ProductionStatus.tsx'), 'production status surface must remain in strict lint coverage');
 assert(pkg.scripts?.['verify:deployment']?.includes('verify-production-attestation.mjs'), 'deployment verification must include production attestation');
 assert(pkg.scripts?.['deploy:paper-worker']?.includes(CURRENT_WORKER), 'Worker deploy smoke target is stale');
 
-console.log('Static production contract verified: Vercel→Cloudflare wiring, public status surface, BTCC→Bitget hierarchy, KV binding, and paper/testnet locks are aligned.');
+console.log('Static production contract verified: Vercel→Cloudflare wiring, public status surface, BTCC→Bitget hierarchy, KV binding, lint coverage, and paper/testnet locks are aligned.');
