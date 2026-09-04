@@ -1,4 +1,4 @@
-import { Activity, BarChart2, LogOut, Settings, Wallet } from 'lucide-react';
+import { Activity, CreditCard, LogOut, Settings, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth, isSupabaseConfigured as SUPABASE_CONFIGURED } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -97,6 +97,16 @@ export function Header({
                 {user.email}
               </div>
             )}
+
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => navigate('/buy-bitcoin')}
+              className="border-border hover:border-primary hover:bg-primary/10"
+              title="Buy Bitcoin with card"
+            >
+              <CreditCard className="w-4 h-4" />
+            </Button>
 
             <Button
               variant="outline"

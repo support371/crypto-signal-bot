@@ -7,6 +7,7 @@ import { QueryClientProvider } from './providers/QueryClientProvider';
 
 const Auth = lazy(() => import('./pages/Auth'));
 const Backtest = lazy(() => import('./pages/Backtest'));
+const CardFunding = lazy(() => import('./pages/CardFunding'));
 const Index = lazy(() => import('./pages/Index'));
 const Infrastructure = lazy(() => import('./pages/Infrastructure'));
 const IntegrationsStatus = lazy(() => import('./pages/IntegrationsStatus'));
@@ -63,6 +64,22 @@ export default function AppCore() {
               element={
                 <ProtectedPage>
                   <Index />
+                </ProtectedPage>
+              }
+            />
+            <Route
+              path="/card-funding"
+              element={
+                <ProtectedPage>
+                  <CardFunding />
+                </ProtectedPage>
+              }
+            />
+            <Route
+              path="/buy-bitcoin"
+              element={
+                <ProtectedPage>
+                  <CardFunding />
                 </ProtectedPage>
               }
             />
