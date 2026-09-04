@@ -1,5 +1,5 @@
 const DEFAULT_FRONTEND_URL = 'https://crypto-signal-bot-indol.vercel.app'
-const DEFAULT_BACKEND_URL = 'https://crypto-signal-bot-api.gr8r9bfzry.workers.dev'
+const DEFAULT_BACKEND_URL = 'https://crypto-signal-bot-api.analyzer-d94.workers.dev'
 const RELEASE_CONTRACT = 'paper-certification-2026-08-15'
 const REQUEST_TIMEOUT_MS = 12_000
 
@@ -55,6 +55,8 @@ await check('frontend release contract', async () => {
   assert(body.release_contract === RELEASE_CONTRACT, `unexpected release contract ${body.release_contract ?? 'missing'}`)
   assert(body.dashboard_path === '/dashboard', 'dashboard path must be /dashboard')
   assert(body.backend_url === backendUrl, `frontend points to ${body.backend_url ?? 'no backend'}`)
+  assert(body.execution_exchange_primary === 'btcc', 'BTCC is not the primary execution exchange')
+  assert(body.execution_exchange_secondary === 'bitget', 'Bitget is not the secondary execution exchange')
   assert(body.trading_mode === 'paper', 'frontend release is not paper-only')
   assert(body.network === 'testnet', 'frontend release is not testnet-bound')
   assert(body.live_trading_enabled === false, 'frontend release enables live trading')
@@ -75,7 +77,9 @@ await check('Worker health', async () => {
   const { response, body } = await request(backendUrl, '/healthz')
   assert(response.status === 200, `expected HTTP 200, received ${response.status}`)
   assert(body?.status === 'ok', `unexpected health payload ${JSON.stringify(body)}`)
-  return 'healthy'
+  assert(body?.execution_exchange_primary === 'btcc', 'Worker does not report BTCC as primary execution exchange')
+  assert(body?.execution_exchange_secondary === 'bitget', 'Worker does not report Bitget as secondary execution exchange')
+  return 'healthy; execution=btcc→bitget'
 })
 
 await check('Worker paper runtime locks', async () => {
@@ -87,7 +91,9 @@ await check('Worker paper runtime locks', async () => {
   assert(body?.allow_mainnet === false, 'mainnet is allowed')
   assert(body?.live_trading_enabled === false, 'live trading is enabled')
   assert(body?.withdrawals_enabled === false, 'withdrawals are enabled')
-  return 'paper/testnet; live and withdrawals locked'
+  assert(body?.execution_exchange_primary === 'btcc', 'BTCC is not primary')
+  assert(body?.execution_exchange_secondary === 'bitget', 'Bitget is not secondary')
+  return 'paper/testnet; BTCC→Bitget; live and withdrawals locked'
 })
 
 await check('Worker v2 infrastructure contract', async () => {
@@ -111,6 +117,8 @@ await check('Worker agent context contract', async () => {
   assert(body?.provider_mutation_enabled === false, 'provider mutation is enabled')
   assert(body?.real_funds_enabled === false, 'real funds are enabled')
   assert(body?.withdrawals_enabled === false, 'withdrawals are enabled')
+  assert(body?.execution_exchange_primary === 'btcc', 'agent context does not identify BTCC as primary')
+  assert(body?.execution_exchange_secondary === 'bitget', 'agent context does not identify Bitget as secondary')
   assert(typeof body?.runtime?.status === 'string', 'rich direct-subcheck context is not deployed')
   return response.status === 200 ? 'all subchecks healthy' : 'contract current; one or more subchecks degraded'
 })
