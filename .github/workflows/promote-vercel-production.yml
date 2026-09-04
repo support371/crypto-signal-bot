@@ -1,0 +1,29 @@
+name: Promote latest Vercel production
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/promote-vercel-production.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_PROJECT_ID: prj_sdk3k44uV3pCj5p5njSzHzm1vOJX
+      VERCEL_TEAM_ID: team_7lMXW95WSLeyK4yAObe8FptW
+      VERCEL_BACKEND_URL: https://crypto-signal-bot-api.analyzer-d94.workers.dev
+      VERCEL_WS_URL: wss://crypto-signal-bot-api.analyzer-d94.workers.dev
+      VERCEL_PRODUCTION_ALIAS: crypto-signal-bot-indol.vercel.app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+      - name: Sync backend URLs and promote latest production deployment
+        run: node scripts/vercel-sync-backend-url.mjs
