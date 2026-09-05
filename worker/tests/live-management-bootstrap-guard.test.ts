@@ -3,8 +3,14 @@ import test from 'node:test'
 import { hasActiveGlobalReleaseAdmin } from '../src/management-bootstrap-guard.ts'
 
 class FakeStatement {
-  constructor(private readonly count: number | string | null) {}
+  count: number | string | null
+
+  constructor(count: number | string | null) {
+    this.count = count
+  }
+
   bind(_now: string) { return this }
+
   async first<T>(): Promise<T> {
     return { count: this.count } as T
   }
