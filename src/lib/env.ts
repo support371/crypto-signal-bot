@@ -24,6 +24,7 @@ const runtimeEnv = import.meta.env as RuntimeEnv;
 
 export const CURRENT_PRODUCTION_BACKEND_URL = 'https://crypto-signal-bot-api.analyzer-d94.workers.dev';
 export const CURRENT_PRODUCTION_WS_URL = 'wss://crypto-signal-bot-api.analyzer-d94.workers.dev';
+export const CANONICAL_PRODUCTION_HOST = 'crypto-signal-bot-indol.vercel.app';
 const LEGACY_PRODUCTION_BACKEND_URLS = new Set([
   'https://crypto-signal-bot-api.gr8r9bfzry.workers.dev',
   'https://crypto-signal-bot-api.workers.dev',
@@ -65,8 +66,13 @@ function toWebSocketBase(value: string): string {
   return value;
 }
 
+export function isCanonicalProductionHost(): boolean {
+  return typeof window !== 'undefined' && window.location.hostname === CANONICAL_PRODUCTION_HOST;
+}
+
 export function isDemoModeEnabled(): boolean {
-  return readString('VITE_DEMO_MODE')?.toLowerCase() === 'true';
+  const configured = readString('VITE_DEMO_MODE')?.toLowerCase() === 'true';
+  return configured && !isCanonicalProductionHost();
 }
 
 export function getConfiguredBackendUrl(): string {
@@ -75,10 +81,8 @@ export function getConfiguredBackendUrl(): string {
     'VITE_CRYPTOCORE_API_BASE',
     'VITE_API_BASE_URL',
   );
-
   if (configured) return normalizeBackendUrl(configured);
   if (import.meta.env.DEV) return 'http://localhost:8000';
-
   throw new Error(
     'Backend URL is not configured. Set VITE_BACKEND_URL to the public Certification Mode Worker URL.',
   );
@@ -126,7 +130,9 @@ export function validateFrontendEnv(): FrontendEnvValidation {
   if (backendUrl && import.meta.env.PROD && !backendUrl.startsWith('https://')) {
     warnings.push('The production backend URL should use HTTPS.');
   }
-  if (demoMode) {
+  if (readString('VITE_DEMO_MODE')?.toLowerCase() === 'true' && isCanonicalProductionHost()) {
+    warnings.push('VITE_DEMO_MODE is configured but ignored on the canonical production domain.');
+  } else if (demoMode) {
     warnings.push('Demo mode is active. Live trading and withdrawals remain unavailable.');
   }
 
