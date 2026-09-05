@@ -45,7 +45,7 @@ export function useSignalEngine(price: CryptoPrice | null, config: Partial<Signa
       try {
         const latest = await fetchBackendJson<WorkerSignalResponse>(
           `${PAPER_DASHBOARD_ROUTES.signalLatest}?symbol=${encodeURIComponent(expectedBackendSymbol)}`,
-          { signal: controller.signal },
+          { signal: controller.signal, timeoutMs: 20_000 },
         );
         applyWorkerSignal(latest);
       } catch (error) {
@@ -74,6 +74,7 @@ export function useSignalEngine(price: CryptoPrice | null, config: Partial<Signa
     try {
       const latest = await fetchBackendJson<WorkerSignalResponse>(
         `${PAPER_DASHBOARD_ROUTES.signalLatest}?symbol=${encodeURIComponent(expectedBackendSymbol)}`,
+        { timeoutMs: 20_000 },
       );
       applyWorkerSignal(latest);
     } catch (error) {
