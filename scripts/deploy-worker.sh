@@ -1,95 +1,41 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Cloudflare Worker Full Deploy Script
-# Run this when CLOUDFLARE_API_TOKEN is available
-# Usage: CLOUDFLARE_API_TOKEN=cfat_xxx bash deploy-worker.sh
+# Guarded paper/certification Worker deployment.
+# The Cloudflare account is intentionally supplied by the deployment environment;
+# this script never hard-codes or auto-creates resources in a historical account.
 
-ACCOUNT_ID="5918df72bfd0d0389a1894adec5db58f"
-DB_NAME="crypto-signal-bot-db"
-BUCKET_NAME="crypto-signal-bot-storage"
-WORKER_URL="https://crypto-signal-bot-api.gr8r9bfzry.workers.dev"
+WORKER_URL="https://crypto-signal-bot-api.analyzer-d94.workers.dev"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
 
-echo "=== Step 1: Verifying Cloudflare token ==="
-VERIFY=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-  "https://api.cloudflare.com/client/v4/user/tokens/verify")
-SUCCESS=$(echo "$VERIFY" | python3 -c "import sys,json; print(json.load(sys.stdin).get('success'))")
-if [ "$SUCCESS" != "True" ]; then
-  echo "ERROR: Invalid Cloudflare API token"
-  exit 1
-fi
-echo "✅ Token valid"
+: "${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN is required}"
+: "${CLOUDFLARE_ACCOUNT_ID:?CLOUDFLARE_ACCOUNT_ID is required}"
 
-echo ""
-echo "=== Step 2: Create/check D1 database ==="
-DB_LIST=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-  "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/d1/database?per_page=50")
-DB_ID=$(echo "$DB_LIST" | python3 -c "
-import sys,json
-d=json.load(sys.stdin)
-for db in d.get('result',[]):
-    if db['name']=='$DB_NAME':
-        print(db['uuid'])
-        break
-")
+export TRADING_MODE=paper
+export EXCHANGE_MODE=paper
+export NETWORK=testnet
+export ALLOW_MAINNET=false
+export LIVE_TRADING_ENABLED=false
+export WITHDRAWALS_ENABLED=false
 
-if [ -z "$DB_ID" ]; then
-  echo "Creating D1 database..."
-  CREATE=$(curl -s -X POST \
-    -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-    -H "Content-Type: application/json" \
-    "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/d1/database" \
-    -d "{\"name\":\"$DB_NAME\"}")
-  DB_ID=$(echo "$CREATE" | python3 -c "import sys,json; print(json.load(sys.stdin)['result']['uuid'])")
-  echo "✅ D1 Database created: $DB_ID"
-else
-  echo "✅ D1 Database already exists: $DB_ID"
-fi
+echo "== Crypto Signal Bot guarded Worker release =="
+echo "Target: $WORKER_URL"
+echo "Account: $CLOUDFLARE_ACCOUNT_ID"
 
-echo ""
-echo "=== Step 3: Create/check R2 bucket ==="
-BUCKET_EXISTS=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-  "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/r2/buckets/$BUCKET_NAME" | python3 -c "
-import sys,json; d=json.load(sys.stdin); print(d.get('success'))")
-if [ "$BUCKET_EXISTS" = "True" ]; then
-  echo "✅ R2 bucket already exists"
-else
-  curl -s -X POST \
-    -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-    -H "Content-Type: application/json" \
-    "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/r2/buckets" \
-    -d "{\"name\":\"$BUCKET_NAME\"}" | python3 -c "import sys,json; d=json.load(sys.stdin); print('✅ R2 bucket created' if d.get('success') else f'Error: {d}')"
-fi
+echo "[1/4] Validate current account credentials"
+npm --prefix worker exec -- wrangler whoami --config ../wrangler.toml >/dev/null
 
-echo ""
-echo "=== Step 4: Update wrangler.toml with real database_id ==="
-sed -i "s/database_id = \"REPLACE_AFTER_D1_CREATE\"/database_id = \"$DB_ID\"/" wrangler.toml
-echo "✅ wrangler.toml updated with database_id: $DB_ID"
+echo "[2/4] Run complete paper Worker release gates"
+npm run verify:paper-worker-release
 
-echo ""
-echo "=== Step 5: Deploy Worker ==="
-export CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN
-export CLOUDFLARE_ACCOUNT_ID=$ACCOUNT_ID
-cd worker
-npm ci --silent
-npx wrangler deploy --config ../wrangler.toml 2>&1
-cd ..
+echo "[3/4] Deploy checked wrangler.toml to the supplied account"
+(
+  cd worker
+  ./node_modules/.bin/wrangler deploy --config ../wrangler.toml
+)
 
-echo ""
-echo "=== Step 6: Run D1 migrations ==="
-npx wrangler d1 execute $DB_NAME --remote --file=worker/migrations/001_init.sql --config=wrangler.toml 2>&1
+echo "[4/4] Smoke the migrated Worker"
+npm --prefix worker run smoke -- "$WORKER_URL"
 
-echo ""
-echo "=== Step 7: Verify endpoints ==="
-sleep 5
-for endpoint in healthz "runtime/status" "guardian/status" "portfolio/summary"; do
-  STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$WORKER_URL/$endpoint")
-  echo "  /$endpoint: HTTP $STATUS $([ "$STATUS" = "200" ] && echo ✅ || echo ❌)"
-done
-
-echo ""
-echo "=== DEPLOY COMPLETE ==="
-echo "Worker URL: $WORKER_URL"
-echo "Database ID: $DB_ID"
-echo ""
-echo "Next: Add CLOUDFLARE_API_TOKEN to GitHub secrets to enable auto-deploy on push"
+echo "Deployment complete: $WORKER_URL"
