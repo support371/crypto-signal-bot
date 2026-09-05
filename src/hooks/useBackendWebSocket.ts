@@ -123,16 +123,6 @@ function getWsUrl(): string {
 }
 
 export function useBackendWebSocket(options: UseBackendWebSocketOptions = {}): WebSocketState {
-  const {
-    onHealthUpdate,
-    onTickerUpdate,
-    onOrderUpdate,
-    onGuardianAlert,
-    onKillSwitchChange,
-    onMarketUpdate,
-    onExchangeStatus,
-  } = options;
-
   const [connected, setConnected] = useState(false);
   const [lastMessage, setLastMessage] = useState<WsMessage | null>(null);
   const [lastGuardianAlert, setLastGuardianAlert] = useState<WsGuardianAlertMessage | null>(null);

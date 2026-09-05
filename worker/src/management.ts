@@ -32,7 +32,10 @@ type Identity = {
   actorId: string
   email: string | null
   displayName: string | null
+  assuranceLevel: ManagementAssuranceLevel
 }
+
+export type ManagementAssuranceLevel = 'aal1' | 'aal2' | 'aal3' | 'unknown'
 
 type ProfileRow = {
   actor_id: string
@@ -135,6 +138,9 @@ const MANAGEMENT_SCHEMA = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_live_actor_roles_actor_scope
     ON live_actor_roles(actor_id, scope_type, scope_key, expires_at, revoked_at)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_single_release_admin_bootstrap
+    ON live_actor_roles(granted_by)
+    WHERE granted_by = 'SYSTEM_BOOTSTRAP' AND role = 'RELEASE_ADMIN'`,
   `CREATE TABLE IF NOT EXISTS management_audit_events (
     sequence_id INTEGER PRIMARY KEY AUTOINCREMENT,
     event_id TEXT NOT NULL UNIQUE,
@@ -304,6 +310,26 @@ async function parseJsonBody(request: Request): Promise<Record<string, unknown> 
   }
 }
 
+export function bearerAssuranceLevel(authorization: string): ManagementAssuranceLevel {
+  const token = authorization.match(/^Bearer\s+([^\s]+)$/i)?.[1]
+  const encodedPayload = token?.split('.')[1]
+  if (!encodedPayload) return 'unknown'
+  try {
+    const normalized = encodedPayload.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
+    const payload = JSON.parse(atob(padded)) as { aal?: unknown }
+    return payload.aal === 'aal1' || payload.aal === 'aal2' || payload.aal === 'aal3'
+      ? payload.aal
+      : 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
+
+export function hasPrivilegedAssurance(level: ManagementAssuranceLevel): boolean {
+  return level === 'aal2' || level === 'aal3'
+}
+
 async function verifySupabaseIdentity(
   request: Request,
   env: ManagementEnv,
@@ -360,6 +386,7 @@ async function verifySupabaseIdentity(
       actorId,
       email: safeText(payload?.email, 320),
       displayName,
+      assuranceLevel: bearerAssuranceLevel(authorization),
     },
   }
 }
@@ -411,8 +438,14 @@ async function loadRoles(env: ManagementEnv, actorId: string): Promise<RoleRow[]
   return result.results ?? []
 }
 
-export function permissionsForRoles(roles: readonly Pick<RoleRow, 'role'>[]): ManagementPermissions {
-  const values = new Set(roles.map((item) => item.role))
+export function permissionsForRoles(
+  roles: readonly Pick<RoleRow, 'role' | 'scope_type' | 'scope_key'>[],
+): ManagementPermissions {
+  const values = new Set(
+    roles
+      .filter((item) => item.scope_type === 'GLOBAL' && item.scope_key === 'global')
+      .map((item) => item.role),
+  )
   const canReadAdmin = Array.from(values).some((role) => READ_ADMIN_ROLES.has(role))
   return {
     canReadAdmin,
@@ -622,8 +655,21 @@ function requireReleaseAdmin(
   actor: AuthenticatedActor,
   id: string,
 ): Response | null {
-  if (actor.permissions.canManageUsers) return null
-  return errorResponse(request, env, 403, 'FORBIDDEN', 'RELEASE_ADMIN access is required.', id)
+  if (!actor.permissions.canManageUsers) {
+    return errorResponse(request, env, 403, 'FORBIDDEN', 'Global RELEASE_ADMIN access is required.', id)
+  }
+  if (!hasPrivilegedAssurance(actor.identity.assuranceLevel)) {
+    return errorResponse(
+      request,
+      env,
+      403,
+      'STEP_UP_REQUIRED',
+      'AAL2 step-up authentication is required for privileged management changes.',
+      id,
+      { required_aal: 'aal2', current_aal: actor.identity.assuranceLevel },
+    )
+  }
+  return null
 }
 
 async function bootstrap(
@@ -646,6 +692,17 @@ async function bootstrap(
       id,
     )
   }
+  if (!hasPrivilegedAssurance(identityResult.identity.assuranceLevel)) {
+    return errorResponse(
+      request,
+      env,
+      403,
+      'STEP_UP_REQUIRED',
+      'AAL2 step-up authentication is required to bootstrap RELEASE_ADMIN.',
+      id,
+      { required_aal: 'aal2', current_aal: identityResult.identity.assuranceLevel },
+    )
+  }
   const rate = await enforceRateLimit(env, `bootstrap:${identityResult.identity.actorId}`, 5)
   if (!rate.allowed) {
     return errorResponse(
@@ -661,16 +718,23 @@ async function bootstrap(
   }
   const profile = await upsertProfile(env, identityResult.identity)
   const now = nowIso()
-  await env.DB.prepare(`
-    INSERT INTO live_actor_roles (
-      actor_id, role, scope_type, scope_key, granted_by, granted_at, expires_at, revoked_at
-    ) VALUES (?, 'RELEASE_ADMIN', 'GLOBAL', 'global', 'SYSTEM_BOOTSTRAP', ?, NULL, NULL)
-    ON CONFLICT(actor_id, role, scope_type, scope_key) DO UPDATE SET
-      granted_by = excluded.granted_by,
-      granted_at = excluded.granted_at,
-      expires_at = NULL,
-      revoked_at = NULL
-  `).bind(identityResult.identity.actorId, now).run()
+  try {
+    await env.DB.prepare(`
+      INSERT INTO live_actor_roles (
+        actor_id, role, scope_type, scope_key, granted_by, granted_at, expires_at, revoked_at
+      ) VALUES (?, 'RELEASE_ADMIN', 'GLOBAL', 'global', 'SYSTEM_BOOTSTRAP', ?, NULL, NULL)
+    `).bind(identityResult.identity.actorId, now).run()
+  } catch {
+    return errorResponse(
+      request,
+      env,
+      409,
+      'BOOTSTRAP_CLOSED',
+      'Initial RELEASE_ADMIN bootstrap has already been claimed.',
+      id,
+      { live_capabilities_remain_disabled: true },
+    )
+  }
   await writeAudit(env, {
     actorId: identityResult.identity.actorId,
     action: 'BOOTSTRAP_RELEASE_ADMIN',

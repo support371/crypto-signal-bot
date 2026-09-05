@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import {
   Terminal, Zap, ShieldOff, Shield, RefreshCw,
-  ArrowUpCircle, ArrowDownCircle, AlertTriangle, CheckCircle2,
+  ArrowUpCircle, ArrowDownCircle,
   RotateCcw, Unlock, X
 } from 'lucide-react';
 import { cn } from '@/lib/utils';

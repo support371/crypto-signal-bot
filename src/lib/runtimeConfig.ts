@@ -48,6 +48,7 @@ let runtimeConfig: RuntimeConfig = { ...DEFAULT_CONFIG };
 export function initializeRuntimeConfig(overrides: Partial<RuntimeConfig> = {}): void {
   // SAFETY: These settings CANNOT be overridden
   runtimeConfig = {
+    ...DEFAULT_CONFIG,
     ...overrides,
     // Force paper trading mode
     paperTradingMode: true,

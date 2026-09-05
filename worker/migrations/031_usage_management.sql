@@ -42,6 +42,10 @@ CREATE TABLE IF NOT EXISTS live_actor_roles (
 CREATE INDEX IF NOT EXISTS idx_live_actor_roles_actor_scope
   ON live_actor_roles(actor_id, scope_type, scope_key, expires_at, revoked_at);
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_single_release_admin_bootstrap
+  ON live_actor_roles(granted_by)
+  WHERE granted_by = 'SYSTEM_BOOTSTRAP' AND role = 'RELEASE_ADMIN';
+
 CREATE TABLE IF NOT EXISTS management_audit_events (
   sequence_id INTEGER PRIMARY KEY AUTOINCREMENT,
   event_id TEXT NOT NULL UNIQUE,

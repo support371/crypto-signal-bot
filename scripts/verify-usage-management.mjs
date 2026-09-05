@@ -48,6 +48,9 @@ for (const token of [
   'verifySupabaseIdentity',
   '/auth/v1/user',
   'SEPARATION_OF_DUTIES',
+  'STEP_UP_REQUIRED',
+  'bearerAssuranceLevel',
+  'hasPrivilegedAssurance',
   'RATE_LIMITED',
   'provider_mutation_enabled: false',
   'live_trading_enabled: false',
@@ -63,6 +66,8 @@ assert(router.includes('hasActiveGlobalReleaseAdmin'), 'bootstrap closure must c
 assert(bootstrapGuard.includes("role = 'RELEASE_ADMIN'"), 'bootstrap guard must check RELEASE_ADMIN');
 assert(bootstrapGuard.includes("scope_type = 'GLOBAL'"), 'bootstrap guard must only recognize global release administrators');
 assert(bootstrapGuard.includes('revoked_at IS NULL'), 'revoked release admins must not count as active bootstrap authority');
+assert(bootstrapGuard.includes("granted_by = 'SYSTEM_BOOTSTRAP'"), 'bootstrap must stay permanently closed after its first claim');
+assert(migration.includes('idx_single_release_admin_bootstrap'), 'migration must enforce a single atomic bootstrap claim');
 assert(router.includes("url.pathname.startsWith('/v1/management/')"), 'management router is not connected to Worker');
 assert(!management.includes('localStorage'), 'Worker management code must never depend on browser storage');
 assert(!management.includes('demo-paper-token'), 'demo token must never be accepted by Worker management auth');

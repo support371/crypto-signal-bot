@@ -81,6 +81,9 @@ export default function AdminCenter() {
   const [selected, setSelected] = useState<ManagementProfile | null>(null);
   const [roles, setRoles] = useState<ManagementRoleGrant[]>([]);
   const [roleToGrant, setRoleToGrant] = useState<ManagementRole>('VIEWER');
+  const [scopeType, setScopeType] = useState<'GLOBAL' | 'EXCHANGE' | 'ACCOUNT'>('GLOBAL');
+  const [scopeKey, setScopeKey] = useState('global');
+  const [roleExpiry, setRoleExpiry] = useState('');
   const [audit, setAudit] = useState<Array<Record<string, unknown>>>([]);
   const [usage, setUsage] = useState<{ by_category: Array<Record<string, unknown>>; by_day: Array<Record<string, unknown>> } | null>(null);
   const [sessions, setSessions] = useState<Array<Record<string, unknown>>>([]);
@@ -148,8 +151,9 @@ export default function AdminCenter() {
     try {
       await managementApi.grantRole(token, selected.actor_id, {
         role: roleToGrant,
-        scope_type: 'GLOBAL',
-        scope_key: 'global',
+        scope_type: scopeType,
+        scope_key: scopeType === 'GLOBAL' ? 'global' : scopeKey.trim(),
+        expires_at: roleExpiry ? new Date(roleExpiry).toISOString() : null,
       });
       toast.success(`${roleToGrant} granted.`);
       await loadSelected(selected.actor_id);
@@ -293,11 +297,35 @@ export default function AdminCenter() {
                       </div>
                     </div>
                     {access.canManageAccess && (
-                      <div className="flex gap-2">
-                        <select className="h-10 flex-1 rounded-md border bg-background px-3 text-sm" value={roleToGrant} onChange={(event) => setRoleToGrant(event.target.value as ManagementRole)}>
+                      <div className="space-y-3 rounded-lg border p-3">
+                        <p className="text-sm font-semibold">New scoped grant</p>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                        <select className="h-10 rounded-md border bg-background px-3 text-sm" value={roleToGrant} onChange={(event) => setRoleToGrant(event.target.value as ManagementRole)}>
                           {ROLES.map((role) => <option key={role} value={role}>{role}</option>)}
                         </select>
-                        <Button onClick={() => void grantRole()} disabled={busy}>Grant global</Button>
+                        <select
+                          className="h-10 rounded-md border bg-background px-3 text-sm"
+                          value={scopeType}
+                          onChange={(event) => {
+                            const value = event.target.value as 'GLOBAL' | 'EXCHANGE' | 'ACCOUNT';
+                            setScopeType(value);
+                            setScopeKey(value === 'GLOBAL' ? 'global' : '');
+                          }}
+                        >
+                          <option value="GLOBAL">Global</option>
+                          <option value="EXCHANGE">Exchange</option>
+                          <option value="ACCOUNT">Account</option>
+                        </select>
+                        <Input
+                          value={scopeKey}
+                          onChange={(event) => setScopeKey(event.target.value)}
+                          placeholder={scopeType === 'EXCHANGE' ? 'btcc or bitget' : scopeType === 'ACCOUNT' ? 'Account ID' : 'global'}
+                          disabled={scopeType === 'GLOBAL'}
+                        />
+                        <Input type="datetime-local" value={roleExpiry} onChange={(event) => setRoleExpiry(event.target.value)} aria-label="Role expiration" />
+                        </div>
+                        <Button onClick={() => void grantRole()} disabled={busy || (scopeType !== 'GLOBAL' && !scopeKey.trim())}>Grant scoped role</Button>
+                        <p className="text-xs text-muted-foreground">Privileged changes require an AAL2 authenticator session. Expiration is optional and enforced by the Worker.</p>
                       </div>
                     )}
                     <p className="text-xs text-muted-foreground">Role grants are server-authoritative and do not override paper/testnet safety locks.</p>

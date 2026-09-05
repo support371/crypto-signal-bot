@@ -79,7 +79,11 @@ assert(appSource.includes("'/admin/users'"), 'admin user management route is not
 assert(appSource.includes('AdministrativePage'), 'admin routes are not authorization-gated');
 assert(statusSource.includes("'/api/release-attestation'"), 'production status page is not bound to release attestation');
 assert(statusSource.includes('BTCC primary · Bitget secondary'), 'production status page lost the canonical execution hierarchy');
-assert(managementSource.includes("'/auth/v1/user'"), 'Worker management auth must validate the external bearer session');
+assert(
+  managementSource.includes('/auth/v1/user')
+    && managementSource.includes('Authorization: authorization'),
+  'Worker management auth must validate the external bearer session',
+);
 assert(managementSource.includes('SEPARATION_OF_DUTIES'), 'management separation-of-duties control is missing');
 
 assert(wrangler.includes('TRADING_MODE = "paper"'), 'Wrangler trading mode must remain paper');

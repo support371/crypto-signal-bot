@@ -16,6 +16,12 @@ The canonical `crypto-signal-bot-indol.vercel.app` domain never injects the synt
 
 The application records non-sensitive session-security events such as `SESSION_RESTORED`, `PASSWORD_UPDATED` and `SECURITY_REVIEWED`. Access/refresh tokens are not written to D1 audit tables.
 
+## Authenticator step-up
+
+`/account` supports Supabase TOTP enrollment and verification. A verified AAL2 session is required for bootstrap, user lifecycle changes, and role grant/revocation. The TOTP secret is displayed only during provider enrollment and is not persisted by Crypto Signal Bot.
+
+Email changes are requested through the identity provider and remain subject to its confirmation policy.
+
 ## Account status
 
 Suspended or disabled profiles fail closed at the protected routing and Worker management layers.

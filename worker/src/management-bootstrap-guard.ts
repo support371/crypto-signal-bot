@@ -4,8 +4,9 @@ export interface ManagementBootstrapGuardEnv {
 
 /**
  * Bootstrap is strictly a first-administrator recovery path.
- * Once any non-revoked, non-expired GLOBAL RELEASE_ADMIN grant exists,
- * the operator-key bootstrap endpoint must remain closed.
+ * Once any non-revoked, non-expired GLOBAL RELEASE_ADMIN grant exists, or the
+ * one-time SYSTEM_BOOTSTRAP marker has ever been written, the operator-key
+ * bootstrap endpoint remains closed.
  */
 export async function hasActiveGlobalReleaseAdmin(
   env: ManagementBootstrapGuardEnv,
@@ -15,10 +16,15 @@ export async function hasActiveGlobalReleaseAdmin(
     SELECT COUNT(*) AS count
       FROM live_actor_roles
      WHERE role = 'RELEASE_ADMIN'
-       AND scope_type = 'GLOBAL'
-       AND scope_key = 'global'
-       AND revoked_at IS NULL
-       AND (expires_at IS NULL OR expires_at > ?)
+       AND (
+         granted_by = 'SYSTEM_BOOTSTRAP'
+         OR (
+           scope_type = 'GLOBAL'
+           AND scope_key = 'global'
+           AND revoked_at IS NULL
+           AND (expires_at IS NULL OR expires_at > ?)
+         )
+       )
   `).bind(now).first<{ count: number | string | null }>()
 
   return Number(row?.count ?? 0) > 0

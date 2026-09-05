@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
-import { useAuth } from '@/context/AuthContext';
+import { getSupabaseClient, useAuth } from '@/context/AuthContext';
 import { useManagementAccess } from '@/hooks/useManagementAccess';
 import { managementApi } from '@/lib/managementApi';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,13 @@ export default function Account() {
   const access = useManagementAccess();
   const [displayName, setDisplayName] = useState('');
   const [saving, setSaving] = useState(false);
+  const [emailChange, setEmailChange] = useState('');
+  const [mfaBusy, setMfaBusy] = useState(false);
+  const [mfaLevel, setMfaLevel] = useState('unknown');
+  const [factorId, setFactorId] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [qrCode, setQrCode] = useState('');
+  const [totpSecret, setTotpSecret] = useState('');
   const profile = access.data?.profile;
   const roleLabel = access.data?.roles
     .map((role) => `${role.role} · ${role.scope_type}:${role.scope_key}`)
@@ -28,6 +35,81 @@ export default function Account() {
       await access.refresh();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to update profile.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const refreshMfa = useCallback(async () => {
+    if (isDemoMode || !session?.access_token) return;
+    try {
+      const client = await getSupabaseClient();
+      const [{ data: assurance }, { data: factors }] = await Promise.all([
+        client.auth.mfa.getAuthenticatorAssuranceLevel(),
+        client.auth.mfa.listFactors(),
+      ]);
+      setMfaLevel(assurance?.currentLevel ?? 'unknown');
+      const verified = factors?.totp.find((factor) => factor.status === 'verified');
+      if (verified) setFactorId(verified.id);
+    } catch {
+      setMfaLevel('unavailable');
+    }
+  }, [isDemoMode, session?.access_token]);
+
+  useEffect(() => {
+    void refreshMfa();
+  }, [refreshMfa]);
+
+  const beginTotpEnrollment = async () => {
+    setMfaBusy(true);
+    try {
+      const client = await getSupabaseClient();
+      const { data, error } = await client.auth.mfa.enroll({
+        factorType: 'totp',
+        friendlyName: 'Crypto Signal Bot administrator',
+      });
+      if (error) throw error;
+      setFactorId(data.id);
+      setQrCode(data.totp.qr_code);
+      setTotpSecret(data.totp.secret);
+      toast.success('Authenticator enrollment started. Verify the current six-digit code.');
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : 'Unable to begin authenticator enrollment.');
+    } finally {
+      setMfaBusy(false);
+    }
+  };
+
+  const verifyTotp = async () => {
+    if (!factorId || !/^\d{6}$/.test(verificationCode)) return;
+    setMfaBusy(true);
+    try {
+      const client = await getSupabaseClient();
+      const { error } = await client.auth.mfa.challengeAndVerify({ factorId, code: verificationCode });
+      if (error) throw error;
+      setVerificationCode('');
+      setQrCode('');
+      setTotpSecret('');
+      await refreshMfa();
+      toast.success('AAL2 administrator step-up is active for this session.');
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : 'Authenticator verification failed.');
+    } finally {
+      setMfaBusy(false);
+    }
+  };
+
+  const requestEmailChange = async () => {
+    if (!emailChange.trim()) return;
+    setSaving(true);
+    try {
+      const client = await getSupabaseClient();
+      const { error } = await client.auth.updateUser({ email: emailChange.trim() });
+      if (error) throw error;
+      setEmailChange('');
+      toast.success('Email change requested. Confirm it through the identity-provider email.');
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : 'Unable to request email change.');
     } finally {
       setSaving(false);
     }
@@ -107,8 +189,9 @@ export default function Account() {
 
         <Card>
           <CardHeader><CardTitle>Password & sessions</CardTitle></CardHeader>
-          <CardContent className="flex flex-wrap gap-3">
-            <Button asChild variant="outline"><Link to="/reset-password">Password recovery / change</Link></Button>
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap gap-3">
+              <Button asChild variant="outline"><Link to="/reset-password">Password recovery / change</Link></Button>
             <Button
               variant="outline"
               disabled={!session?.access_token || isDemoMode}
@@ -121,6 +204,34 @@ export default function Account() {
             >
               Record security review
             </Button>
+            </div>
+            <div className="max-w-xl space-y-2 border-t pt-4">
+              <p className="text-sm font-semibold">Change email</p>
+              <p className="text-xs text-muted-foreground">Both the current and new address may require confirmation, according to the identity-provider policy.</p>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input type="email" value={emailChange} onChange={(event) => setEmailChange(event.target.value)} placeholder="New email address" disabled={saving || isDemoMode} />
+                <Button variant="outline" onClick={() => void requestEmailChange()} disabled={saving || isDemoMode || !emailChange.trim()}>Request change</Button>
+              </div>
+            </div>
+            <div className="max-w-xl space-y-3 border-t pt-4">
+              <div>
+                <p className="text-sm font-semibold">Administrator step-up authentication</p>
+                <p className="text-xs text-muted-foreground">Current assurance: <strong>{mfaLevel.toUpperCase()}</strong>. User, access and bootstrap mutations require AAL2.</p>
+              </div>
+              {!qrCode && mfaLevel !== 'aal2' && (
+                <Button variant="outline" onClick={() => void beginTotpEnrollment()} disabled={mfaBusy || isDemoMode}>Enroll authenticator</Button>
+              )}
+              {qrCode && (
+                <div className="space-y-3 rounded-lg border p-4">
+                  <img src={qrCode} alt="Authenticator enrollment QR code" className="h-44 w-44 rounded bg-white p-2" />
+                  <p className="break-all font-mono text-xs">Manual key: {totpSecret}</p>
+                  <div className="flex gap-2">
+                    <Input inputMode="numeric" autoComplete="one-time-code" value={verificationCode} onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Six-digit code" />
+                    <Button onClick={() => void verifyTotp()} disabled={mfaBusy || verificationCode.length !== 6}>Verify</Button>
+                  </div>
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
 
