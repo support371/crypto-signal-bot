@@ -27,8 +27,18 @@ const activeTargets = [
 
 const failures = [];
 
+async function readActiveTarget(path) {
+  try {
+    return await readFile(new URL(`../${path}`, import.meta.url), 'utf8');
+  } catch (error) {
+    if (path === '.circleci/config.yml' && error?.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
 for (const path of activeTargets) {
-  const content = await readFile(new URL(`../${path}`, import.meta.url), 'utf8');
+  const content = await readActiveTarget(path);
+  if (content === null) continue;
   if (content.includes(OBSOLETE_WORKER)) {
     failures.push(`${path}: still references obsolete Worker ${OBSOLETE_WORKER}`);
   }
@@ -53,7 +63,8 @@ const expectedCurrentWorkerPaths = [
 ];
 
 for (const path of expectedCurrentWorkerPaths) {
-  const content = await readFile(new URL(`../${path}`, import.meta.url), 'utf8');
+  const content = await readActiveTarget(path);
+  if (content === null) continue;
   if (!content.includes(CURRENT_WORKER)) {
     failures.push(`${path}: does not identify the canonical migrated Worker`);
   }
