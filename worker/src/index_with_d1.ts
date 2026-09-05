@@ -7,9 +7,11 @@ import {
   type AgentContextEnv,
 } from './agent-context'
 import {
+  ensureManagementSchema,
   handleManagementRequest,
   type ManagementEnv,
 } from './management'
+import { hasActiveGlobalReleaseAdmin } from './management-bootstrap-guard'
 
 type AgentEnv = AgentContextEnv & ManagementEnv
 
@@ -55,6 +57,8 @@ function corsHeaders(request: Request, env: Env): Headers {
     'Access-Control-Expose-Headers': 'X-Request-ID, Retry-After',
     'Cache-Control': 'no-store',
     'Content-Type': 'application/json; charset=utf-8',
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
     Vary: 'Origin',
   })
   return headers
@@ -174,6 +178,28 @@ function handleV2DecisionMetrics(request: Request, env: Env): Response {
   return jsonResponse(request, env, fastPathDecisionMetrics.snapshot(window))
 }
 
+async function guardInitialManagementBootstrap(
+  request: Request,
+  env: AgentEnv,
+): Promise<Response | null> {
+  try {
+    await ensureManagementSchema(env)
+    if (await hasActiveGlobalReleaseAdmin(env)) {
+      return jsonResponse(request, env, {
+        error: 'Initial RELEASE_ADMIN bootstrap is closed because an active global release administrator already exists.',
+        code: 'BOOTSTRAP_CLOSED',
+        live_capabilities_remain_disabled: true,
+      }, 409)
+    }
+    return null
+  } catch {
+    return jsonResponse(request, env, {
+      error: 'Unable to verify management bootstrap state.',
+      code: 'DEPENDENCY_UNAVAILABLE',
+    }, 503)
+  }
+}
+
 export default {
   async fetch(request: Request, env: AgentEnv, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url)
@@ -198,6 +224,11 @@ export default {
 
     if (isManagementBootstrap && !requireApiKey(env, request)) {
       return unauthorizedResponse(request, env)
+    }
+
+    if (isManagementBootstrap) {
+      const bootstrapBlock = await guardInitialManagementBootstrap(request, env)
+      if (bootstrapBlock) return bootstrapBlock
     }
 
     if (isManagementRoute) {
