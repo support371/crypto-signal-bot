@@ -10,6 +10,7 @@ function assert(condition, message) {
 
 const [
   management,
+  bootstrapGuard,
   migration,
   router,
   app,
@@ -21,6 +22,7 @@ const [
   releaseText,
 ] = await Promise.all([
   text('worker/src/management.ts'),
+  text('worker/src/management-bootstrap-guard.ts'),
   text('worker/migrations/031_usage_management.sql'),
   text('worker/src/index_with_d1.ts'),
   text('src/AppCore.tsx'),
@@ -56,6 +58,11 @@ for (const token of [
 
 assert(management.includes("path === '/v1/management/bootstrap'"), 'bootstrap route is missing');
 assert(router.includes('isManagementBootstrap && !requireApiKey(env, request)'), 'bootstrap must require server API key');
+assert(router.includes('guardInitialManagementBootstrap'), 'first-admin bootstrap guard is not connected');
+assert(router.includes('hasActiveGlobalReleaseAdmin'), 'bootstrap closure must consult active RELEASE_ADMIN grants');
+assert(bootstrapGuard.includes("role = 'RELEASE_ADMIN'"), 'bootstrap guard must check RELEASE_ADMIN');
+assert(bootstrapGuard.includes("scope_type = 'GLOBAL'"), 'bootstrap guard must only recognize global release administrators');
+assert(bootstrapGuard.includes('revoked_at IS NULL'), 'revoked release admins must not count as active bootstrap authority');
 assert(router.includes("url.pathname.startsWith('/v1/management/')"), 'management router is not connected to Worker');
 assert(!management.includes('localStorage'), 'Worker management code must never depend on browser storage');
 assert(!management.includes('demo-paper-token'), 'demo token must never be accepted by Worker management auth');
@@ -87,6 +94,8 @@ for (const route of [
 }
 assert(app.includes('AdministrativePage'), 'admin routes are not authorization-gated');
 assert(app.includes('access.canReadAdmin'), 'admin authorization is not derived from Worker management access');
+assert(app.includes('access.roles.size === 0'), 'protected product routes must reject authenticated users without an assigned role');
+assert(app.includes('allowUnassigned'), 'account page must remain reachable to authenticated users awaiting role assignment');
 
 assert(envSource.includes("CANONICAL_PRODUCTION_HOST = 'crypto-signal-bot-indol.vercel.app'"), 'canonical production host lock is missing');
 assert(envSource.includes('configured && !isCanonicalProductionHost()'), 'canonical production must ignore demo identity');
@@ -106,4 +115,4 @@ assert(release.live_trading_enabled === false, 'live trading must remain disable
 assert(release.withdrawals_enabled === false, 'withdrawals must remain disabled');
 assert(release.real_funds_enabled === false, 'real funds must remain disabled');
 
-console.log('Usage-management contract verified: identity, lifecycle, scoped roles, admin/account surfaces, usage/audit evidence, rate limits, and paper/testnet safety are aligned.');
+console.log('Usage-management contract verified: identity, scoped product access, first-admin bootstrap closure, lifecycle, admin/account surfaces, usage/audit evidence, rate limits, and paper/testnet safety are aligned.');
