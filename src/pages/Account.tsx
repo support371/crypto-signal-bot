@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
@@ -14,11 +14,9 @@ export default function Account() {
   const [displayName, setDisplayName] = useState('');
   const [saving, setSaving] = useState(false);
   const profile = access.data?.profile;
-
-  const roleLabel = useMemo(
-    () => access.data?.roles.map((role) => `${role.role} · ${role.scope_type}:${role.scope_key}`).join(', ') || 'No privileged roles',
-    [access.data?.roles],
-  );
+  const roleLabel = access.data?.roles
+    .map((role) => `${role.role} · ${role.scope_type}:${role.scope_key}`)
+    .join(', ') || 'No assigned application roles';
 
   const saveProfile = async () => {
     if (!session?.access_token || !displayName.trim()) return;
