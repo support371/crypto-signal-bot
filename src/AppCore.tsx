@@ -36,7 +36,8 @@ function AccessFailure({ title, detail }: { title: string; detail: string }) {
       <div className="max-w-lg rounded-xl border bg-card p-6 shadow-sm">
         <h1 className="text-xl font-bold">{title}</h1>
         <p className="mt-2 text-sm text-muted-foreground">{detail}</p>
-        <div className="mt-4 flex gap-3 text-sm">
+        <div className="mt-4 flex flex-wrap gap-3 text-sm">
+          <a href="/account" className="underline">Account</a>
           <a href="/auth" className="underline">Sign in</a>
           <a href="/status" className="underline">Production status</a>
         </div>
@@ -45,7 +46,15 @@ function AccessFailure({ title, detail }: { title: string; detail: string }) {
   );
 }
 
-function AccessGate({ children, admin = false }: { children: ReactNode; admin?: boolean }) {
+function AccessGate({
+  children,
+  admin = false,
+  allowUnassigned = false,
+}: {
+  children: ReactNode;
+  admin?: boolean;
+  allowUnassigned?: boolean;
+}) {
   const { user, isLoading, isDemoMode } = useAuth();
   const location = useLocation();
   const access = useManagementAccess();
@@ -80,6 +89,15 @@ function AccessGate({ children, admin = false }: { children: ReactNode; admin?: 
     return <AccessFailure title="Account access blocked" detail={`Account status is ${status}. Contact an authorized administrator.`} />;
   }
 
+  if (!allowUnassigned && access.roles.size === 0) {
+    return (
+      <AccessFailure
+        title="Access assignment pending"
+        detail="Your identity is authenticated, but no application role has been assigned. An authorized RELEASE_ADMIN must grant the appropriate scoped role before protected product access is available."
+      />
+    );
+  }
+
   if (admin && !access.canReadAdmin) {
     return <AccessFailure title="Permission denied" detail="Administrative access requires RISK_ADMIN, AUDITOR, or RELEASE_ADMIN authority." />;
   }
@@ -89,6 +107,10 @@ function AccessGate({ children, admin = false }: { children: ReactNode; admin?: 
 
 function ProtectedPage({ children }: { children: ReactNode }) {
   return <AccessGate>{children}</AccessGate>;
+}
+
+function AccountPage({ children }: { children: ReactNode }) {
+  return <AccessGate allowUnassigned>{children}</AccessGate>;
 }
 
 function AdministrativePage({ children }: { children: ReactNode }) {
@@ -110,7 +132,7 @@ export default function AppCore() {
             <Route path="/backtest" element={<ProtectedPage><Backtest /></ProtectedPage>} />
             <Route path="/portfolio" element={<ProtectedPage><Portfolio /></ProtectedPage>} />
             <Route path="/settings" element={<ProtectedPage><Settings /></ProtectedPage>} />
-            <Route path="/account" element={<ProtectedPage><Account /></ProtectedPage>} />
+            <Route path="/account" element={<AccountPage><Account /></AccountPage>} />
             <Route path="/integrations" element={<ProtectedPage><IntegrationsStatus /></ProtectedPage>} />
             <Route path="/infrastructure" element={<ProtectedPage><Infrastructure /></ProtectedPage>} />
             <Route path="/operator-readiness" element={<ProtectedPage><OperatorReadiness /></ProtectedPage>} />
