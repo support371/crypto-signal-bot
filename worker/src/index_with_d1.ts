@@ -6,8 +6,12 @@ import {
   handleAgentContextRequest,
   type AgentContextEnv,
 } from './agent-context'
+import {
+  handleManagementRequest,
+  type ManagementEnv,
+} from './management'
 
-type AgentEnv = AgentContextEnv
+type AgentEnv = AgentContextEnv & ManagementEnv
 
 type D1ReadonlyRequest = {
   sql?: string
@@ -46,8 +50,9 @@ function corsHeaders(request: Request, env: Env): Headers {
       : configured[0] ?? 'null'
   const headers = new Headers({
     'Access-Control-Allow-Origin': allowedOrigin,
-    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key',
+    'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Request-ID',
+    'Access-Control-Expose-Headers': 'X-Request-ID, Retry-After',
     'Cache-Control': 'no-store',
     'Content-Type': 'application/json; charset=utf-8',
     Vary: 'Origin',
@@ -175,17 +180,30 @@ export default {
 
     const memoryMatch = url.pathname.match(/^\/agent\/memory\/([^/]+)$/)
     const isPrivilegedD1Query = url.pathname === '/d1/query/readonly'
+    const isManagementRoute = url.pathname.startsWith('/v1/management/')
+    const isManagementBootstrap = url.pathname === '/v1/management/bootstrap'
 
     if (request.method === 'OPTIONS' && (
       url.pathname.startsWith('/v2/')
       || Boolean(memoryMatch)
       || isPrivilegedD1Query
+      || isManagementRoute
     )) {
       return new Response(null, { status: 204, headers: corsHeaders(request, env) })
     }
 
     if ((memoryMatch || isPrivilegedD1Query) && !requireApiKey(env, request)) {
       return unauthorizedResponse(request, env)
+    }
+
+    if (isManagementBootstrap && !requireApiKey(env, request)) {
+      return unauthorizedResponse(request, env)
+    }
+
+    if (isManagementRoute) {
+      return handleManagementRequest(request, env, {
+        bootstrapAuthorized: isManagementBootstrap,
+      })
     }
 
     if (request.method === 'GET' && url.pathname === '/v2/infrastructure/status') {
