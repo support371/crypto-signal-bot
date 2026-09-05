@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "npm run verify:production-contract && npm run verify:usage-management && npm run lint && npm run typecheck:architecture && npm run verify:operator-frontend-safety && vite build && npm run verify:frontend-performance",
+    "build": "npm run verify:production-contract && npm run verify:production-targets && npm run verify:usage-management && npm run lint && npm run typecheck:architecture && npm run verify:operator-frontend-safety && vite build && npm run verify:frontend-performance",
     "lint": "eslint src/App.tsx src/AppCore.tsx src/main.tsx src/context/AuthContext.ts src/context/AuthProvider.tsx src/providers/QueryClientProvider.tsx src/lib/env.ts src/lib/backendRuntime.ts src/lib/infrastructureApi.ts src/lib/operatorReadinessApi.ts src/lib/managementApi.ts src/hooks/useManagementAccess.ts src/pages/Infrastructure.tsx src/pages/OperatorReadiness.tsx src/pages/ProductionStatus.tsx src/pages/Account.tsx src/pages/AdminCenter.tsx src/pages/ResetPassword.tsx src/components/LayoutCore.tsx --report-unused-disable-directives --max-warnings 0",
     "lint:legacy": "eslint src --report-unused-disable-directives --max-warnings 0",
     "typecheck": "tsc --noEmit",
@@ -20,8 +20,9 @@
     "verify:ci-independence": "node scripts/verify-ci-independence.mjs && node scripts/verify-release-lock.mjs",
     "verify:deployment": "node scripts/verify-deployed-paper-release.mjs && node scripts/verify-production-attestation.mjs",
     "verify:production-contract": "node scripts/verify-static-production-contract.mjs",
+    "verify:production-targets": "node scripts/verify-production-target-drift.mjs",
     "verify:usage-management": "node --experimental-sqlite --no-warnings worker/scripts/verify-usage-management-migration.mjs && node scripts/verify-usage-management.mjs",
-    "verify:paper-worker-release": "npm --prefix worker ci && npm --prefix worker run build && npm --prefix worker run build:provider-contracts && npm --prefix worker run test:live-foundation && npm --prefix worker run test:provider-contracts && npm --prefix worker run verify:paper-safety && npm --prefix worker run verify:regulated-foundation-safety && npm --prefix worker run verify:certification-safety && npm --prefix worker run verify:migrations && npm run verify:usage-management && cd worker && ./node_modules/.bin/wrangler deploy --dry-run --outdir /tmp/crypto-signal-bot-worker-dry-run --config ../wrangler.toml",
+    "verify:paper-worker-release": "npm run verify:production-targets && npm --prefix worker ci && npm --prefix worker run build && npm --prefix worker run build:provider-contracts && npm --prefix worker run test:live-foundation && npm --prefix worker run test:provider-contracts && npm --prefix worker run verify:paper-safety && npm --prefix worker run verify:regulated-foundation-safety && npm --prefix worker run verify:certification-safety && npm --prefix worker run verify:migrations && npm run verify:usage-management && cd worker && ./node_modules/.bin/wrangler deploy --dry-run --outdir /tmp/crypto-signal-bot-worker-dry-run --config ../wrangler.toml",
     "deploy:paper-worker": "npm run verify:paper-worker-release && npm --prefix worker run deploy && npm --prefix worker run smoke -- https://crypto-signal-bot-api.analyzer-d94.workers.dev",
     "verify:operator-frontend-safety": "node scripts/verify-operator-frontend-safety.mjs",
     "verify:frontend-performance": "node scripts/verify-frontend-performance.mjs"
@@ -71,8 +72,6 @@
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.61.1",
     "react-resizable-panels": "^2.1.9",
-    "react-router-dom": "^7.18.2",
-    "recharts": "^2.15.4",
     "sonner": "^1.7.4",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
