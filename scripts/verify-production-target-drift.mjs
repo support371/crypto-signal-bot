@@ -4,6 +4,9 @@ const CURRENT_WORKER = 'https://crypto-signal-bot-api.analyzer-d94.workers.dev';
 const OBSOLETE_WORKER = 'https://crypto-signal-bot-api.gr8r9bfzry.workers.dev';
 const OBSOLETE_HARDCODED_ACCOUNT = '5918df72bfd0d0389a1894adec5db58f';
 
+// These files actively drive deployments, diagnostics, runtime clients, or
+// machine-readable API contracts. Historical documentation may name a retired
+// host explicitly as retired, but active tooling must never target it.
 const activeTargets = [
   '.circleci/config.yml',
   '.github/workflows/manual.yml',
@@ -20,7 +23,6 @@ const activeTargets = [
   'README_DEPLOY_HANDOFF.md',
   'VERCEL_UPDATE.md',
   'DEPLOYMENT_STATUS.md',
-  'docs/production-readiness.md',
 ];
 
 const failures = [];
