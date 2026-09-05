@@ -1,10 +1,13 @@
 {
   "application": "crypto-signal-bot",
-  "release_contract": "paper-certification-2026-08-15",
+  "release_contract": "paper-certification-2026-09-05",
   "canonical_frontend_url": "https://crypto-signal-bot-indol.vercel.app",
   "dashboard_path": "/dashboard",
+  "account_path": "/account",
+  "admin_path": "/admin",
   "status_path": "/status",
   "attestation_path": "/api/release-attestation",
+  "management_api_path": "/v1/management",
   "backend_url": "https://crypto-signal-bot-api.analyzer-d94.workers.dev",
   "execution_exchange_primary": "btcc",
   "execution_exchange_secondary": "bitget",
@@ -14,5 +17,7 @@
   "network": "testnet",
   "live_trading_enabled": false,
   "withdrawals_enabled": false,
-  "real_funds_enabled": false
+  "real_funds_enabled": false,
+  "provider_mutation_enabled": false,
+  "canonical_demo_identity_enabled": false
 }
