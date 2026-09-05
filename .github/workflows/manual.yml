@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 env:
-  WORKER_URL: https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
+  WORKER_URL: https://crypto-signal-bot-api.analyzer-d94.workers.dev
   FRONTEND_URL: https://crypto-signal-bot-indol.vercel.app
   TRADING_MODE: paper
   EXCHANGE_MODE: paper
