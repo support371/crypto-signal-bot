@@ -2,7 +2,7 @@ name: Keep Render Backend Awake (disabled)
 
 # Disabled after migration to Cloudflare Workers.
 # Active backend:
-# https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
+# https://crypto-signal-bot-api.analyzer-d94.workers.dev
 #
 # This workflow is intentionally manual-only. The old scheduled Render pings
 # created repeated workflow noise against deprecated onrender.com endpoints.
@@ -17,5 +17,5 @@ jobs:
       - name: Explain disabled Render keepalive
         run: |
           echo "Render keepalive is disabled."
-          echo "Active backend is Cloudflare Workers."
+          echo "Active backend is Cloudflare Workers: https://crypto-signal-bot-api.analyzer-d94.workers.dev"
           echo "Use Worker /healthz, /runtime/status, /guardian/status, and /market/feed/status for checks."
