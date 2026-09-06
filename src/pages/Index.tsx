@@ -587,7 +587,7 @@ const Index = () => {
                     onClick={() => setOperationsView(view)}
                     className={`rounded-md border px-3 py-2.5 text-left font-mono text-xs uppercase tracking-[0.12em] transition ${
                       active
-                        ? 'border-primary/60 bg-primary/10 text-primary shadow-neon-cyan'
+                        ? 'border-primary/60 bg-primary/10 text-primary'
                         : 'border-border/60 bg-muted/10 text-muted-foreground hover:border-primary/30 hover:bg-muted/30 hover:text-foreground'
                     }`}
                   >
