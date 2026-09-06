@@ -1,6 +1,7 @@
 import { lazy, Suspense, type ReactNode } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Toaster } from 'sonner';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import { AuthProvider } from './context/AuthProvider';
 import { useAuth } from './context/AuthContext';
 import { useManagementAccess } from './hooks/useManagementAccess';
@@ -156,6 +157,7 @@ export default function AppCore() {
           </Routes>
         </Suspense>
         <Toaster richColors position="top-right" />
+        <SpeedInsights />
       </AuthProvider>
     </QueryClientProvider>
   );
