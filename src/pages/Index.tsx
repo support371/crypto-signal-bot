@@ -81,9 +81,61 @@ function DiagnosticsWarning({
   );
 }
 
+function SectionHeading({
+  eyebrow,
+  title,
+  description,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+      <div>
+        <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-primary/70">{eyebrow}</p>
+        <h2 className="font-display text-lg font-semibold tracking-wide text-foreground">{title}</h2>
+      </div>
+      <p className="max-w-2xl text-xs leading-relaxed text-muted-foreground sm:text-right">{description}</p>
+    </div>
+  );
+}
+
+function StatusTile({
+  label,
+  value,
+  detail,
+  tone = 'neutral',
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  tone?: 'neutral' | 'positive' | 'warning' | 'danger' | 'primary';
+}) {
+  const toneClass =
+    tone === 'positive'
+      ? 'text-accent'
+      : tone === 'warning'
+      ? 'text-warning'
+      : tone === 'danger'
+      ? 'text-destructive'
+      : tone === 'primary'
+      ? 'text-primary'
+      : 'text-foreground';
+
+  return (
+    <div className="cyber-card min-h-[104px] p-4">
+      <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">{label}</p>
+      <p className={`mt-2 font-display text-sm font-semibold tracking-wide ${toneClass}`}>{value}</p>
+      <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">{detail}</p>
+    </div>
+  );
+}
+
 const Index = () => {
   const [selectedSymbol, setSelectedSymbol] = useState('bitcoin');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [operationsView, setOperationsView] = useState<'audit' | 'system' | 'command' | 'monitoring'>('audit');
   const { settings, setSettings } = usePersistedSettings();
   const { isDemoMode } = useAuth();
 
@@ -306,6 +358,40 @@ const Index = () => {
     ? 'bg-destructive'
     : 'bg-accent';
 
+  const guardianState = guardian?.kill_switch_active
+    ? 'HALTED'
+    : guardian?.triggered
+    ? 'ALERT'
+    : guardian
+    ? 'NOMINAL'
+    : 'UNKNOWN';
+
+  const guardianTone = guardian?.kill_switch_active
+    ? 'danger'
+    : guardian?.triggered
+    ? 'warning'
+    : guardian
+    ? 'positive'
+    : 'neutral';
+
+  const signalLabel = signal
+    ? `${signal.direction} · ${signal.confidence}%`
+    : 'WAITING';
+
+  const riskLabel = risk
+    ? risk.approved
+      ? 'APPROVED'
+      : 'BLOCKED'
+    : 'PENDING';
+
+  const marketDataLabel = exchangeStatus?.market_data_mode === 'live_public_paper'
+    ? 'PUBLIC LIVE'
+    : priceSource === 'coingecko'
+    ? 'COINGECKO'
+    : priceSource === 'backend-live'
+    ? 'BACKEND LIVE'
+    : 'CERTIFICATION';
+
   if (showReadinessGate) {
     return (
       <div className="min-h-screen bg-background scanlines flex items-center justify-center">
@@ -337,7 +423,7 @@ const Index = () => {
         onSelect={setSelectedSymbol}
       />
 
-      <main className="container mx-auto p-4 lg:p-6 space-y-4 lg:space-y-6">
+      <main className="container mx-auto space-y-6 p-4 lg:space-y-8 lg:p-6">
         {error && !isConnected && (
           <div className="cyber-card p-3 border-border/40 bg-muted/20">
             <p className="text-muted-foreground font-mono text-xs">⚠ Price data: {error} — retrying…</p>
@@ -359,106 +445,202 @@ const Index = () => {
           <DiagnosticsWarning endpointErrors={endpointErrors} backendUrl={backendUrl} />
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6">
-          <div className="lg:col-span-8">
-            <PriceChart price={selectedCoin} isLoading={isLoading} />
+        <section className="space-y-3">
+          <SectionHeading
+            eyebrow="Command snapshot"
+            title="Execution & Decision State"
+            description="Execution route, Guardian authority, decision quality and connectivity are visible before deeper analysis."
+          />
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <StatusTile
+              label="Execution Route"
+              value="BTCC → BITGET"
+              detail="Primary execution venue with failover hierarchy preserved."
+              tone="primary"
+            />
+            <StatusTile
+              label="Guardian"
+              value={guardianState}
+              detail={guardian?.kill_switch_reason || guardian?.trigger_reason || 'No active Guardian halt condition.'}
+              tone={guardianTone}
+            />
+            <StatusTile
+              label="Signal / Risk"
+              value={`${signalLabel} · ${riskLabel}`}
+              detail={selectedCoin ? `${selectedCoin.symbol.toUpperCase()} decision state` : 'Select a market to evaluate.'}
+              tone={risk?.approved ? 'positive' : risk ? 'warning' : 'neutral'}
+            />
+            <StatusTile
+              label="Connectivity"
+              value={isConnected ? (wsConnected ? 'REST + WS ONLINE' : 'REST ONLINE') : 'OFFLINE'}
+              detail={`${marketDataLabel} market data · ${systemMode.toUpperCase()} / TESTNET`}
+              tone={isConnected ? 'positive' : 'danger'}
+            />
           </div>
+        </section>
 
-          <div className="lg:col-span-4 space-y-4 lg:space-y-6">
-            <SignalPanel signal={signal} isLoading={isLoading || signalLoading} />
-            <RiskGauge risk={risk} isLoading={isLoading || signalLoading} />
+        <section className="space-y-3">
+          <SectionHeading
+            eyebrow="Primary workspace"
+            title="Market Decision Deck"
+            description="Price context and market evidence stay on the left; signal, risk and Guardian authority stay together on the decision rail."
+          />
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-12 xl:gap-6">
+            <div className="space-y-4 xl:col-span-8 xl:space-y-6">
+              <PriceChart price={selectedCoin} isLoading={isLoading} />
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-6">
+                <MicrostructureDisplay features={microstructure} isLoading={isLoading || signalLoading} />
+                <AIInsightCard
+                  selectedCoin={selectedCoin}
+                  signal={signal?.direction}
+                  riskScore={risk?.score}
+                />
+              </div>
+            </div>
+
+            <aside className="space-y-4 xl:col-span-4 xl:space-y-6">
+              <SignalPanel signal={signal} isLoading={isLoading || signalLoading} />
+              <RiskGauge risk={risk} isLoading={isLoading || signalLoading} />
+              <GuardianPanel
+                guardian={guardian}
+                isLoading={guardianLoading}
+                authEnabled={config?.auth_enabled}
+                onKillSwitchToggle={() => {
+                  refetchGuardian();
+                  refetchStatus();
+                }}
+              />
+            </aside>
           </div>
-        </div>
+        </section>
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 lg:gap-6">
-          <MicrostructureDisplay features={microstructure} isLoading={isLoading || signalLoading} />
-          <AIInsightCard
-            selectedCoin={selectedCoin}
-            signal={signal?.direction}
-            riskScore={risk?.score}
+        <section className="space-y-3">
+          <SectionHeading
+            eyebrow="Exposure"
+            title="Portfolio & P&L"
+            description="Position management and certification earnings are separated from signal generation so exposure remains readable as its own layer."
           />
-          <GuardianPanel
-            guardian={guardian}
-            isLoading={guardianLoading}
-            authEnabled={config?.auth_enabled}
-            onKillSwitchToggle={() => {
-              refetchGuardian();
-              refetchStatus();
-            }}
-          />
-          <PortfolioPanel
-            portfolio={portfolio}
-            isLoading={portfolioLoading}
-            selectedSymbol={selectedCoin?.symbol ?? 'BTC'}
-            selectedPrice={selectedCoin?.price ?? 0}
-            signal={signal}
-            risk={risk}
-            onRefetch={refetchPortfolio}
-            onActionComplete={handlePortfolioActionComplete}
-            tradingMode={systemMode}
-          />
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 lg:gap-6">
-          <div className="lg:col-span-1">
-            <div className="space-y-4 lg:space-y-6">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:gap-6">
+            <div className="lg:col-span-8">
+              <PortfolioPanel
+                portfolio={portfolio}
+                isLoading={portfolioLoading}
+                selectedSymbol={selectedCoin?.symbol ?? 'BTC'}
+                selectedPrice={selectedCoin?.price ?? 0}
+                signal={signal}
+                risk={risk}
+                onRefetch={refetchPortfolio}
+                onActionComplete={handlePortfolioActionComplete}
+                tradingMode={systemMode}
+              />
+            </div>
+            <div className="lg:col-span-4">
               <EarningsPanel
                 summary={earningsSummary}
                 trades={earningsTrades}
                 isLoading={earningsLoading}
                 onReset={handleEarningsReset}
               />
+            </div>
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <SectionHeading
+            eyebrow="Opportunity scanner"
+            title="Market Surge Detection"
+            description="Fast-moving market opportunities remain visible without competing with the core price, signal and Guardian decision workflow."
+          />
+          <SurgePanel
+            status={surgeStatus}
+            isLoading={surgeLoading}
+            error={surgeError}
+            onRefetch={refetchSurge}
+            soundEnabled={surgeSound}
+            onToggleSound={toggleSurgeSound}
+          />
+        </section>
+
+        <section className="space-y-3">
+          <SectionHeading
+            eyebrow="Operations"
+            title="Evidence & Control Layer"
+            description="Operational evidence, telemetry and controls are one click away instead of occupying the trading decision surface at all times."
+          />
+
+          <div className="cyber-card p-2">
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-4" role="tablist" aria-label="Operations workspace">
+              {(['audit', 'system', 'command', 'monitoring'] as const).map((view) => {
+                const labels = {
+                  audit: 'Audit Trail',
+                  system: 'System Metrics',
+                  command: 'Command Console',
+                  monitoring: 'Monitoring',
+                };
+                const active = operationsView === view;
+                return (
+                  <button
+                    key={view}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setOperationsView(view)}
+                    className={`rounded-md border px-3 py-2.5 text-left font-mono text-xs uppercase tracking-[0.12em] transition ${
+                      active
+                        ? 'border-primary/60 bg-primary/10 text-primary'
+                        : 'border-border/60 bg-muted/10 text-muted-foreground hover:border-primary/30 hover:bg-muted/30 hover:text-foreground'
+                    }`}
+                  >
+                    {labels[view]}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div role="tabpanel">
+            {operationsView === 'audit' && (
+              <AuditTrailPanel
+                audit={audit}
+                isLoading={auditLoading}
+                onRefetch={refetchAudit}
+              />
+            )}
+
+            {operationsView === 'system' && (
               <SystemMetricsPanel
                 metrics={metrics}
                 isLoading={metricsLoading}
                 error={metricsError}
                 onRefetch={refetchMetrics}
               />
-            </div>
-          </div>
+            )}
 
-          <div className="lg:col-span-3">
-            <AuditTrailPanel
-              audit={audit}
-              isLoading={auditLoading}
-              onRefetch={refetchAudit}
-            />
-          </div>
-        </div>
+            {operationsView === 'command' && (
+              <CommandConsolePanel
+                status={consoleStatus}
+                isLoading={consoleLoading}
+                onSubmitTrade={submitTrade}
+                onToggleKillSwitch={toggleKillSwitch}
+                onSetSignalOverride={setSignalOverride}
+                onCancelSignalOverride={cancelSignalOverride}
+                onReEvalSignals={reEvalSignals}
+                onResetGuardian={resetGuardian}
+                onResetPortfolio={resetPortfolio}
+                onRefetch={refetchConsole}
+              />
+            )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6 mb-4">
-          <div className="lg:col-span-3">
-            <SurgePanel
-              status={surgeStatus}
-              isLoading={surgeLoading}
-              error={surgeError}
-              onRefetch={refetchSurge}
-              soundEnabled={surgeSound}
-              onToggleSound={toggleSurgeSound}
-            />
+            {operationsView === 'monitoring' && (
+              <MonitoringPanel
+                status={monitorStatus}
+                isLoading={monitorLoading}
+                onRunNow={runNow}
+                onRefetch={refetchMonitor}
+              />
+            )}
           </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
-          <CommandConsolePanel
-            status={consoleStatus}
-            isLoading={consoleLoading}
-            onSubmitTrade={submitTrade}
-            onToggleKillSwitch={toggleKillSwitch}
-            onSetSignalOverride={setSignalOverride}
-            onCancelSignalOverride={cancelSignalOverride}
-            onReEvalSignals={reEvalSignals}
-            onResetGuardian={resetGuardian}
-            onResetPortfolio={resetPortfolio}
-            onRefetch={refetchConsole}
-          />
-          <MonitoringPanel
-            status={monitorStatus}
-            isLoading={monitorLoading}
-            onRunNow={runNow}
-            onRefetch={refetchMonitor}
-          />
-        </div>
+        </section>
       </main>
 
       <footer className="border-t border-border bg-muted/20 py-4 mt-8">
