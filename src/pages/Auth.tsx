@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { z } from 'zod';
-import { Loader2, TrendingUp, Shield, AlertTriangle } from 'lucide-react';
+import { Loader2, TrendingUp, Shield, AlertTriangle, LogOut } from 'lucide-react';
 import { resolvePostAuthPath } from '@/lib/authNavigation';
 
 const authSchema = z.object({
@@ -16,10 +16,6 @@ const authSchema = z.object({
   password: z.string().min(6, 'Password must be at least 6 characters'),
 });
 
-/**
- * Map Supabase auth error messages to user-friendly messages.
- * Uses case-insensitive matching for resilience across Supabase versions.
- */
 function friendlyAuthError(message: string): string {
   const lower = message.toLowerCase();
 
@@ -45,26 +41,26 @@ function friendlyAuthError(message: string): string {
     return 'Sign up is currently disabled. Please contact support.';
   }
 
-  // Fallback — show the original message
   return message || 'An unexpected error occurred. Please try again.';
 }
 
 const Auth = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, isLoading: authLoading, signIn, signUp, authUnconfigured, isDemoMode } = useAuth();
+  const {
+    user,
+    isLoading: authLoading,
+    signIn,
+    signUp,
+    signOut,
+    authUnconfigured,
+    isDemoMode,
+  } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
   const returnPath = resolvePostAuthPath((location.state as { from?: unknown } | null)?.from);
-
-  // Redirect if already logged in (including demo mode)
-  useEffect(() => {
-    if (user) {
-      navigate(returnPath, { replace: true });
-    }
-  }, [user, navigate, returnPath]);
 
   const validateForm = () => {
     const result = authSchema.safeParse({ email, password });
@@ -123,6 +119,18 @@ const Auth = () => {
     }
   };
 
+  const handleSwitchAccount = async () => {
+    setIsLoading(true);
+    try {
+      await signOut();
+      toast.success('Signed out. You can now use another account.');
+    } catch {
+      toast.error('Unable to sign out this session.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   if (authLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -131,7 +139,60 @@ const Auth = () => {
     );
   }
 
-  // Show configuration error when Supabase is not set up and demo mode is not enabled
+  if (user && !isDemoMode) {
+    return (
+      <div className="min-h-screen bg-background scanlines flex flex-col items-center justify-center p-4">
+        <div className="mb-8 text-center">
+          <div className="flex items-center justify-center gap-2 mb-2">
+            <TrendingUp className="h-8 w-8 text-accent" />
+            <h1 className="text-2xl font-bold font-mono tracking-wider text-accent">
+              CRYPTO SIGNAL BOT V2
+            </h1>
+          </div>
+          <p className="text-muted-foreground font-mono text-sm">Secure account gateway</p>
+        </div>
+
+        <Card className="w-full max-w-md cyber-card">
+          <CardHeader>
+            <CardTitle className="font-mono flex items-center gap-2">
+              <Shield className="h-5 w-5 text-accent" />
+              Session already authenticated
+            </CardTitle>
+            <CardDescription>
+              {user.email || 'This browser has an active authenticated session.'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              Continue with this account, review account access, or sign out to use a different login.
+            </p>
+          </CardContent>
+          <CardFooter className="flex-col gap-2">
+            <Button className="w-full font-mono" onClick={() => navigate(returnPath, { replace: true })}>
+              Continue
+            </Button>
+            <Button variant="outline" className="w-full font-mono" onClick={() => navigate('/account')}>
+              Account & access
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full font-mono"
+              onClick={() => void handleSwitchAccount()}
+              disabled={isLoading}
+            >
+              {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogOut className="mr-2 h-4 w-4" />}
+              Sign out and use another account
+            </Button>
+          </CardFooter>
+        </Card>
+
+        <p className="mt-4 text-xs text-muted-foreground font-mono">
+          Paper / testnet release · No provider mutation or real funds
+        </p>
+      </div>
+    );
+  }
+
   if (authUnconfigured) {
     return (
       <div className="min-h-screen bg-background scanlines flex flex-col items-center justify-center p-4">
@@ -139,7 +200,7 @@ const Auth = () => {
           <div className="flex items-center justify-center gap-2 mb-2">
             <TrendingUp className="h-8 w-8 text-accent" />
             <h1 className="text-2xl font-bold font-mono tracking-wider text-accent">
-              CRYPTO RISK AGENT
+              CRYPTO SIGNAL BOT V2
             </h1>
           </div>
         </div>
@@ -168,18 +229,10 @@ const Auth = () => {
             </div>
           </CardContent>
           <CardFooter className="flex-col gap-2">
-            <Button
-              variant="outline"
-              className="w-full font-mono"
-              onClick={() => navigate('/')}
-            >
+            <Button variant="outline" className="w-full font-mono" onClick={() => navigate('/')}>
               View Public Home
             </Button>
-            <Button
-              variant="outline"
-              className="w-full font-mono"
-              onClick={() => navigate('/waitlist')}
-            >
+            <Button variant="outline" className="w-full font-mono" onClick={() => navigate('/waitlist')}>
               Join Waitlist
             </Button>
           </CardFooter>
@@ -192,7 +245,6 @@ const Auth = () => {
     );
   }
 
-  // If in demo mode, user should already be set and redirected - but show a message just in case
   if (isDemoMode) {
     return (
       <div className="min-h-screen bg-background scanlines flex flex-col items-center justify-center p-4">
@@ -205,9 +257,8 @@ const Auth = () => {
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground mb-4">
-              You are running in demo mode. Redirecting to dashboard...
+              This preview is using the local certification identity.
             </p>
-            <Loader2 className="h-6 w-6 animate-spin text-accent mx-auto" />
           </CardContent>
         </Card>
       </div>
@@ -216,16 +267,15 @@ const Auth = () => {
 
   return (
     <div className="min-h-screen bg-background scanlines flex flex-col items-center justify-center p-4">
-      {/* Logo/Header */}
       <div className="mb-8 text-center">
         <div className="flex items-center justify-center gap-2 mb-2">
           <TrendingUp className="h-8 w-8 text-accent" />
           <h1 className="text-2xl font-bold font-mono tracking-wider text-accent">
-            CRYPTO RISK AGENT
+            CRYPTO SIGNAL BOT V2
           </h1>
         </div>
         <p className="text-muted-foreground font-mono text-sm">
-          Auth Gateway for the Trading Control Center
+          Secure Auth Gateway for the Trading Control Center
         </p>
       </div>
 
@@ -243,9 +293,7 @@ const Auth = () => {
                   <Shield className="h-5 w-5 text-accent" />
                   Welcome Back
                 </CardTitle>
-                <CardDescription>
-                  Sign in to access your trading dashboard
-                </CardDescription>
+                <CardDescription>Sign in to access your trading dashboard</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
@@ -259,9 +307,7 @@ const Auth = () => {
                     className="font-mono"
                     disabled={isLoading}
                   />
-                  {errors.email && (
-                    <p className="text-xs text-destructive">{errors.email}</p>
-                  )}
+                  {errors.email && <p className="text-xs text-destructive">{errors.email}</p>}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="signin-password" className="font-mono">Password</Label>
@@ -274,25 +320,14 @@ const Auth = () => {
                     className="font-mono"
                     disabled={isLoading}
                   />
-                  {errors.password && (
-                    <p className="text-xs text-destructive">{errors.password}</p>
-                  )}
+                  {errors.password && <p className="text-xs text-destructive">{errors.password}</p>}
                 </div>
               </CardContent>
               <CardFooter>
-                <Button
-                  type="submit"
-                  className="w-full font-mono"
-                  disabled={isLoading}
-                >
+                <Button type="submit" className="w-full font-mono" disabled={isLoading}>
                   {isLoading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Signing In...
-                    </>
-                  ) : (
-                    'Sign In'
-                  )}
+                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Signing In...</>
+                  ) : 'Sign In'}
                 </Button>
               </CardFooter>
             </form>
@@ -305,9 +340,7 @@ const Auth = () => {
                   <TrendingUp className="h-5 w-5 text-accent" />
                   Create Account
                 </CardTitle>
-                <CardDescription>
-                  Create an account for the control center
-                </CardDescription>
+                <CardDescription>Create an account for the control center</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
@@ -321,9 +354,7 @@ const Auth = () => {
                     className="font-mono"
                     disabled={isLoading}
                   />
-                  {errors.email && (
-                    <p className="text-xs text-destructive">{errors.email}</p>
-                  )}
+                  {errors.email && <p className="text-xs text-destructive">{errors.email}</p>}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="signup-password" className="font-mono">Password</Label>
@@ -336,25 +367,14 @@ const Auth = () => {
                     className="font-mono"
                     disabled={isLoading}
                   />
-                  {errors.password && (
-                    <p className="text-xs text-destructive">{errors.password}</p>
-                  )}
+                  {errors.password && <p className="text-xs text-destructive">{errors.password}</p>}
                 </div>
               </CardContent>
               <CardFooter>
-                <Button
-                  type="submit"
-                  className="w-full font-mono"
-                  disabled={isLoading}
-                >
+                <Button type="submit" className="w-full font-mono" disabled={isLoading}>
                   {isLoading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Creating Account...
-                    </>
-                  ) : (
-                    'Create Account'
-                  )}
+                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Creating Account...</>
+                  ) : 'Create Account'}
                 </Button>
               </CardFooter>
             </form>
