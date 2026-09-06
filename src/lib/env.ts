@@ -1,3 +1,9 @@
+import {
+  SUPABASE_CONFIGURED,
+  SUPABASE_PUBLISHABLE_KEY,
+  SUPABASE_URL,
+} from '@/integrations/supabase/config';
+
 export interface FrontendEnvValidation {
   ok: boolean;
   missingRequired: string[];
@@ -105,12 +111,8 @@ export function validateFrontendEnv(): FrontendEnvValidation {
   );
   const backendUrl = configuredBackendUrl ? normalizeBackendUrl(configuredBackendUrl) : undefined;
   const configuredWsUrl = readString('VITE_WS_URL', 'VITE_WS_BASE_URL');
-  const supabaseUrl = readString('VITE_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL');
-  const supabaseKey = readString(
-    'VITE_SUPABASE_PUBLISHABLE_KEY',
-    'VITE_SUPABASE_ANON_KEY',
-    'NEXT_PUBLIC_SUPABASE_ANON_KEY',
-  );
+  const supabaseUrl = SUPABASE_URL;
+  const supabaseKey = SUPABASE_PUBLISHABLE_KEY;
 
   if (!backendUrl) missingRequired.push('VITE_BACKEND_URL');
   if (!demoMode && !supabaseUrl) missingRequired.push('VITE_SUPABASE_URL');
@@ -141,7 +143,7 @@ export function validateFrontendEnv(): FrontendEnvValidation {
     missingRequired,
     warnings,
     backendUrl: backendUrl ?? null,
-    supabaseConfigured: Boolean(supabaseUrl && supabaseKey),
+    supabaseConfigured: SUPABASE_CONFIGURED,
     demoMode,
   };
 }
@@ -157,13 +159,8 @@ const backendUrl = (() => {
 export const env: ValidatedEnv = {
   apiBaseUrl: backendUrl,
   wsBaseUrl: backendUrl ? getConfiguredWebSocketUrl() : '',
-  supabaseUrl: readString('VITE_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL') ?? '',
-  supabaseAnonKey:
-    readString(
-      'VITE_SUPABASE_PUBLISHABLE_KEY',
-      'VITE_SUPABASE_ANON_KEY',
-      'NEXT_PUBLIC_SUPABASE_ANON_KEY',
-    ) ?? '',
+  supabaseUrl: SUPABASE_URL ?? '',
+  supabaseAnonKey: SUPABASE_PUBLISHABLE_KEY ?? '',
   paperTradingMode: true,
   demoMode: isDemoModeEnabled(),
   appVersion: readString('VITE_APP_VERSION') ?? '2.0.0',
