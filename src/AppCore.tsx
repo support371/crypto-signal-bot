@@ -110,6 +110,13 @@ function ProtectedPage({ children }: { children: ReactNode }) {
   return <AccessGate>{children}</AccessGate>;
 }
 
+function DashboardPage({ children }: { children: ReactNode }) {
+  // The dashboard is the authenticated inspection surface for this paper/testnet
+  // release. An ACTIVE identity may view it before scoped product roles are
+  // assigned; privileged/admin routes and server-side mutations remain role-gated.
+  return <AccessGate allowUnassigned>{children}</AccessGate>;
+}
+
 function AccountPage({ children }: { children: ReactNode }) {
   return <AccessGate allowUnassigned>{children}</AccessGate>;
 }
@@ -129,7 +136,7 @@ export default function AppCore() {
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/waitlist" element={<Waitlist />} />
             <Route path="/status" element={<ProductionStatus />} />
-            <Route path="/dashboard" element={<ProtectedPage><Index /></ProtectedPage>} />
+            <Route path="/dashboard" element={<DashboardPage><Index /></DashboardPage>} />
             <Route path="/backtest" element={<ProtectedPage><Backtest /></ProtectedPage>} />
             <Route path="/portfolio" element={<ProtectedPage><Portfolio /></ProtectedPage>} />
             <Route path="/settings" element={<ProtectedPage><Settings /></ProtectedPage>} />
