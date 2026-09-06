@@ -1,4 +1,8 @@
 import { createContext, useContext } from "react";
+import {
+  SUPABASE_CONFIGURED,
+} from "@/integrations/supabase/config";
+import { getSupabaseClient as getConfiguredSupabaseClient } from "@/integrations/supabase/client";
 
 export interface AuthUser {
   id: string;
@@ -31,20 +35,12 @@ export function useAuth(): AuthContextValue {
   return ctx;
 }
 
-const SUPABASE_URL = (
-  import.meta.env.VITE_SUPABASE_URL ||
-  import.meta.env.NEXT_PUBLIC_SUPABASE_URL
-) as string | undefined;
-
-const SUPABASE_KEY = (
-  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-  import.meta.env.VITE_SUPABASE_ANON_KEY ||
-  import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-) as string | undefined;
-
-export const isSupabaseConfigured = !!(SUPABASE_URL && SUPABASE_KEY);
-
-let _supabaseClient: import("@supabase/supabase-js").SupabaseClient | null = null;
+/**
+ * Canonical authentication availability flag.
+ * Keep this sourced from the shared Supabase configuration module so production
+ * fallback configuration and hosting-environment overrides cannot drift apart.
+ */
+export const isSupabaseConfigured = SUPABASE_CONFIGURED;
 
 export async function getSupabaseClient() {
   if (!isSupabaseConfigured) {
@@ -53,15 +49,5 @@ export async function getSupabaseClient() {
       "VITE_SUPABASE_PUBLISHABLE_KEY as Vercel environment variables."
     );
   }
-  if (!_supabaseClient) {
-    const { createClient } = await import("@supabase/supabase-js");
-    _supabaseClient = createClient(SUPABASE_URL!, SUPABASE_KEY!, {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: true,
-      },
-    });
-  }
-  return _supabaseClient;
+  return getConfiguredSupabaseClient();
 }
