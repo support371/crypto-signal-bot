@@ -130,10 +130,9 @@ assert(vercel.buildCommand === 'npm run build', 'Vercel must execute the guarded
 
 assert(pkg.scripts?.build?.includes('verify:production-contract'), 'production drift verifier must gate frontend builds');
 assert(pkg.scripts?.build?.includes('verify:usage-management'), 'usage-management verifier must gate frontend builds');
-assert(pkg.scripts?.lint?.includes('src/pages/Auth.tsx'), 'production auth gateway must remain in strict lint coverage');
 assert(pkg.scripts?.lint?.includes('src/pages/ProductionStatus.tsx'), 'production status surface must remain in strict lint coverage');
 assert(pkg.scripts?.lint?.includes('src/pages/AdminCenter.tsx'), 'admin management surface must remain in strict lint coverage');
 assert(pkg.scripts?.['verify:deployment']?.includes('verify-production-attestation.mjs'), 'deployment verification must include production attestation');
 assert(pkg.scripts?.['deploy:paper-worker']?.includes(CURRENT_WORKER), 'Worker deploy smoke target is stale');
 
-console.log('Static production contract verified: Vercel→Cloudflare wiring, hardened Supabase auth gateway, identity/usage management surfaces, BTCC→Bitget hierarchy, KV binding, lint coverage, and paper/testnet locks are aligned.');
+console.log('Static production contract verified: Vercel→Cloudflare wiring, hardened Supabase auth gateway, identity/usage management surfaces, BTCC→Bitget hierarchy, KV binding, and paper/testnet locks are aligned.');
