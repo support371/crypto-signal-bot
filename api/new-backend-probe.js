@@ -2,6 +2,7 @@ const WORKER = 'https://crypto-signal-bot-api.analyzer-d94.workers.dev';
 const PRIMARY_EXECUTION_EXCHANGE = 'btcc';
 const SECONDARY_EXECUTION_EXCHANGE = 'bitget';
 const REQUEST_TIMEOUT_MS = 8000;
+const MANAGEMENT_PATH = '/v1/management/me';
 
 const endpointChecks = [
   '/healthz',
@@ -73,7 +74,7 @@ function circuitBreakerClosed(circuitPayload, source) {
   return Boolean(adapter) && adapter.open === false;
 }
 
-function buildAttestation(results) {
+function buildAttestation(results, management) {
   const health = findResult(results, '/healthz');
   const runtime = findResult(results, '/runtime/status');
   const infrastructure = findResult(results, '/v2/infrastructure/status');
@@ -191,10 +192,35 @@ function buildAttestation(results) {
     'Bitget circuit breaker must be present and closed',
   );
 
+  const managementCode = isRecord(management?.body) ? management.body.code : null;
+  const managementRoutePresent = management?.status !== null && management?.status !== 404;
+  const identityProviderConfigured = managementRoutePresent
+    && !(management?.status === 503 && managementCode === 'AUTH_PROVIDER_UNCONFIGURED');
+  const managementAuthEnforced = management?.status === 401 && managementCode === 'UNAUTHENTICATED';
+
+  addInvariant(
+    invariants,
+    'management:route-present',
+    managementRoutePresent,
+    `anonymous management probe status=${management?.status ?? 'unreachable'}`,
+  );
+  addInvariant(
+    invariants,
+    'management:identity-provider-configured',
+    identityProviderConfigured,
+    `code=${managementCode ?? 'none'}`,
+  );
+  addInvariant(
+    invariants,
+    'management:authentication-enforced',
+    managementAuthEnforced,
+    `expected 401 UNAUTHENTICATED; got status=${management?.status ?? 'unreachable'} code=${managementCode ?? 'none'}`,
+  );
+
   const failures = invariants.filter((item) => !item.passed);
   return {
     ok: failures.length === 0,
-    attestation_version: '2026-09-04.1',
+    attestation_version: '2026-09-06.1',
     generated_at: new Date().toISOString(),
     worker: WORKER,
     execution: {
@@ -213,6 +239,14 @@ function buildAttestation(results) {
     storage: {
       d1_status: infrastructure?.body?.projections?.d1_status ?? null,
       agent_memory_available: agent?.body?.memory_available ?? null,
+    },
+    management: {
+      route_present: managementRoutePresent,
+      identity_provider_configured: identityProviderConfigured,
+      authentication_enforced: managementAuthEnforced,
+      anonymous_status: management?.status ?? null,
+      anonymous_code: managementCode ?? null,
+      latency_ms: management?.latency_ms ?? null,
     },
     invariants,
     failures,
@@ -238,7 +272,10 @@ export default async function handler(req, res) {
     return res.status(405).json({ ok: false, error: 'method_not_allowed' });
   }
 
-  const results = await Promise.all(endpointChecks.map((path) => probe(path)));
-  const attestation = buildAttestation(results);
+  const [results, management] = await Promise.all([
+    Promise.all(endpointChecks.map((path) => probe(path))),
+    probe(MANAGEMENT_PATH),
+  ]);
+  const attestation = buildAttestation(results, management);
   return res.status(attestation.ok ? 200 : 503).json(attestation);
 }
