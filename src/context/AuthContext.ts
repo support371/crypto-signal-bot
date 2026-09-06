@@ -1,8 +1,5 @@
 import { createContext, useContext } from "react";
-import {
-  SUPABASE_CONFIGURED,
-} from "@/integrations/supabase/config";
-import { getSupabaseClient as getConfiguredSupabaseClient } from "@/integrations/supabase/client";
+import { SUPABASE_CONFIGURED } from "@/integrations/supabase/config";
 
 export interface AuthUser {
   id: string;
@@ -42,6 +39,10 @@ export function useAuth(): AuthContextValue {
  */
 export const isSupabaseConfigured = SUPABASE_CONFIGURED;
 
+/**
+ * Load the Supabase SDK only when an auth operation is actually needed. This keeps
+ * the public trading-terminal entry bundle within its production performance budget.
+ */
 export async function getSupabaseClient() {
   if (!isSupabaseConfigured) {
     throw new Error(
@@ -49,5 +50,8 @@ export async function getSupabaseClient() {
       "VITE_SUPABASE_PUBLISHABLE_KEY as Vercel environment variables."
     );
   }
+  const { getSupabaseClient: getConfiguredSupabaseClient } = await import(
+    "@/integrations/supabase/client"
+  );
   return getConfiguredSupabaseClient();
 }
