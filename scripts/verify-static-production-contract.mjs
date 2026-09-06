@@ -76,6 +76,7 @@ assert(release.canonical_demo_identity_enabled === false, 'canonical production 
 assert(envSource.includes(`CURRENT_PRODUCTION_BACKEND_URL = '${CURRENT_WORKER}'`), 'frontend runtime Worker constant drifted');
 assert(envSource.includes("CANONICAL_PRODUCTION_HOST = 'crypto-signal-bot-indol.vercel.app'"), 'canonical host demo lock drifted');
 assert(envSource.includes('configured && !isCanonicalProductionHost()'), 'canonical domain must suppress demo identity');
+assert(envSource.includes('if (import.meta.env.PROD) return CURRENT_PRODUCTION_BACKEND_URL'), 'production management client must fall back to the canonical Worker when VITE_BACKEND_URL is omitted');
 assert(envSource.includes("from '@/integrations/supabase/config'"), 'runtime diagnostics must consume canonical Supabase config');
 assert(envSource.includes('supabaseConfigured: SUPABASE_CONFIGURED'), 'runtime diagnostics must report canonical Supabase readiness');
 assert(authContextSource.includes('SUPABASE_CONFIGURED'), 'AuthContext must consume canonical Supabase readiness');
