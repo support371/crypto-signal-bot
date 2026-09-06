@@ -26,8 +26,9 @@ const MOCK_SYMBOLS = [
   'LINK/USDT',
 ];
 
-const MOCK_SIGNAL_TYPES = ['BUY', 'SELL', 'HOLD'];
-const MOCK_SIGNAL_STRENGTHS = ['STRONG', 'MEDIUM', 'WEAK'];
+const MOCK_SIGNAL_TYPES: MockSignal['signal'][] = ['BUY', 'SELL', 'HOLD'];
+const MOCK_SIGNAL_STRENGTHS: MockSignal['strength'][] = ['STRONG', 'MEDIUM', 'WEAK'];
+const MOCK_ORDER_STATUSES: MockOrder['status'][] = ['PENDING', 'FILLED', 'CANCELLED'];
 
 /**
  * Generate mock exchange data
@@ -102,13 +103,15 @@ export function generateMockOrder(overrides: Partial<MockOrder> = {}): MockOrder
   
   return {
     id: `mock-order-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    userId: 'mock-user-id',
+    exchangeId: 'paper-exchange',
     symbol,
     side,
     type: 'LIMIT',
     price: 100 + Math.random() * 90000,
     amount: 0.001 + Math.random() * 10,
     filled: Math.random(),
-    status: ['PENDING', 'FILLED', 'CANCELLED'][Math.floor(Math.random() * 3)],
+    status: MOCK_ORDER_STATUSES[Math.floor(Math.random() * MOCK_ORDER_STATUSES.length)],
     createdAt: new Date(Date.now() - Math.random() * 86400000).toISOString(),
     updatedAt: new Date().toISOString(),
     isMock: true,
@@ -126,11 +129,15 @@ export function generateMockTrade(): MockTrade {
   
   return {
     id: `mock-trade-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    userId: 'mock-user-id',
+    orderId: `mock-order-${Date.now()}`,
+    exchangeId: 'paper-exchange',
     symbol,
     side: Math.random() > 0.5 ? 'BUY' : 'SELL',
     price: 100 + Math.random() * 90000,
     amount: 0.001 + Math.random() * 10,
     fee: 0.001,
+    feeCurrency: 'USDT',
     profit: (Math.random() - 0.5) * 1000,
     profitPercent: (Math.random() - 0.5) * 10,
     createdAt: new Date(Date.now() - Math.random() * 86400000).toISOString(),
@@ -164,6 +171,7 @@ export function generateMockSignal(): MockSignal {
       bollinger: Math.random() * 2 - 1,
       volume: Math.random() * 100,
     },
+    status: 'ACTIVE',
     createdAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 3600000).toISOString(),
     isMock: true,

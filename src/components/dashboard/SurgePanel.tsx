@@ -1,5 +1,4 @@
 // src/components/dashboard/SurgePanel.tsx
-import { useState } from 'react';
 import { Zap, ShieldCheck, TrendingUp, AlertTriangle, RefreshCw, Activity, Volume2, VolumeX } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SurgeScannerStatus, SymbolSurgeStatus } from '@/hooks/useSurgeScanner';

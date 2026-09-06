@@ -4,7 +4,7 @@
  * Global toast notification system for displaying temporary messages.
  */
 
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '../lib/utils';
 import { X, CheckCircle, XCircle, AlertCircle, Info } from 'lucide-react';
@@ -48,7 +48,7 @@ interface ToastProps {
 function ToastItem({ toast, onDismiss }: ToastProps) {
   const [isVisible, setIsVisible] = useState(true);
 
-  useState(() => {
+  useEffect(() => {
     if (toast.duration !== undefined && toast.duration > 0) {
       const timer = setTimeout(() => {
         setIsVisible(false);

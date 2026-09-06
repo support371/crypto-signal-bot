@@ -6,8 +6,14 @@ import {
   handleAgentContextRequest,
   type AgentContextEnv,
 } from './agent-context'
+import {
+  ensureManagementSchema,
+  handleManagementRequest,
+  type ManagementEnv,
+} from './management'
+import { hasActiveGlobalReleaseAdmin } from './management-bootstrap-guard'
 
-type AgentEnv = AgentContextEnv
+type AgentEnv = AgentContextEnv & ManagementEnv
 
 type D1ReadonlyRequest = {
   sql?: string
@@ -46,10 +52,13 @@ function corsHeaders(request: Request, env: Env): Headers {
       : configured[0] ?? 'null'
   const headers = new Headers({
     'Access-Control-Allow-Origin': allowedOrigin,
-    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key',
+    'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Request-ID',
+    'Access-Control-Expose-Headers': 'X-Request-ID, Retry-After',
     'Cache-Control': 'no-store',
     'Content-Type': 'application/json; charset=utf-8',
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
     Vary: 'Origin',
   })
   return headers
@@ -169,23 +178,63 @@ function handleV2DecisionMetrics(request: Request, env: Env): Response {
   return jsonResponse(request, env, fastPathDecisionMetrics.snapshot(window))
 }
 
+async function guardInitialManagementBootstrap(
+  request: Request,
+  env: AgentEnv,
+): Promise<Response | null> {
+  try {
+    await ensureManagementSchema(env)
+    if (await hasActiveGlobalReleaseAdmin(env)) {
+      return jsonResponse(request, env, {
+        error: 'Initial RELEASE_ADMIN bootstrap is closed because an active global release administrator already exists.',
+        code: 'BOOTSTRAP_CLOSED',
+        live_capabilities_remain_disabled: true,
+      }, 409)
+    }
+    return null
+  } catch {
+    return jsonResponse(request, env, {
+      error: 'Unable to verify management bootstrap state.',
+      code: 'DEPENDENCY_UNAVAILABLE',
+    }, 503)
+  }
+}
+
 export default {
   async fetch(request: Request, env: AgentEnv, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url)
 
     const memoryMatch = url.pathname.match(/^\/agent\/memory\/([^/]+)$/)
     const isPrivilegedD1Query = url.pathname === '/d1/query/readonly'
+    const isManagementRoute = url.pathname.startsWith('/v1/management/')
+    const isManagementBootstrap = url.pathname === '/v1/management/bootstrap'
 
     if (request.method === 'OPTIONS' && (
       url.pathname.startsWith('/v2/')
       || Boolean(memoryMatch)
       || isPrivilegedD1Query
+      || isManagementRoute
     )) {
       return new Response(null, { status: 204, headers: corsHeaders(request, env) })
     }
 
     if ((memoryMatch || isPrivilegedD1Query) && !requireApiKey(env, request)) {
       return unauthorizedResponse(request, env)
+    }
+
+    if (isManagementBootstrap && !requireApiKey(env, request)) {
+      return unauthorizedResponse(request, env)
+    }
+
+    if (isManagementBootstrap) {
+      const bootstrapBlock = await guardInitialManagementBootstrap(request, env)
+      if (bootstrapBlock) return bootstrapBlock
+    }
+
+    if (isManagementRoute) {
+      return handleManagementRequest(request, env, {
+        bootstrapAuthorized: isManagementBootstrap,
+      })
     }
 
     if (request.method === 'GET' && url.pathname === '/v2/infrastructure/status') {

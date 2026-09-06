@@ -27,8 +27,6 @@ import { resolvePostAuthPath } from '../lib/authNavigation';
 describe("api.ts — BackendConfigError on missing env", () => {
   it("throws BackendConfigError when VITE_BACKEND_URL is not set", () => {
     // Simulate empty env
-    const originalEnv = import.meta?.env;
-
     // The getBackendUrl() function is tested by verifying it throws
     // when VITE_BACKEND_URL is empty string or undefined
     const emptyUrl = "";

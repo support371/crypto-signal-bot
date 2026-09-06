@@ -8,12 +8,19 @@
   },
   "include": [
     "src/AppCore.tsx",
+    "src/context/AuthContext.ts",
+    "src/context/AuthProvider.tsx",
     "src/lib/env.ts",
     "src/lib/backendRuntime.ts",
     "src/lib/infrastructureApi.ts",
     "src/lib/operatorReadinessApi.ts",
+    "src/lib/managementApi.ts",
+    "src/hooks/useManagementAccess.ts",
     "src/pages/OperatorReadiness.tsx",
     "src/pages/ProductionStatus.tsx",
+    "src/pages/Account.tsx",
+    "src/pages/AdminCenter.tsx",
+    "src/pages/ResetPassword.tsx",
     "src/types/**/*.d.ts"
   ],
   "references": []

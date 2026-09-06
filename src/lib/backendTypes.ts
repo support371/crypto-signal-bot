@@ -270,17 +270,7 @@ export interface Order {
   reduceOnly?: boolean;
 }
 
-export interface MockOrder {
-  id: string;
-  symbol: string;
-  side: OrderSide;
-  type: OrderType;
-  price: number;
-  amount: number;
-  filled: number;
-  status: OrderStatus;
-  createdAt: string;
-  updatedAt: string;
+export interface MockOrder extends Order {
   isMock: boolean;
 }
 
@@ -302,16 +292,7 @@ export interface Trade {
   createdAt: string;
 }
 
-export interface MockTrade {
-  id: string;
-  symbol: string;
-  side: OrderSide;
-  price: number;
-  amount: number;
-  fee: number;
-  profit: number;
-  profitPercent: number;
-  createdAt: string;
+export interface MockTrade extends Trade {
   isMock: boolean;
 }
 
@@ -359,19 +340,7 @@ export interface Signal {
   notes?: string;
 }
 
-export interface MockSignal {
-  id: string;
-  symbol: string;
-  signal: SignalType;
-  strength: SignalStrength;
-  confidence: number;
-  entryPrice: number;
-  targetPrice: number;
-  stopLoss: number;
-  riskReward: number;
-  indicators: SignalIndicators;
-  createdAt: string;
-  expiresAt: string;
+export interface MockSignal extends Signal {
   isMock: boolean;
 }
 

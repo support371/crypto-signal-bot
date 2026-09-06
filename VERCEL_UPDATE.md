@@ -1,11 +1,13 @@
-# Vercel Update
+# Vercel Production Update
 
-Set this environment variable for Production, Preview, and Development unless a different preview backend is intentionally used:
+Canonical project: `crypto-signal-bot`
+
+Production backend:
 
 ```text
-VITE_BACKEND_URL=https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
+https://crypto-signal-bot-api.analyzer-d94.workers.dev
 ```
 
-Then trigger a Vercel production redeploy for the `crypto-signal-bot` project.
+Set `VITE_BACKEND_URL` to that Worker for production. Canonical production also requires the browser-safe external identity provider URL and publishable/anon key. Keep `VITE_DEMO_MODE=false`.
 
-Do not put real API keys, exchange credentials, or server-only secrets in `VITE_*` variables. Vite exposes these values to the browser bundle.
+Do not use the legacy `gr8r9bfzry` Worker hostname. After deployment verify the canonical alias, `/release.json`, `/status` and `/api/release-attestation` all resolve from the same accepted main SHA.

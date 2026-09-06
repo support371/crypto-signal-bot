@@ -6,7 +6,6 @@
 
 import { NavLink, Link } from 'react-router-dom';
 import { cn } from '../lib/utils';
-import { useAuth } from '../providers/AuthProvider';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -28,7 +27,6 @@ const navItems = [
 ];
 
 export default function Sidebar({ isOpen, onClose }: SidebarProps) {
-  const { user } = useAuth();
 
   return (
     <>

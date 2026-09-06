@@ -8,7 +8,7 @@
 import { io, Socket } from 'socket.io-client';
 import { env } from './env';
 import { getRuntimeConfig } from './runtimeConfig';
-import { WebSocketEvent, WebSocketEventType } from './backendTypes';
+import { WebSocketEventType } from './backendTypes';
 
 // WebSocket connection state
 type WebSocketState = {
@@ -93,7 +93,7 @@ class MockSocket {
     this.handlers.set(event, handler);
   }
 
-  off(event: string, handler: (data: any) => void): void {
+  off(event: string, _handler: (data: any) => void): void {
     this.handlers.delete(event);
   }
 

@@ -1,29 +1,21 @@
-# Production Readiness — Paper Certification Release
+# Production Readiness — Paper Certification + Usage Management
 
-## Production URLs
+## Canonical production
 
 - Frontend: `https://crypto-signal-bot-indol.vercel.app`
 - Dashboard: `https://crypto-signal-bot-indol.vercel.app/dashboard`
-- Cloudflare Worker: `https://crypto-signal-bot-api.gr8r9bfzry.workers.dev`
-- Frontend release manifest: `https://crypto-signal-bot-indol.vercel.app/release.json`
+- Account: `https://crypto-signal-bot-indol.vercel.app/account`
+- Admin: `https://crypto-signal-bot-indol.vercel.app/admin`
+- Status: `https://crypto-signal-bot-indol.vercel.app/status`
+- Cloudflare Worker: `https://crypto-signal-bot-api.analyzer-d94.workers.dev`
+- Release manifest: `https://crypto-signal-bot-indol.vercel.app/release.json`
+- Attestation: `https://crypto-signal-bot-indol.vercel.app/api/release-attestation`
 
-Render is not the production backend for this release.
+The old `crypto-signal-bot-api.gr8r9bfzry.workers.dev` identity belongs to a previous Cloudflare deployment and is not an active release target.
 
-## Required configuration
+## Safety contract
 
-### Vercel
-
-```env
-VITE_BACKEND_URL=https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
-VITE_DEMO_MODE=true
-VITE_PAPER_TRADING_MODE=true
-```
-
-Do not place exchange credentials, Worker API keys, or private secrets in `VITE_*` variables; Vite exposes them to browsers.
-
-### Cloudflare Worker
-
-The checked-in `wrangler.toml` binds D1, R2, and KV and enforces:
+The release must remain:
 
 ```env
 TRADING_MODE=paper
@@ -34,36 +26,60 @@ LIVE_TRADING_ENABLED=false
 WITHDRAWALS_ENABLED=false
 ```
 
-`BACKEND_API_KEY` is required as a Cloudflare secret for every privileged write, agent-memory, and D1-query route. Missing or invalid credentials fail closed. Production secrets belong in Cloudflare secret bindings and must never be committed.
+The public release contract also requires `provider_mutation_enabled=false`, `real_funds_enabled=false`, BTCC primary execution, Bitget secondary execution, and Coinbase public market-data only.
+
+## Production authentication
+
+Canonical production must use a real external identity-provider session. Configure Vercel with browser-safe values only:
+
+```env
+VITE_BACKEND_URL=https://crypto-signal-bot-api.analyzer-d94.workers.dev
+VITE_DEMO_MODE=false
+VITE_SUPABASE_URL=<project-url>
+VITE_SUPABASE_PUBLISHABLE_KEY=<browser-safe-publishable-or-anon-key>
+```
+
+Configure the Worker with the same identity-provider URL/key for bearer-session validation:
+
+```env
+SUPABASE_URL=<project-url>
+SUPABASE_PUBLISHABLE_KEY=<publishable-or-anon-key>
+```
+
+`BACKEND_API_KEY` is a Worker/server secret used for privileged server bootstrap/helpers. Never expose it in `VITE_*` variables or browser storage.
+
+The canonical frontend runtime rejects synthetic demo identity even if a stale Vercel `VITE_DEMO_MODE=true` setting remains.
+
+## Usage-management acceptance
+
+The Worker management API under `/v1/management` must provide:
+
+- authenticated `/me` profile/access state;
+- user lifecycle state (`INVITED`, `PENDING`, `ACTIVE`, `SUSPENDED`, `DISABLED`);
+- scoped roles reusing `live_actor_roles`;
+- server-authoritative role evaluation;
+- first-admin bootstrap protected by server API key plus an authenticated bearer session;
+- immutable management audit events;
+- aggregated daily usage evidence;
+- management request rate limits with HTTP 429 and `Retry-After`;
+- session-security events without storing tokens;
+- system/safety visibility.
+
+Admin routing must be protected by Worker-derived access, not only hidden navigation.
 
 ## Release procedure
 
-1. Run every repository gate documented in the root `README.md`.
-2. Confirm `git status` is clean and the intended commit is on `main`.
-3. In GitHub Actions, run **Deploy to Cloudflare Workers (manual)** with `deploy_worker=true` and `update_vercel=true`.
-4. Wait for the Worker smoke checks and Vercel production deployment to complete.
-5. Run `npm run verify:deployment`.
-6. Open `/dashboard` and `/infrastructure` and confirm the visible mode is certification/paper.
-
-## Acceptance criteria
-
-- `release.json` reports the expected paper-certification release contract.
-- `/dashboard` serves the current Vite application.
-- `/healthz` returns HTTP 200 with `status=ok`.
-- `/runtime/status` reports paper, testnet, mainnet disabled, live trading disabled, and withdrawals disabled.
-- `/v2/infrastructure/status` returns the v2 contract.
-- `/agent/context` returns the rich certification context (HTTP 200 or 207 when a subcheck is degraded).
-- Anonymous `/agent/memory/*` and `/d1/query/readonly` probes return HTTP 401.
-- `/intent/live`, `/live/order`, and `/withdraw` return HTTP 403.
-- No browser bundle contains private credentials.
-- The dashboard can create paper intents and display certification ledger results without calling a mutation-capable exchange client.
+1. Run root and Worker validation gates.
+2. Confirm the intended SHA is on `main` and CI is green.
+3. Confirm no active operational file points at the old Cloudflare Worker/account.
+4. Deploy the paper Worker through the controlled Cloudflare release lane.
+5. Apply/verify forward-only D1 migrations through usage-management migration 031.
+6. Deploy/promote the matching Vercel build to the canonical alias.
+7. Run `npm run verify:deployment`.
+8. Verify `/release.json`, `/status`, `/api/release-attestation`, `/dashboard`, `/account` and authenticated `/v1/management/me`.
+9. Verify anonymous privileged helpers return 401 and disabled live/withdrawal routes return 403.
+10. Record release SHA, Worker deployment, Vercel deployment and rollback target.
 
 ## Deployment-drift response
 
-If `npm run verify:deployment` fails:
-
-1. Do not treat the public site as the current release.
-2. Compare the Vercel production deployment Git SHA with `main`.
-3. Confirm the Cloudflare Worker entrypoint is `worker/src/index_agent_context.ts`.
-4. Re-run the manual release workflow only after the validation job passes.
-5. Keep real-money, mainnet, and withdrawal capabilities disabled while investigating.
+If verification fails, do not call the release current. Compare Vercel SHA with `main`, verify Worker host/account, check D1/KV bindings, and repair routing/configuration while keeping all financial mutation locks disabled.

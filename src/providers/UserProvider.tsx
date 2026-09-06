@@ -5,7 +5,7 @@
  */
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { User, UserPreferences } from '../lib/backendTypes';
+import { UserPreferences } from '../lib/backendTypes';
 import { useAuth } from './AuthProvider';
 
 interface UserContextType {
