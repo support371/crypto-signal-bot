@@ -37,6 +37,7 @@ function assert(condition, message) {
 const release = await json('/release.json');
 assert(release.response.status === 200, `release.json returned HTTP ${release.response.status}`);
 assert(release.body?.attestation_path === '/api/release-attestation', 'release manifest does not advertise the attestation endpoint');
+assert(release.body?.management_api_path === '/v1/management', 'release manifest does not advertise the management API');
 assert(release.body?.backend_url === CURRENT_WORKER, `release manifest points to ${release.body?.backend_url ?? 'no Worker'}`);
 
 const attestation = await json(release.body.attestation_path);
@@ -54,6 +55,11 @@ assert(attestation.body?.safety?.provider_mutation_enabled === false, 'attestati
 assert(attestation.body?.safety?.real_funds_enabled === false, 'attestation enables real-fund activity');
 assert(attestation.body?.storage?.d1_status === 'healthy', 'D1 is not healthy in the release attestation');
 assert(attestation.body?.storage?.agent_memory_available === true, 'agent memory is not available in the release attestation');
+assert(attestation.body?.management?.route_present === true, 'management API route is not present in production attestation');
+assert(attestation.body?.management?.identity_provider_configured === true, 'production management identity provider is not configured');
+assert(attestation.body?.management?.authentication_enforced === true, 'production management bearer authentication is not enforced');
+assert(attestation.body?.management?.anonymous_status === 401, `anonymous management probe returned ${attestation.body?.management?.anonymous_status ?? 'no status'} instead of 401`);
+assert(attestation.body?.management?.anonymous_code === 'UNAUTHENTICATED', `anonymous management probe returned ${attestation.body?.management?.anonymous_code ?? 'no code'}`);
 assert(Array.isArray(attestation.body?.failures) && attestation.body.failures.length === 0, 'release attestation contains invariant failures');
 
-console.log(`Production attestation verified: ${frontendUrl} → ${CURRENT_WORKER}; execution BTCC→Bitget; paper/testnet locks intact.`);
+console.log(`Production attestation verified: ${frontendUrl} → ${CURRENT_WORKER}; execution BTCC→Bitget; management auth enforced; paper/testnet locks intact.`);
