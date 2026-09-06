@@ -449,7 +449,7 @@ const Index = () => {
           <SectionHeading
             eyebrow="Command snapshot"
             title="Execution & Decision State"
-            description="The four facts that determine whether the certification terminal is usable before you inspect deeper analytics."
+            description="Execution route, Guardian authority, decision quality and connectivity are visible before deeper analysis."
           />
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <StatusTile
@@ -518,7 +518,7 @@ const Index = () => {
           <SectionHeading
             eyebrow="Exposure"
             title="Portfolio & P&L"
-            description="Position management and certification earnings are separated from signal generation so exposure is always readable as its own layer."
+            description="Position management and certification earnings are separated from signal generation so exposure remains readable as its own layer."
           />
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:gap-6">
             <div className="lg:col-span-8">
@@ -565,7 +565,7 @@ const Index = () => {
           <SectionHeading
             eyebrow="Operations"
             title="Evidence & Control Layer"
-            description="Operational evidence, system telemetry and operator controls are one click away instead of occupying the trading decision surface at all times."
+            description="Operational evidence, telemetry and controls are one click away instead of occupying the trading decision surface at all times."
           />
 
           <div className="cyber-card p-2">
