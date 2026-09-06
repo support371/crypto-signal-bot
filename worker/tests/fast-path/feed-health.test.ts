@@ -84,4 +84,42 @@ describe('FeedHealthRegistry', () => {
     expect(stale?.integrityState).toBe('degraded')
     expect(stale?.freshnessClass).toBe('red')
   })
+
+  it('correctly evicts the oldest event IDs in a circular FIFO ring buffer pattern', () => {
+    const customThresholds = {
+      ...DEFAULT_FAST_PATH_THRESHOLDS,
+      maxSeenEventIds: 3,
+    }
+    const registry = new FeedHealthRegistry(customThresholds)
+
+    // Ingest 3 events (fill the ring buffer)
+    const e1 = eventFixture({ eventId: 'evt-1', sequenceStart: 1, sequenceEnd: 1 })
+    const e2 = eventFixture({ eventId: 'evt-2', sequenceStart: 2, sequenceEnd: 2 })
+    const e3 = eventFixture({ eventId: 'evt-3', sequenceStart: 3, sequenceEnd: 3 })
+
+    expect(registry.ingest(e1).accepted).toBe(true)
+    expect(registry.ingest(e2).accepted).toBe(true)
+    expect(registry.ingest(e3).accepted).toBe(true)
+
+    // They are currently tracked, so duplicate checks should reject them
+    expect(registry.ingest(e1).reason).toBe('duplicate')
+    expect(registry.ingest(e2).reason).toBe('duplicate')
+    expect(registry.ingest(e3).reason).toBe('duplicate')
+
+    // Ingest a 4th event, which should evict the oldest: 'evt-1' (write index 0)
+    const e4 = eventFixture({ eventId: 'evt-4', sequenceStart: 4, sequenceEnd: 4 })
+    expect(registry.ingest(e4).accepted).toBe(true)
+
+    // Now 'evt-1' is evicted and should be accepted again.
+    const e1New = eventFixture({ eventId: 'evt-1', sequenceStart: 5, sequenceEnd: 5 })
+    expect(registry.ingest(e1New).accepted).toBe(true) // no longer rejected as duplicate
+
+    // Since 'evt-3' is still in the cache, ingesting an event with 'evt-3' and sequence 2 is rejected as 'duplicate'
+    const e3Duplicate = eventFixture({ eventId: 'evt-3', sequenceStart: 2, sequenceEnd: 2 })
+    expect(registry.ingest(e3Duplicate).reason).toBe('duplicate')
+
+    // Since 'evt-2' has been evicted, an event with 'evt-2' and a valid continuous sequence (6) should be accepted.
+    const e2New = eventFixture({ eventId: 'evt-2', sequenceStart: 6, sequenceEnd: 6 })
+    expect(registry.ingest(e2New).accepted).toBe(true)
+  })
 })

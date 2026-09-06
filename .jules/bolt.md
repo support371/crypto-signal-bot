@@ -45,3 +45,7 @@
 ## 2026-07-15 - [Efficient RSI Series Calculation]
 **Learning:** The traditional RSI formula $100 - (100 / (1 + RS))$ involves multiple divisions and nested calculations. It can be simplified to $100 \cdot avg\_gain / (avg\_gain + avg\_loss)$, which is mathematically equivalent and significantly faster.
 **Action:** Use the ratio-based RSI formula to reduce floating-point divisions and simplify the update logic inside hot loops.
+
+## 2026-08-02 - [Circular Buffer for Duplicates Deduplication Window]
+**Learning:** In high-frequency JavaScript/TypeScript paths where duplicate event IDs or sliding history must be tracked, replacing an array `.shift()` window eviction with a pre-allocated circular buffer (ring buffer) using a write pointer avoids the $O(N)$ element movement/re-indexing penalty, ensuring $O(1)$ evictions and eliminating memory reallocation/resizing overhead.
+**Action:** Use circular/ring buffer array writes instead of array shifting/unshifting to manage sliding window caches.
