@@ -2,6 +2,8 @@ import { readFile } from 'node:fs/promises';
 
 const CURRENT_WORKER = 'https://crypto-signal-bot-api.analyzer-d94.workers.dev';
 const CURRENT_FRONTEND = 'https://crypto-signal-bot-indol.vercel.app';
+const CURRENT_SUPABASE = 'https://pxcahgcoeewvkhsdvylu.supabase.co';
+const CURRENT_SUPABASE_PUBLISHABLE_PREFIX = 'sb_publishable_';
 const PRIMARY = 'btcc';
 const SECONDARY = 'bitget';
 
@@ -16,6 +18,7 @@ function assert(condition, message) {
 const [
   releaseText,
   envSource,
+  supabaseConfigSource,
   packageText,
   wrangler,
   vercelText,
@@ -27,6 +30,7 @@ const [
 ] = await Promise.all([
   text('public/release.json'),
   text('src/lib/env.ts'),
+  text('src/integrations/supabase/config.ts'),
   text('package.json'),
   text('wrangler.toml'),
   text('vercel.json'),
@@ -70,6 +74,9 @@ assert(release.canonical_demo_identity_enabled === false, 'canonical production 
 assert(envSource.includes(`CURRENT_PRODUCTION_BACKEND_URL = '${CURRENT_WORKER}'`), 'frontend runtime Worker constant drifted');
 assert(envSource.includes("CANONICAL_PRODUCTION_HOST = 'crypto-signal-bot-indol.vercel.app'"), 'canonical host demo lock drifted');
 assert(envSource.includes('configured && !isCanonicalProductionHost()'), 'canonical domain must suppress demo identity');
+assert(supabaseConfigSource.includes(CURRENT_SUPABASE), 'frontend production identity project drifted');
+assert(supabaseConfigSource.includes(CURRENT_SUPABASE_PUBLISHABLE_PREFIX), 'frontend production publishable-key fallback is missing');
+assert(supabaseConfigSource.includes('import.meta.env.PROD'), 'production Supabase fallback must not silently enable development auth');
 assert(probeSource.includes(`const WORKER = '${CURRENT_WORKER}'`), 'Vercel attestation Worker drifted');
 assert(verifierSource.includes(`DEFAULT_BACKEND_URL = '${CURRENT_WORKER}'`), 'deployment verifier Worker drifted');
 assert(verifierSource.includes(`DEFAULT_FRONTEND_URL = '${CURRENT_FRONTEND}'`), 'deployment verifier frontend drifted');
@@ -92,6 +99,8 @@ assert(wrangler.includes('NETWORK = "testnet"'), 'Wrangler network must remain t
 assert(wrangler.includes('ALLOW_MAINNET = "false"'), 'Wrangler mainnet lock must remain false');
 assert(wrangler.includes('EXECUTION_EXCHANGE_PRIMARY = "btcc"'), 'Wrangler primary execution exchange must remain BTCC');
 assert(wrangler.includes('EXECUTION_EXCHANGE_SECONDARY = "bitget"'), 'Wrangler secondary execution exchange must remain Bitget');
+assert(wrangler.includes(`SUPABASE_URL = "${CURRENT_SUPABASE}"`), 'Worker Supabase identity project drifted');
+assert(wrangler.includes('SUPABASE_PUBLISHABLE_KEY = "sb_publishable_'), 'Worker Supabase publishable key is missing');
 assert(wrangler.includes('binding = "AGENT_MEMORY"'), 'AGENT_MEMORY KV binding is missing');
 assert(wrangler.includes('id = "2dcb1050b9c846a7bba8cd1c3c43df62"'), 'AGENT_MEMORY KV namespace id drifted');
 assert(wrangler.includes(CURRENT_FRONTEND), 'canonical frontend is missing from Worker CORS origins');
@@ -107,4 +116,4 @@ assert(pkg.scripts?.lint?.includes('src/pages/AdminCenter.tsx'), 'admin manageme
 assert(pkg.scripts?.['verify:deployment']?.includes('verify-production-attestation.mjs'), 'deployment verification must include production attestation');
 assert(pkg.scripts?.['deploy:paper-worker']?.includes(CURRENT_WORKER), 'Worker deploy smoke target is stale');
 
-console.log('Static production contract verified: Vercel→Cloudflare wiring, identity/usage management surfaces, BTCC→Bitget hierarchy, KV binding, lint coverage, and paper/testnet locks are aligned.');
+console.log('Static production contract verified: Vercel→Cloudflare wiring, production Supabase identity, identity/usage management surfaces, BTCC→Bitget hierarchy, KV binding, lint coverage, and paper/testnet locks are aligned.');
