@@ -1,4 +1,4 @@
-import { Activity, BarChart2, LogOut, Settings, Wallet } from 'lucide-react';
+import { Activity, LogOut, Settings, ShieldCheck, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth, isSupabaseConfigured as SUPABASE_CONFIGURED } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -38,7 +38,7 @@ export function Header({
     ? 'OFFLINE'
     : killSwitchActive
     ? 'HALTED'
-    : systemMode.toUpperCase();
+    : 'ONLINE';
 
   const statusDotClass = !backendConnected
     ? 'bg-muted-foreground'
@@ -46,54 +46,70 @@ export function Header({
     ? 'bg-destructive'
     : 'bg-accent';
 
+  const statusChipClass = !backendConnected
+    ? ''
+    : killSwitchActive
+    ? 'status-chip-danger'
+    : 'status-chip-online';
+
   const certificationBalanceLabel =
     typeof certificationBalance === 'number'
       ? currencyFormatter.format(certificationBalance)
       : 'Unavailable';
 
-  const subtitle = !backendConnected
-    ? 'Control Center Offline'
-    : systemMode === 'live'
-    ? 'Execution Control Center'
-    : 'Certification Control Center';
-
   return (
-    <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-      <div className="container mx-auto px-4 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <div className="p-2 rounded-lg bg-primary/10 border border-primary/30">
-                <Activity className="w-6 h-6 text-primary" />
+    <header className="sticky top-0 z-50 border-b border-border/80 bg-background/90 backdrop-blur-xl">
+      <div className="container mx-auto px-4 py-3 lg:px-6">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="relative shrink-0">
+              <div className="rounded-xl border border-primary/25 bg-primary/10 p-2.5 shadow-neon-cyan">
+                <Activity className="h-5 w-5 text-primary" />
               </div>
-              <div className={`absolute -top-1 -right-1 w-3 h-3 rounded-full ${statusDotClass} ${backendConnected && !killSwitchActive ? 'animate-pulse-glow' : ''}`} />
+              <div className={`absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full ring-2 ring-background ${statusDotClass} ${backendConnected && !killSwitchActive ? 'animate-pulse' : ''}`} />
             </div>
-            <div>
-              <h1 className="font-display text-xl font-bold text-gradient-cyber">
-                RISK AGENT
-              </h1>
-              <p className="text-xs text-muted-foreground">
-                {subtitle}
+
+            <div className="min-w-0">
+              <div className="flex items-baseline gap-2">
+                <h1 className="truncate font-display text-base font-bold tracking-wide text-gradient-cyber sm:text-lg">
+                  CRYPTO SIGNAL BOT
+                </h1>
+                <span className="hidden font-mono text-[9px] uppercase tracking-[0.18em] text-muted-foreground xl:inline">
+                  V2
+                </span>
+              </div>
+              <p className="truncate text-[11px] text-muted-foreground sm:text-xs">
+                Certification trading terminal
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/50 border border-border">
-              <div className={`w-2 h-2 rounded-full ${statusDotClass} ${backendConnected && !killSwitchActive ? 'animate-pulse' : ''}`} />
-              <span className="text-xs font-mono text-muted-foreground">{statusLabel}</span>
-            </div>
+          <div className="hidden flex-1 items-center justify-center gap-2 xl:flex">
+            <span className="status-chip status-chip-warning">
+              {systemMode.toUpperCase()} / TESTNET
+            </span>
+            <span className="status-chip">
+              BTCC PRIMARY <span className="text-primary">→</span> BITGET SECONDARY
+            </span>
+            <span className={`status-chip ${statusChipClass}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${statusDotClass}`} />
+              BACKEND {statusLabel}
+            </span>
+          </div>
 
-            <div className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-lg bg-muted/30 border border-border">
-              <Wallet className="w-4 h-4 text-primary" />
-              <div className="text-right">
-                <div className="text-xs text-muted-foreground">Certification Balance</div>
-                <div className="font-mono font-semibold text-sm">{certificationBalanceLabel}</div>
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <div className="hidden items-center gap-2 rounded-lg border border-border/80 bg-card/70 px-3 py-1.5 md:flex">
+              <Wallet className="h-3.5 w-3.5 text-primary" />
+              <div>
+                <div className="metric-label">Paper equity</div>
+                <div className="font-mono text-xs font-semibold tabular-nums text-foreground">
+                  {certificationBalanceLabel}
+                </div>
               </div>
             </div>
 
-            {user && (
-              <div className="hidden lg:block text-xs text-muted-foreground font-mono">
+            {user?.email && (
+              <div className="hidden max-w-[180px] truncate font-mono text-[10px] text-muted-foreground 2xl:block">
                 {user.email}
               </div>
             )}
@@ -101,10 +117,21 @@ export function Header({
             <Button
               variant="outline"
               size="icon"
-              onClick={onSettingsClick}
-              className="border-border hover:border-primary hover:bg-primary/10"
+              onClick={() => navigate('/status')}
+              className="h-9 w-9 border-border/80 bg-card/50 hover:border-accent/50 hover:bg-accent/10 hover:text-accent"
+              title="Production status"
             >
-              <Settings className="w-4 h-4" />
+              <ShieldCheck className="h-4 w-4" />
+            </Button>
+
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={onSettingsClick}
+              className="h-9 w-9 border-border/80 bg-card/50 hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
+              title="Dashboard settings"
+            >
+              <Settings className="h-4 w-4" />
             </Button>
 
             {SUPABASE_CONFIGURED && (
@@ -112,13 +139,26 @@ export function Header({
                 variant="outline"
                 size="icon"
                 onClick={handleSignOut}
-                className="border-border hover:border-destructive hover:bg-destructive/10"
-                title="Sign Out"
+                className="h-9 w-9 border-border/80 bg-card/50 hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive"
+                title="Sign out"
               >
-                <LogOut className="w-4 h-4" />
+                <LogOut className="h-4 w-4" />
               </Button>
             )}
           </div>
+        </div>
+
+        <div className="mt-2 flex items-center gap-2 overflow-x-auto pb-0.5 xl:hidden">
+          <span className="status-chip status-chip-warning shrink-0">
+            {systemMode.toUpperCase()} / TESTNET
+          </span>
+          <span className="status-chip shrink-0">
+            BTCC <span className="text-primary">→</span> BITGET
+          </span>
+          <span className={`status-chip shrink-0 ${statusChipClass}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${statusDotClass}`} />
+            {statusLabel}
+          </span>
         </div>
       </div>
     </header>
