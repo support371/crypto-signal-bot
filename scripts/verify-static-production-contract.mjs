@@ -19,6 +19,8 @@ const [
   releaseText,
   envSource,
   authContextSource,
+  authProviderSource,
+  authPageSource,
   supabaseConfigSource,
   packageText,
   wrangler,
@@ -32,6 +34,8 @@ const [
   text('public/release.json'),
   text('src/lib/env.ts'),
   text('src/context/AuthContext.ts'),
+  text('src/context/AuthProvider.tsx'),
+  text('src/pages/Auth.tsx'),
   text('src/integrations/supabase/config.ts'),
   text('package.json'),
   text('wrangler.toml'),
@@ -82,6 +86,12 @@ assert(envSource.includes('supabaseConfigured: SUPABASE_CONFIGURED'), 'runtime d
 assert(authContextSource.includes('SUPABASE_CONFIGURED'), 'AuthContext must consume canonical Supabase readiness');
 assert(authContextSource.includes('getConfiguredSupabaseClient'), 'AuthContext must use the configured Supabase client');
 assert(!authContextSource.includes('import.meta.env.VITE_SUPABASE_URL'), 'AuthContext must not maintain a second environment-only Supabase configuration');
+assert(authProviderSource.includes('AUTH_BOOTSTRAP_TIMEOUT_MS'), 'auth provider must bound identity bootstrap latency');
+assert(authProviderSource.includes('setIsLoading(false)'), 'auth provider must release the UI from provider bootstrap loading');
+assert(authPageSource.includes('Continue to requested area'), 'verified sessions must keep the auth gateway navigable');
+assert(authPageSource.includes('Forgot password?'), 'production auth gateway must provide recovery access');
+assert(authPageSource.includes('server-side account and role authorization'), 'auth gateway must preserve server-authoritative authorization messaging');
+assert(authPageSource.includes('Minimum 12 characters'), 'new-account password hardening requirement is missing');
 assert(supabaseConfigSource.includes(CURRENT_SUPABASE), 'frontend production identity project drifted');
 assert(supabaseConfigSource.includes(CURRENT_SUPABASE_PUBLISHABLE_PREFIX), 'frontend production publishable-key fallback is missing');
 assert(supabaseConfigSource.includes('import.meta.env.PROD'), 'production Supabase fallback must not silently enable development auth');
@@ -92,6 +102,7 @@ assert(appSource.includes('path="/status"'), 'public production status route is 
 assert(appSource.includes('path="/account"'), 'account route is not registered');
 assert(appSource.includes("'/admin/users'"), 'admin user management route is not registered');
 assert(appSource.includes('AdministrativePage'), 'admin routes are not authorization-gated');
+assert(appSource.includes('access.roles.size === 0'), 'protected product routes must reject authenticated identities with no assigned role');
 assert(statusSource.includes("'/api/release-attestation'"), 'production status page is not bound to release attestation');
 assert(statusSource.includes('BTCC primary · Bitget secondary'), 'production status page lost the canonical execution hierarchy');
 assert(
@@ -119,9 +130,10 @@ assert(vercel.buildCommand === 'npm run build', 'Vercel must execute the guarded
 
 assert(pkg.scripts?.build?.includes('verify:production-contract'), 'production drift verifier must gate frontend builds');
 assert(pkg.scripts?.build?.includes('verify:usage-management'), 'usage-management verifier must gate frontend builds');
+assert(pkg.scripts?.lint?.includes('src/pages/Auth.tsx'), 'production auth gateway must remain in strict lint coverage');
 assert(pkg.scripts?.lint?.includes('src/pages/ProductionStatus.tsx'), 'production status surface must remain in strict lint coverage');
 assert(pkg.scripts?.lint?.includes('src/pages/AdminCenter.tsx'), 'admin management surface must remain in strict lint coverage');
 assert(pkg.scripts?.['verify:deployment']?.includes('verify-production-attestation.mjs'), 'deployment verification must include production attestation');
 assert(pkg.scripts?.['deploy:paper-worker']?.includes(CURRENT_WORKER), 'Worker deploy smoke target is stale');
 
-console.log('Static production contract verified: Vercel→Cloudflare wiring, canonical production Supabase auth, identity/usage management surfaces, BTCC→Bitget hierarchy, KV binding, lint coverage, and paper/testnet locks are aligned.');
+console.log('Static production contract verified: Vercel→Cloudflare wiring, hardened Supabase auth gateway, identity/usage management surfaces, BTCC→Bitget hierarchy, KV binding, lint coverage, and paper/testnet locks are aligned.');
