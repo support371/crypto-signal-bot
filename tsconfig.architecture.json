@@ -16,6 +16,7 @@
     "src/lib/operatorReadinessApi.ts",
     "src/lib/managementApi.ts",
     "src/hooks/useManagementAccess.ts",
+    "src/pages/Auth.tsx",
     "src/pages/OperatorReadiness.tsx",
     "src/pages/ProductionStatus.tsx",
     "src/pages/Account.tsx",
