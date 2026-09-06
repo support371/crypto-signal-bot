@@ -27,7 +27,7 @@ env:
   TRADING_MODE: paper
   EXCHANGE_MODE: paper
   ALLOW_MAINNET: "false"
-  WORKER_SMOKE_BASE_URL: https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
+  WORKER_SMOKE_BASE_URL: https://crypto-signal-bot-api.analyzer-d94.workers.dev
 
 jobs:
   release-check:
@@ -151,12 +151,16 @@ jobs:
           grep -q '"live_trading_enabled":false' /tmp/worker-guardian.json
           grep -q '"withdrawals_enabled":false' /tmp/worker-guardian.json
 
+          management_status="$(curl -sS -o /tmp/management-anon.json -w "%{http_code}" "$WORKER_SMOKE_BASE_URL/v1/management/me")"
+          test "$management_status" = "401"
+          grep -Eq 'UNAUTHENTICATED|unauthenticated|authentication' /tmp/management-anon.json
+
           live_status="$(curl -sS -o /tmp/live-block.json -w "%{http_code}" -X POST "$WORKER_SMOKE_BASE_URL/intent/live")"
           withdraw_status="$(curl -sS -o /tmp/withdraw-block.json -w "%{http_code}" -X POST "$WORKER_SMOKE_BASE_URL/withdraw")"
 
           test "$live_status" = "403"
           test "$withdraw_status" = "403"
-          echo "Worker smoke checks passed after deploy."
+          echo "Worker smoke checks passed after deploy, including management authentication enforcement."
 
       - name: Update Vercel when manually enabled after Worker smoke checks
         if: ${{ github.event.inputs.deploy_worker == 'true' && github.event.inputs.update_vercel == 'true' }}
