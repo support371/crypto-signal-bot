@@ -18,6 +18,7 @@ function assert(condition, message) {
 const [
   releaseText,
   envSource,
+  authContextSource,
   supabaseConfigSource,
   packageText,
   wrangler,
@@ -30,6 +31,7 @@ const [
 ] = await Promise.all([
   text('public/release.json'),
   text('src/lib/env.ts'),
+  text('src/context/AuthContext.ts'),
   text('src/integrations/supabase/config.ts'),
   text('package.json'),
   text('wrangler.toml'),
@@ -74,6 +76,11 @@ assert(release.canonical_demo_identity_enabled === false, 'canonical production 
 assert(envSource.includes(`CURRENT_PRODUCTION_BACKEND_URL = '${CURRENT_WORKER}'`), 'frontend runtime Worker constant drifted');
 assert(envSource.includes("CANONICAL_PRODUCTION_HOST = 'crypto-signal-bot-indol.vercel.app'"), 'canonical host demo lock drifted');
 assert(envSource.includes('configured && !isCanonicalProductionHost()'), 'canonical domain must suppress demo identity');
+assert(envSource.includes("from '@/integrations/supabase/config'"), 'runtime diagnostics must consume canonical Supabase config');
+assert(envSource.includes('supabaseConfigured: SUPABASE_CONFIGURED'), 'runtime diagnostics must report canonical Supabase readiness');
+assert(authContextSource.includes('SUPABASE_CONFIGURED'), 'AuthContext must consume canonical Supabase readiness');
+assert(authContextSource.includes('getConfiguredSupabaseClient'), 'AuthContext must use the configured Supabase client');
+assert(!authContextSource.includes('import.meta.env.VITE_SUPABASE_URL'), 'AuthContext must not maintain a second environment-only Supabase configuration');
 assert(supabaseConfigSource.includes(CURRENT_SUPABASE), 'frontend production identity project drifted');
 assert(supabaseConfigSource.includes(CURRENT_SUPABASE_PUBLISHABLE_PREFIX), 'frontend production publishable-key fallback is missing');
 assert(supabaseConfigSource.includes('import.meta.env.PROD'), 'production Supabase fallback must not silently enable development auth');
@@ -116,4 +123,4 @@ assert(pkg.scripts?.lint?.includes('src/pages/AdminCenter.tsx'), 'admin manageme
 assert(pkg.scripts?.['verify:deployment']?.includes('verify-production-attestation.mjs'), 'deployment verification must include production attestation');
 assert(pkg.scripts?.['deploy:paper-worker']?.includes(CURRENT_WORKER), 'Worker deploy smoke target is stale');
 
-console.log('Static production contract verified: Vercel→Cloudflare wiring, production Supabase identity, identity/usage management surfaces, BTCC→Bitget hierarchy, KV binding, lint coverage, and paper/testnet locks are aligned.');
+console.log('Static production contract verified: Vercel→Cloudflare wiring, canonical production Supabase auth, identity/usage management surfaces, BTCC→Bitget hierarchy, KV binding, lint coverage, and paper/testnet locks are aligned.');
