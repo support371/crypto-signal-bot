@@ -89,6 +89,7 @@ export function getConfiguredBackendUrl(): string {
   );
   if (configured) return normalizeBackendUrl(configured);
   if (import.meta.env.DEV) return 'http://localhost:8000';
+  if (import.meta.env.PROD) return CURRENT_PRODUCTION_BACKEND_URL;
   throw new Error(
     'Backend URL is not configured. Set VITE_BACKEND_URL to the public Certification Mode Worker URL.',
   );
@@ -109,7 +110,11 @@ export function validateFrontendEnv(): FrontendEnvValidation {
     'VITE_CRYPTOCORE_API_BASE',
     'VITE_API_BASE_URL',
   );
-  const backendUrl = configuredBackendUrl ? normalizeBackendUrl(configuredBackendUrl) : undefined;
+  const backendUrl = configuredBackendUrl
+    ? normalizeBackendUrl(configuredBackendUrl)
+    : import.meta.env.PROD
+      ? CURRENT_PRODUCTION_BACKEND_URL
+      : undefined;
   const configuredWsUrl = readString('VITE_WS_URL', 'VITE_WS_BASE_URL');
   const supabaseUrl = SUPABASE_URL;
   const supabaseKey = SUPABASE_PUBLISHABLE_KEY;
@@ -120,6 +125,9 @@ export function validateFrontendEnv(): FrontendEnvValidation {
     missingRequired.push('VITE_SUPABASE_PUBLISHABLE_KEY or VITE_SUPABASE_ANON_KEY');
   }
 
+  if (!configuredBackendUrl && import.meta.env.PROD) {
+    warnings.push('VITE_BACKEND_URL is not set; using the canonical migrated Cloudflare Worker.');
+  }
   if (readString('VITE_API_BASE_URL') && !readString('VITE_BACKEND_URL')) {
     warnings.push('VITE_API_BASE_URL is a legacy alias; migrate to VITE_BACKEND_URL.');
   }
