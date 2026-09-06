@@ -1,4 +1,5 @@
 import { createContext, useContext } from "react";
+import { SUPABASE_CONFIGURED } from "@/integrations/supabase/config";
 
 export interface AuthUser {
   id: string;
@@ -31,21 +32,17 @@ export function useAuth(): AuthContextValue {
   return ctx;
 }
 
-const SUPABASE_URL = (
-  import.meta.env.VITE_SUPABASE_URL ||
-  import.meta.env.NEXT_PUBLIC_SUPABASE_URL
-) as string | undefined;
+/**
+ * Canonical authentication availability flag.
+ * Keep this sourced from the shared Supabase configuration module so production
+ * fallback configuration and hosting-environment overrides cannot drift apart.
+ */
+export const isSupabaseConfigured = SUPABASE_CONFIGURED;
 
-const SUPABASE_KEY = (
-  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-  import.meta.env.VITE_SUPABASE_ANON_KEY ||
-  import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-) as string | undefined;
-
-export const isSupabaseConfigured = !!(SUPABASE_URL && SUPABASE_KEY);
-
-let _supabaseClient: import("@supabase/supabase-js").SupabaseClient | null = null;
-
+/**
+ * Load the Supabase SDK only when an auth operation is actually needed. This keeps
+ * the public trading-terminal entry bundle within its production performance budget.
+ */
 export async function getSupabaseClient() {
   if (!isSupabaseConfigured) {
     throw new Error(
@@ -53,15 +50,8 @@ export async function getSupabaseClient() {
       "VITE_SUPABASE_PUBLISHABLE_KEY as Vercel environment variables."
     );
   }
-  if (!_supabaseClient) {
-    const { createClient } = await import("@supabase/supabase-js");
-    _supabaseClient = createClient(SUPABASE_URL!, SUPABASE_KEY!, {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: true,
-      },
-    });
-  }
-  return _supabaseClient;
+  const { getSupabaseClient: getConfiguredSupabaseClient } = await import(
+    "@/integrations/supabase/client"
+  );
+  return getConfiguredSupabaseClient();
 }
