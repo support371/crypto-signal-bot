@@ -10,6 +10,8 @@ const checks = [
   ["GET", "/exchange/circuit-breakers", 200, (body) => Array.isArray(body.adapters) && body.execution_exchange_primary === "btcc" && body.execution_exchange_secondary === "bitget"],
   ["GET", "/v2/infrastructure/status", 200, (body) => body.version === "2.0" && body.runtime?.trading_mode === "paper" && body.runtime?.allow_mainnet === false],
   ["GET", "/agent/context", [200, 207], (body) => body.certification_mode === true && body.provider_mutation_enabled === false && body.real_funds_enabled === false && body.execution_exchange_primary === "btcc" && body.execution_exchange_secondary === "bitget"],
+  ["GET", "/v1/management/me", 401, (body) => body.code === "UNAUTHENTICATED"],
+  ["POST", "/d1/query/readonly", 401, (body) => body.code === 401 || body.error === "Unauthorized"],
   ["POST", "/intent/live", 403, (body) => body.code === 403],
   ["POST", "/live/order", 403, (body) => body.code === 403],
   ["POST", "/withdraw", 403, (body) => body.code === 403],
