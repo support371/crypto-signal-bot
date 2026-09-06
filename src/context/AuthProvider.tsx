@@ -12,6 +12,7 @@ export type { AuthUser, AuthSession, AuthContextValue } from "@/context/AuthCont
 
 const DEMO_USER: AuthUser = { id: 'demo-paper-user', email: 'demo@paper.local' };
 const DEMO_SESSION: AuthSession = { user: DEMO_USER, access_token: 'demo-paper-token' };
+const AUTH_BOOTSTRAP_TIMEOUT_MS = 8_000;
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const demoModeEnabled = isDemoModeEnabled();
@@ -38,6 +39,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     let cancelled = false;
     let unsubscribe = () => {};
+    const bootstrapTimer = window.setTimeout(() => {
+      if (!cancelled) {
+        // Never let a slow identity provider hold the entire production UI on a
+        // permanent loading screen. A timed-out bootstrap is treated as
+        // unauthenticated until Supabase eventually returns a verified session.
+        setIsLoading(false);
+      }
+    }, AUTH_BOOTSTRAP_TIMEOUT_MS);
 
     (async () => {
       try {
@@ -62,15 +71,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       } catch {
         if (!cancelled) {
+          // Fail closed: protected routes see no authenticated user. Public and
+          // auth routes remain usable instead of being blocked by provider startup.
           setUser(null);
           setSession(null);
           setIsLoading(false);
         }
+      } finally {
+        window.clearTimeout(bootstrapTimer);
       }
     })();
 
     return () => {
       cancelled = true;
+      window.clearTimeout(bootstrapTimer);
       unsubscribe();
     };
   }, [shouldUseDemoMode]);
@@ -83,7 +97,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const client = await getSupabaseClient();
       const redirectTo = `${window.location.origin}/auth`;
       const { error } = await client.auth.signUp({
-        email,
+        email: email.trim().toLowerCase(),
         password,
         options: { emailRedirectTo: redirectTo },
       });
@@ -98,7 +112,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: new Error("Supabase is not configured on this deployment.") };
       }
       const client = await getSupabaseClient();
-      const { error } = await client.auth.signInWithPassword({ email, password });
+      const { error } = await client.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password,
+      });
       return { error: error as Error | null };
     },
     []
@@ -122,7 +139,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: new Error("Supabase is not configured on this deployment.") };
       }
       const client = await getSupabaseClient();
-      const { error } = await client.auth.resetPasswordForEmail(email, {
+      const { error } = await client.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
         redirectTo: `${window.location.origin}/reset-password`,
       });
       return { error: error as Error | null };
