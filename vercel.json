@@ -4,6 +4,7 @@
   "installCommand": "npm ci",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "ignoreCommand": "node scripts/vercel-ignore-noncanonical-project.mjs",
   "alias": [
     "crypto-signal-bot-indol.vercel.app",
     "crypto-signal-bot-admin-25521151s-projects.vercel.app"
