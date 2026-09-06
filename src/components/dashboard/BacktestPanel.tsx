@@ -7,7 +7,7 @@
  */
 import { useState, useCallback } from "react";
 import {
-  BarChart2, TrendingUp, TrendingDown, Activity,
+  BarChart2, Activity,
   RefreshCw, ChevronDown, ChevronUp, Trophy, AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -93,7 +93,6 @@ function Sparkline({ points, positive }: { points: { ts: number; equity: number 
   const W = 180; const H = 48;
   const xs = points.map((_, i) => (i / (points.length - 1)) * W);
   const ys = vals.map(v => H - ((v - min) / range) * H);
-  const d = xs.map((x, i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${ys[i].toFixed(1)}`).join(" ");
   const color = positive ? "#22c55e" : "#ef4444";
   return (
     <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="overflow-visible">

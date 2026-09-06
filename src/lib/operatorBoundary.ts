@@ -9,7 +9,7 @@
  * these checks.
  */
 
-import { getRuntimeConfig, isPaperTradingMode, isLiveTradingAllowed, areWithdrawalsAllowed } from './runtimeConfig';
+import { isPaperTradingMode, isLiveTradingAllowed, areWithdrawalsAllowed } from './runtimeConfig';
 import { PaperTradingError, LiveTradingBlockedError, WithdrawalBlockedError, PrivilegedOperationError } from './backendTypes';
 
 // List of privileged operations that are always blocked

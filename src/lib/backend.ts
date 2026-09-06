@@ -33,7 +33,6 @@ import {
   OrderType,
   OrderStatus,
   SignalType,
-  SignalStrength,
 } from './backendTypes';
 
 import {
@@ -47,7 +46,6 @@ import {
   generateMockOrders,
   generateMockSignals,
   generateMockTrades,
-  generateMockExchangeData,
   markAsMock,
 } from './paperSafety';
 
@@ -62,7 +60,7 @@ const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000';
 // Helper Functions
 // ============================================================================
 
-async function fetchWithBoundary<T>(
+export async function fetchWithBoundary<T>(
   endpoint: string,
   options: RequestInit = {},
   operation: string
@@ -103,7 +101,7 @@ async function fetchWithBoundary<T>(
 // ============================================================================
 
 export const AuthApi = {
-  async signIn(email: string, password: string): Promise<ApiResponse<User>> {
+  async signIn(email: string, _password: string): Promise<ApiResponse<User>> {
     enforceReadOnlyBoundary('sign_in');
     
     // Mock user for paper trading
@@ -145,7 +143,7 @@ export const AuthApi = {
     });
   },
   
-  async signUp(email: string, password: string, username: string): Promise<ApiResponse<User>> {
+  async signUp(email: string, _password: string, username: string): Promise<ApiResponse<User>> {
     enforceReadOnlyBoundary('sign_up');
     
     const mockUser: User = {
@@ -343,7 +341,7 @@ export const ExchangeApi = {
     });
   },
   
-  async disconnectExchange(connectionId: string): Promise<ApiResponse<{ success: boolean }>> {
+  async disconnectExchange(_connectionId: string): Promise<ApiResponse<{ success: boolean }>> {
     enforceOperatorBoundary('disconnect_exchange');
     
     return markAsMock({
@@ -423,11 +421,11 @@ export const MarketDataApi = {
     const mockOrderBook: OrderBook = {
       symbol,
       exchange: 'binance',
-      bids: Array.from({ length: limit }, (_, i) => [
+      bids: Array.from({ length: limit }, () => [
         100 + Math.random() * 90000,
         Math.random() * 100
       ]),
-      asks: Array.from({ length: limit }, (_, i) => [
+      asks: Array.from({ length: limit }, () => [
         100 + Math.random() * 90000,
         Math.random() * 100
       ]),
@@ -459,7 +457,7 @@ export const TradingApi = {
     });
   },
   
-  async getOrders(status?: OrderStatus): Promise<ApiResponse<Order[]>> {
+  async getOrders(_status?: OrderStatus): Promise<ApiResponse<Order[]>> {
     enforceReadOnlyBoundary('get_orders');
     
     return markAsMock({
@@ -488,6 +486,7 @@ export const TradingApi = {
       success: true,
       data: {
         data: generateMockOrders(limit),
+        isMock: true,
         pagination: {
           page: 1,
           limit,
@@ -551,6 +550,7 @@ export const TradingApi = {
       success: true,
       data: {
         data: generateMockTrades(limit),
+        isMock: true,
         pagination: {
           page: 1,
           limit,
@@ -570,6 +570,7 @@ export const TradingApi = {
       success: true,
       data: {
         data: generateMockTrades(limit),
+        isMock: true,
         pagination: {
           page: 1,
           limit,
@@ -584,11 +585,11 @@ export const TradingApi = {
   
   // SAFETY: Create order is BLOCKED by operator boundary
   async createOrder(
-    symbol: string,
-    side: OrderSide,
-    type: OrderType,
-    amount: number,
-    price?: number
+    _symbol: string,
+    _side: OrderSide,
+    _type: OrderType,
+    _amount: number,
+    _price?: number
   ): Promise<ApiResponse<Order>> {
     enforceOperatorBoundary('create_order');
     
@@ -602,7 +603,7 @@ export const TradingApi = {
   },
   
   // SAFETY: Cancel order is BLOCKED by operator boundary
-  async cancelOrder(orderId: string): Promise<ApiResponse<Order>> {
+  async cancelOrder(_orderId: string): Promise<ApiResponse<Order>> {
     enforceOperatorBoundary('cancel_order');
     
     return markAsMock({
@@ -614,7 +615,7 @@ export const TradingApi = {
   },
   
   // SAFETY: Withdraw is BLOCKED by operator boundary
-  async withdraw(amount: number, currency: string, address: string): Promise<ApiResponse<{ success: boolean }>> {
+  async withdraw(_amount: number, _currency: string, _address: string): Promise<ApiResponse<{ success: boolean }>> {
     enforceOperatorBoundary('withdraw');
     
     return markAsMock({
@@ -632,7 +633,7 @@ export const TradingApi = {
 
 export const SignalApi = {
   async getSignals(
-    status?: SignalType,
+    _status?: SignalType,
     limit: number = 20
   ): Promise<ApiResponse<PaginatedResponse<Signal>>> {
     enforceReadOnlyBoundary('get_signals');
@@ -643,6 +644,7 @@ export const SignalApi = {
       success: true,
       data: {
         data: mockSignals,
+        isMock: true,
         pagination: {
           page: 1,
           limit,
@@ -673,6 +675,7 @@ export const SignalApi = {
       success: true,
       data: {
         data: generateMockSignals(limit),
+        isMock: true,
         pagination: {
           page: 1,
           limit,
@@ -685,7 +688,7 @@ export const SignalApi = {
     });
   },
   
-  async executeSignal(signalId: string): Promise<ApiResponse<{ success: boolean; orderId?: string }>> {
+  async executeSignal(_signalId: string): Promise<ApiResponse<{ success: boolean; orderId?: string }>> {
     enforceOperatorBoundary('execute_signal');
     
     // In paper trading mode, signal execution is simulated
@@ -797,7 +800,7 @@ export const AlertApi = {
     });
   },
   
-  async deleteAlert(alertId: string): Promise<ApiResponse<{ success: boolean }>> {
+  async deleteAlert(_alertId: string): Promise<ApiResponse<{ success: boolean }>> {
     enforceOperatorBoundary('delete_alert');
     
     return markAsMock({
@@ -815,6 +818,7 @@ export const AlertApi = {
       success: true,
       data: {
         data: [],
+        isMock: true,
         pagination: {
           page: 1,
           limit,
@@ -907,7 +911,7 @@ export const BacktestingApi = {
     });
   },
   
-  async cancelBacktest(id: string): Promise<ApiResponse<{ success: boolean }>> {
+  async cancelBacktest(_id: string): Promise<ApiResponse<{ success: boolean }>> {
     enforceOperatorBoundary('cancel_backtest');
     
     return markAsMock({
@@ -1017,6 +1021,7 @@ export const NotificationApi = {
       success: true,
       data: {
         data: [],
+        isMock: true,
         pagination: {
           page: 1,
           limit,
@@ -1029,7 +1034,7 @@ export const NotificationApi = {
     });
   },
   
-  async markAsRead(id: string): Promise<ApiResponse<{ success: boolean }>> {
+  async markAsRead(_id: string): Promise<ApiResponse<{ success: boolean }>> {
     enforceOperatorBoundary('mark_notification_as_read');
     
     return markAsMock({

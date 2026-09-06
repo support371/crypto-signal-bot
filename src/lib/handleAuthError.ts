@@ -9,9 +9,9 @@ export function isAuthError(error: unknown): boolean {
       status?: unknown;
     };
   };
-  const status: number | undefined =
-    (typeof typedError?.status === 'number' && typedError.status) ||
-    (typeof typedError?.context?.status === 'number' && typedError.context.status);
+  const status: number | undefined = typeof typedError?.status === 'number'
+    ? typedError.status
+    : typeof typedError?.context?.status === 'number' ? typedError.context.status : undefined;
 
   const message = error instanceof Error ? error.message : String(error);
 

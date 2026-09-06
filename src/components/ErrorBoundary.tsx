@@ -5,7 +5,6 @@
  */
 
 import { Component, ErrorInfo, ReactNode } from 'react';
-import { Button } from './Card';
 
 interface ErrorBoundaryProps {
   children: ReactNode;

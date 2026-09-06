@@ -1,12 +1,17 @@
 openapi: 3.1.0
 info:
   title: crypto-signal-bot Worker API Action
-  version: 2.2.0
-  description: Worker/API action schema. System operates in paper mode by default and graduates to live mode only after verified performance criteria are met and the owner explicitly approves. Coinbase is public read-only market data only.
+  version: 2.3.0
+  description: Worker/API action schema for the current paper/certification release. BTCC is the primary execution integration, Bitget is secondary, and Coinbase is public read-only market data only. Live trading, mainnet execution, withdrawals, provider mutation, and real-fund dispatch remain outside this schema and fail closed.
 servers:
-  - url: https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
-    description: Current Cloudflare Worker backend
+  - url: https://crypto-signal-bot-api.analyzer-d94.workers.dev
+    description: Canonical migrated Cloudflare Worker backend
 components:
+  securitySchemes:
+    operatorApiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
   schemas:
     GenericObject:
       type: object
@@ -125,7 +130,9 @@ paths:
   /guardian/reset:
     post:
       operationId: postGuardianReset
-      summary: Reset paper guardian kill switch with a required reason
+      summary: Reset the paper Guardian kill switch with a required reason
+      security:
+        - operatorApiKey: []
       requestBody:
         required: true
         content:
@@ -139,10 +146,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GenericObject"
+        "401":
+          description: Operator authentication failed
   /signals/generate:
     post:
       operationId: postSignalsGenerate
       summary: Generate and store a paper-mode signal with an optional strategy parameter
+      security:
+        - operatorApiKey: []
       requestBody:
         required: false
         content:
@@ -156,10 +167,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GenericObject"
+        "401":
+          description: Operator authentication failed
   /api/v1/portfolio/reset:
     post:
       operationId: postPortfolioReset
-      summary: Reset paper portfolio through the backend service-layer v1 route
+      summary: Reset the simulated paper portfolio through the service-layer v1 route
+      security:
+        - operatorApiKey: []
       requestBody:
         required: true
         content:
@@ -179,6 +194,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorObject"
+        "401":
+          description: Operator authentication failed
         "403":
           description: Reset blocked outside paper mode
           content:
@@ -200,6 +217,8 @@ paths:
     post:
       operationId: queryD1Readonly
       summary: Run a server-enforced readonly D1 SELECT query
+      security:
+        - operatorApiKey: []
       requestBody:
         required: true
         content:
@@ -219,6 +238,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorObject"
+        "401":
+          description: Operator authentication failed
   /intent/live:
     post:
       operationId: verifyLiveTradingBlocked
@@ -245,6 +266,8 @@ paths:
     get:
       operationId: getAgentMemory
       summary: Read a value from persistent agent memory (Cloudflare KV)
+      security:
+        - operatorApiKey: []
       parameters:
         - name: key
           in: path
@@ -258,9 +281,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GenericObject"
+        "401":
+          description: Operator authentication failed
     post:
       operationId: setAgentMemory
       summary: Write a value to persistent agent memory (30-day TTL)
+      security:
+        - operatorApiKey: []
       parameters:
         - name: key
           in: path
@@ -285,9 +312,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GenericObject"
+        "401":
+          description: Operator authentication failed
     delete:
       operationId: deleteAgentMemory
       summary: Delete a key from persistent agent memory
+      security:
+        - operatorApiKey: []
       parameters:
         - name: key
           in: path
@@ -301,11 +332,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GenericObject"
+        "401":
+          description: Operator authentication failed
   /agent/context:
     get:
       operationId: getAgentContext
       summary: >
-        Get a full system snapshot in one call — runtime mode, guardian status,
+        Get a full system snapshot in one call — runtime mode, Guardian status,
         latest signal, portfolio summary, and memory availability.
         Call this at the start of every session to orient yourself.
       responses:

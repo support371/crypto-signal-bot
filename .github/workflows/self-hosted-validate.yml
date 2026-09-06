@@ -15,7 +15,7 @@ env:
   TRADING_MODE: paper
   EXCHANGE_MODE: paper
   ALLOW_MAINNET: "false"
-  WORKER_SMOKE_BASE_URL: https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
+  WORKER_SMOKE_BASE_URL: https://crypto-signal-bot-api.analyzer-d94.workers.dev
 
 jobs:
   validate:
@@ -33,7 +33,7 @@ jobs:
           node-version: "22"
           cache: npm
 
-      - name: Confirm pape-safety environment
+      - name: Confirm paper-safety environment
         shell: bash
         run: |
           set -euo pipefail
@@ -75,6 +75,7 @@ jobs:
           grep -q '"allow_mainnet":false' /tmp/worker-runtime.json
           grep -q '"live_trading_enabled":false' /tmp/worker-guardian.json
           grep -q '"withdrawals_enabled":false' /tmp/worker-guardian.json
+
       - name: Verify live and withdraw routes remain blocked
         shell: bash
         run: |

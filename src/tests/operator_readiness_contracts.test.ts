@@ -117,7 +117,7 @@ describe('operator readiness normalization', () => {
 
 describe('operator readiness gateway transport', () => {
   it('uses only the fixed same-origin GET contract without credential headers', async () => {
-    const fetcher = vi.fn(async () => new Response(JSON.stringify(validPayload()), {
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(validPayload()), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     }));

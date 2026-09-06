@@ -175,7 +175,7 @@ jobs:
     steps:
       - install-worker
       - run:
-          name: Verify clean and upgrade migration paths through migration 026
+          name: Verify clean and upgrade migration paths through migration 031
           command: npm --prefix worker run verify:migrations
 
   worker-paper-safety:
@@ -341,7 +341,7 @@ jobs:
   deploy-paper-worker:
     executor: node-worker
     environment:
-      WORKER_URL: https://crypto-signal-bot-api.gr8r9bfzry.workers.dev
+      WORKER_URL: https://crypto-signal-bot-api.analyzer-d94.workers.dev
       TRADING_MODE: paper
       EXCHANGE_MODE: paper
       ALLOW_MAINNET: "false"
@@ -367,6 +367,7 @@ jobs:
             npm --prefix worker run verify:regulated-foundation-safety
             npm --prefix worker run verify:certification-safety
             npm --prefix worker run verify:migrations
+            npm run verify:usage-management
       - run:
           name: Validate production Worker bundle
           command: cd worker && ./node_modules/.bin/wrangler deploy --dry-run --outdir /tmp/crypto-signal-bot-worker-dry-run --config ../wrangler.toml

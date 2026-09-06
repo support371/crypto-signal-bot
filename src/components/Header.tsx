@@ -5,7 +5,6 @@
  */
 
 import { useAuth } from '../providers/AuthProvider';
-import { useUser } from '../providers/UserProvider';
 import { Link } from 'react-router-dom';
 import { cn } from '../lib/utils';
 
@@ -15,7 +14,6 @@ interface HeaderProps {
 
 export default function Header({ onMenuClick }: HeaderProps) {
   const { user, signOut } = useAuth();
-  const { preferences } = useUser();
 
   return (
     <header

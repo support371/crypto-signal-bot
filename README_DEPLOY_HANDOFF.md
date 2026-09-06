@@ -1,73 +1,88 @@
 # Crypto Signal Bot Cloudflare/Vercel Deploy Handoff
 
-This repo is configured for a paper-only Cloudflare Workers backend at `https://crypto-signal-bot-api.gr8r9bfzry.workers.dev` with Cloudflare D1, R2, KV, cron triggers, and a Vercel-hosted frontend. The safe-fast-path Durable Object and Queue authority remain future migration phases and are not represented as active production bindings.
+The current release uses the paper/certification Cloudflare Worker at `https://crypto-signal-bot-api.analyzer-d94.workers.dev` with Cloudflare D1, R2, KV Agent Memory, cron triggers, and a Vercel-hosted frontend. The canonical frontend is `https://crypto-signal-bot-indol.vercel.app`.
+
+The execution hierarchy is BTCC primary and Bitget secondary. Coinbase is public read-only market data only. This handoff does not authorize live exchange mutation, real-fund dispatch, mainnet execution, or withdrawals.
 
 ## Security note
 
-Do not commit Cloudflare, GitHub, Vercel, R2, or exchange credentials. If any credential has been pasted into chat, an issue, a PR, a log, or a generated file, treat it as compromised and rotate it before deployment.
+Do not commit Cloudflare, GitHub, Vercel, Supabase, R2, operator, or exchange credentials. If any credential has been pasted into chat, an issue, a PR, a log, or a generated file, treat it as compromised and rotate it before deployment.
 
 ## Paper-only invariants
 
-The Worker configuration enforces these defaults:
+The release must preserve:
 
 - `TRADING_MODE="paper"`
 - `EXCHANGE_MODE="paper"`
+- `NETWORK="testnet"`
 - `ALLOW_MAINNET="false"`
 - `MARKET_DATA_PUBLIC_EXCHANGE="coinbase"`
+- BTCC primary / Bitget secondary execution metadata
 - `POST /intent/live` returns HTTP 403
+- `POST /live/order` returns HTTP 403
 - `POST /withdraw` returns HTTP 403
+- provider mutation remains false
+- real funds remain false
 
-Run the local static safety check before deployment:
+Run the static safety checks before deployment:
 
 ```bash
-cd worker
-npm run verify:paper-safety
+npm ci
+npm run build
+npm run verify:paper-worker-release
 ```
 
 ## Deployment sequence
 
-1. Export Cloudflare credentials in your terminal or CI secret store without printing them.
-2. Confirm the configured D1 database exists (create it only for a new Cloudflare account):
+1. Export `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` through a secret store or protected shell environment. Do not hard-code either value into the repository.
+2. Confirm that `wrangler.toml` points to the intended migrated account resources, including the D1 database, R2 bucket, and `AGENT_MEMORY` KV namespace.
+3. Run the release gate:
    ```bash
-   wrangler d1 create crypto-signal-bot-db
+   npm run verify:paper-worker-release
    ```
-3. Confirm that the returned database id matches the committed `database_id` in `wrangler.toml`; do not rewrite a valid production binding.
-4. Confirm the R2 bucket exists (create it only when absent):
+4. Deploy through the guarded repository script:
    ```bash
-   wrangler r2 bucket create crypto-signal-bot-storage
+   bash scripts/deploy-worker.sh
    ```
-5. Install and type-check the Worker:
-   ```bash
-   cd worker
-   npm install
-   npm run build
-   npm run verify:paper-safety
-   ```
-6. Run the D1 migration:
-   ```bash
-   npm run migrate
-   ```
-7. Set required Worker secrets without echoing values into shell history:
-   ```bash
-   wrangler secret put BACKEND_API_KEY --config ../wrangler.toml
-   ```
-8. Deploy:
-   ```bash
-   npm run deploy
-   ```
-9. Update Vercel so both `VITE_BACKEND_URL` and `VITE_API_BASE_URL` equal `https://crypto-signal-bot-api.gr8r9bfzry.workers.dev`, then trigger a production redeploy only after Worker smoke checks pass.
-10. Add `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `VERCEL_TOKEN`, `VERCEL_PROJECT_ID`, and optional `VERCEL_TEAM_ID` values to GitHub Actions secrets.
+   The script refuses to run without owner-managed Cloudflare credentials, uses the current migrated Worker URL, applies the paper-release checks, and performs runtime smoke verification.
+5. Configure Worker-side identity-provider values as Cloudflare secrets/variables only when the intended production identity project has been selected:
+   - `SUPABASE_URL`
+   - `SUPABASE_PUBLISHABLE_KEY` (or the compatible anon key)
+   `BACKEND_API_KEY` remains a server-side secret and must never be exposed as `VITE_*`.
+6. Configure Vercel browser-safe authentication variables:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_PUBLISHABLE_KEY`
+   - `VITE_DEMO_MODE=false`
+7. Set Vercel backend variables to the migrated Worker:
+   - `VITE_BACKEND_URL=https://crypto-signal-bot-api.analyzer-d94.workers.dev`
+   - `VITE_CRYPTOCORE_API_BASE=https://crypto-signal-bot-api.analyzer-d94.workers.dev`
+8. Trigger one deliberate production Vercel deployment after the Worker and identity configuration are ready. Avoid repeated deployment churn when the free deployment quota is rate-limited.
+9. Promote the accepted deployment to `crypto-signal-bot-indol.vercel.app` and verify `/release.json`, `/status`, `/api/release-attestation`, `/auth`, `/account`, and `/admin` from the canonical domain.
+10. Bootstrap the first global `RELEASE_ADMIN` only once. The bootstrap path requires both a valid authenticated user session and the server operator key, and it closes after an active global `RELEASE_ADMIN` exists.
 
 ## Post-deploy checks
 
 ```bash
-curl https://crypto-signal-bot-api.gr8r9bfzry.workers.dev/healthz
-curl https://crypto-signal-bot-api.gr8r9bfzry.workers.dev/runtime/status
-curl https://crypto-signal-bot-api.gr8r9bfzry.workers.dev/surge/status
-curl https://crypto-signal-bot-api.gr8r9bfzry.workers.dev/guardian/status
-curl https://crypto-signal-bot-api.gr8r9bfzry.workers.dev/portfolio/summary
-curl https://crypto-signal-bot-api.gr8r9bfzry.workers.dev/market/feed/status
-curl https://crypto-signal-bot-api.gr8r9bfzry.workers.dev/exchange/circuit-breakers
-curl -i -X POST https://crypto-signal-bot-api.gr8r9bfzry.workers.dev/intent/live
-curl -i -X POST https://crypto-signal-bot-api.gr8r9bfzry.workers.dev/withdraw
+WORKER=https://crypto-signal-bot-api.analyzer-d94.workers.dev
+curl "$WORKER/healthz"
+curl "$WORKER/runtime/status"
+curl "$WORKER/v2/infrastructure/status"
+curl "$WORKER/agent/context"
+curl "$WORKER/guardian/status"
+curl "$WORKER/portfolio/summary"
+curl "$WORKER/market/feed/status"
+curl "$WORKER/exchange/circuit-breakers"
+curl -i -X POST "$WORKER/intent/live"
+curl -i -X POST "$WORKER/live/order"
+curl -i -X POST "$WORKER/withdraw"
 ```
+
+The three disabled financial-action probes above must return HTTP 403. Privileged helper endpoints such as `/d1/query/readonly` and `/agent/memory/{key}` must return HTTP 401 without the operator key.
+
+Finally run:
+
+```bash
+npm run verify:deployment
+```
+
+Do not declare the release complete if the canonical Vercel alias is serving an older deployment, the identity provider is unconfigured, or any paper/testnet invariant fails.
