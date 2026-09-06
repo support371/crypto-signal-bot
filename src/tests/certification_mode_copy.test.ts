@@ -29,7 +29,7 @@ describe('Certification Mode product language', () => {
 
     for (const required of [
       'CERTIFICATION MODE',
-      'Certification Trading Terminal',
+      'Certification trading terminal',
       'Certification Portfolio',
       'Certification Mode and Exchange Safety',
       'Certification Mode Dashboard',
