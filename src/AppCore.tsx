@@ -51,10 +51,12 @@ function AccessGate({
   children,
   admin = false,
   allowUnassigned = false,
+  allowAuthorizationFailure = false,
 }: {
   children: ReactNode;
   admin?: boolean;
   allowUnassigned?: boolean;
+  allowAuthorizationFailure?: boolean;
 }) {
   const { user, isLoading, isDemoMode } = useAuth();
   const location = useLocation();
@@ -77,6 +79,9 @@ function AccessGate({
   }
 
   if (access.error) {
+    if (allowAuthorizationFailure) {
+      return children;
+    }
     return (
       <AccessFailure
         title="Account authorization unavailable"
@@ -111,10 +116,14 @@ function ProtectedPage({ children }: { children: ReactNode }) {
 }
 
 function DashboardPage({ children }: { children: ReactNode }) {
-  // The dashboard is the authenticated inspection surface for this paper/testnet
-  // release. An ACTIVE identity may view it before scoped product roles are
-  // assigned; privileged/admin routes and server-side mutations remain role-gated.
-  return <AccessGate allowUnassigned>{children}</AccessGate>;
+  // Keep the authenticated paper/testnet inspection surface reachable even if
+  // management authorization is temporarily unavailable. Privileged routes and
+  // all server-side mutations remain fail-closed and role-authorized.
+  return (
+    <AccessGate allowUnassigned allowAuthorizationFailure>
+      {children}
+    </AccessGate>
+  );
 }
 
 function AccountPage({ children }: { children: ReactNode }) {
