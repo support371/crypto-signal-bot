@@ -8,6 +8,7 @@ type RuntimeEnv = AgentContextEnv & {
   EXECUTION_EXCHANGE_PRIMARY?: string
   EXECUTION_EXCHANGE_SECONDARY?: string
   OPTIONAL_PUBLIC_DATA_EXCHANGE?: string
+  BACKEND_API_KEY?: string
 }
 
 let schemaInitialization: Promise<void> | null = null
@@ -131,6 +132,178 @@ function initializationFailure(error: unknown): Response {
   }, { status: 503 })
 }
 
+async function workerJson(
+  origin: string,
+  path: string,
+  env: RuntimeEnv,
+  ctx: ExecutionContext,
+  init?: RequestInit,
+): Promise<{ response: Response; body: Record<string, unknown> | null }> {
+  const response = await worker.fetch(new Request(`${origin}${path}`, init), env, ctx)
+  const body = await response.clone().json().catch(() => null) as Record<string, unknown> | null
+  return { response, body }
+}
+
+function finiteNumber(value: unknown): number | null {
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+async function handleOneShotPaperDemo(
+  request: Request,
+  env: RuntimeEnv,
+  ctx: ExecutionContext,
+): Promise<Response> {
+  const url = new URL(request.url)
+  if (url.searchParams.get('confirm') !== 'paper-10k-e7d98447') {
+    return Response.json({ ok: false, error: 'confirmation_required' }, { status: 403 })
+  }
+
+  const operatorKey = env.BACKEND_API_KEY?.trim()
+  if (!operatorKey) {
+    return Response.json({ ok: false, error: 'server_operator_key_not_configured' }, { status: 503 })
+  }
+
+  const origin = url.origin
+  const [health, runtime, guardian, portfolio] = await Promise.all([
+    workerJson(origin, '/health', env, ctx),
+    workerJson(origin, '/runtime/status', env, ctx),
+    workerJson(origin, '/guardian/status', env, ctx),
+    workerJson(origin, '/portfolio/summary', env, ctx),
+  ])
+
+  if (!health.response.ok || !runtime.response.ok || !guardian.response.ok || !portfolio.response.ok) {
+    return Response.json({
+      ok: false,
+      error: 'paper_test_dependencies_unavailable',
+      statuses: {
+        health: health.response.status,
+        runtime: runtime.response.status,
+        guardian: guardian.response.status,
+        portfolio: portfolio.response.status,
+      },
+    }, { status: 503 })
+  }
+
+  const runtimeMode = String(runtime.body?.trading_mode ?? runtime.body?.mode ?? health.body?.mode ?? '').toLowerCase()
+  const portfolioMode = String(portfolio.body?.mode ?? '').toLowerCase()
+  const allowMainnet = runtime.body?.allow_mainnet === true || health.body?.allow_mainnet === true
+  const liveTrading = runtime.body?.live_trading_enabled === true || health.body?.live_trading_enabled === true
+  const withdrawals = runtime.body?.withdrawals_enabled === true || health.body?.withdrawals_enabled === true
+  const guardianTriggered = guardian.body?.triggered === true || guardian.body?.kill_switch_active === true
+
+  if (
+    runtimeMode !== 'paper'
+    || portfolioMode !== 'paper'
+    || allowMainnet
+    || liveTrading
+    || withdrawals
+    || guardianTriggered
+  ) {
+    return Response.json({
+      ok: false,
+      error: 'paper_safety_precondition_failed',
+      safety: {
+        runtime_mode: runtimeMode || 'unknown',
+        portfolio_mode: portfolioMode || 'unknown',
+        allow_mainnet: allowMainnet,
+        live_trading_enabled: liveTrading,
+        withdrawals_enabled: withdrawals,
+        guardian_triggered: guardianTriggered,
+      },
+    }, { status: 409 })
+  }
+
+  const cashBefore = finiteNumber(portfolio.body?.cash_usdt ?? portfolio.body?.balance_usdt)
+  const positionCount = finiteNumber(
+    portfolio.body?.position_count
+      ?? (Array.isArray(portfolio.body?.open_positions) ? portfolio.body.open_positions.length : undefined)
+      ?? (Array.isArray(portfolio.body?.positions) ? portfolio.body.positions.length : 0),
+  )
+
+  if (
+    cashBefore === null
+    || Math.abs(cashBefore - 10000) > 10
+    || positionCount !== 0
+  ) {
+    return Response.json({
+      ok: false,
+      error: 'one_shot_demo_precondition_not_met',
+      note: 'No trade was submitted. The one-shot test only runs against a clean ~10,000 USDT paper wallet with no open position.',
+      cash_before: cashBefore,
+      position_count: positionCount,
+    }, { status: 409 })
+  }
+
+  const price = await workerJson(origin, '/market/price/BTC', env, ctx)
+  const referencePrice = finiteNumber(price.body?.price)
+  if (!price.response.ok || referencePrice === null || referencePrice <= 0) {
+    return Response.json({ ok: false, error: 'btc_reference_price_unavailable' }, { status: 503 })
+  }
+
+  const quantity = Number((500 / referencePrice).toFixed(8))
+  const trade = await workerJson(origin, '/orders', env, ctx, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-API-Key': operatorKey,
+    },
+    body: JSON.stringify({
+      symbol: 'BTCUSDT',
+      side: 'BUY',
+      quantity,
+      price: referencePrice,
+      notional_usdt: 500,
+      idempotency_key: 'one-shot-demo-e7d98447',
+    }),
+  })
+
+  if (!trade.response.ok || String(trade.body?.status ?? '').toUpperCase() !== 'FILLED') {
+    return Response.json({
+      ok: false,
+      error: 'paper_trade_not_filled',
+      upstream_status: trade.response.status,
+      upstream: trade.body,
+    }, { status: trade.response.status || 502 })
+  }
+
+  const after = await workerJson(origin, '/portfolio/summary', env, ctx)
+  if (!after.response.ok) {
+    return Response.json({
+      ok: false,
+      error: 'paper_trade_filled_but_portfolio_verification_failed',
+      trade: trade.body,
+    }, { status: 502 })
+  }
+
+  return Response.json({
+    ok: true,
+    test: 'ONE_SHOT_10K_DEMO_PAPER_BUY',
+    safety: {
+      mode: 'paper',
+      network: 'testnet',
+      real_funds: false,
+      withdrawals: false,
+      provider_mutation: false,
+    },
+    before: {
+      cash_usdt: cashBefore,
+      position_count: positionCount,
+    },
+    trade: trade.body,
+    after: {
+      cash_usdt: finiteNumber(after.body?.cash_usdt ?? after.body?.balance_usdt),
+      equity_usdt: finiteNumber(after.body?.equity_usdt),
+      position_count: finiteNumber(
+        after.body?.position_count
+          ?? (Array.isArray(after.body?.open_positions) ? after.body.open_positions.length : undefined)
+          ?? (Array.isArray(after.body?.positions) ? after.body.positions.length : 0),
+      ),
+    },
+  })
+}
+
 const METADATA_PATHS = new Set([
   '/healthz',
   '/health',
@@ -153,6 +326,10 @@ export default {
     }
 
     const url = new URL(request.url)
+    if (request.method === 'GET' && url.pathname === '/operator/paper-demo/e7d98447') {
+      return handleOneShotPaperDemo(request, env, ctx)
+    }
+
     const response = url.pathname === '/agent/context'
       ? await handleAgentContextRequest(request, env)
       : await worker.fetch(request, env, ctx)
