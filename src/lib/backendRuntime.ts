@@ -1,3 +1,4 @@
+import { getSupabaseClient, SUPABASE_CONFIGURED } from '@/integrations/supabase/client';
 import { getConfiguredBackendUrl, getConfiguredWebSocketUrl } from './env';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -65,6 +66,17 @@ async function readError(response: Response): Promise<string> {
   }
 }
 
+async function getCurrentAccessToken(): Promise<string | null> {
+  if (!SUPABASE_CONFIGURED) return null;
+  try {
+    const client = await getSupabaseClient();
+    const { data } = await client.auth.getSession();
+    return data.session?.access_token ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function backendFetch(path: string, init: BackendRequestInit = {}): Promise<Response> {
   const method = (init.method ?? 'GET').toUpperCase();
   assertBrowserSafe(path, method);
@@ -82,11 +94,19 @@ async function backendFetch(path: string, init: BackendRequestInit = {}): Promis
       headers.set('Content-Type', 'application/json');
     }
 
+    // Authenticated application requests use the current Supabase session.
+    // The browser must never receive or send BACKEND_API_KEY/X-API-Key.
+    if (!headers.has('Authorization')) {
+      const accessToken = await getCurrentAccessToken();
+      if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
+    }
+
     const response = await fetch(buildBackendUrl(path), {
       ...init,
       headers,
       signal: init.signal ?? controller.signal,
       credentials: 'omit',
+      cache: init.cache ?? 'no-store',
     });
 
     if (!response.ok) {

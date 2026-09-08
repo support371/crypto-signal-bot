@@ -13,11 +13,37 @@ import {
 } from './management'
 import { hasActiveGlobalReleaseAdmin } from './management-bootstrap-guard'
 
-type AgentEnv = AgentContextEnv & ManagementEnv
+type AgentEnv = AgentContextEnv & ManagementEnv & Env
 
 type D1ReadonlyRequest = {
   sql?: string
   params?: unknown[]
+}
+
+type ManagementMePayload = {
+  profile?: {
+    actor_id?: string
+    status?: string
+  }
+  roles?: Array<{
+    role?: string
+    scope_type?: string
+    scope_key?: string
+  }>
+  access_allowed?: boolean
+  request_id?: string
+  error?: string
+  code?: string
+}
+
+type PaperIntentInput = {
+  symbol?: unknown
+  side?: unknown
+  quantity?: unknown
+  qty?: unknown
+  amount?: unknown
+  notional_usdt?: unknown
+  idempotency_key?: unknown
 }
 
 function numberOr(value: unknown, fallback = 0): number {
@@ -53,7 +79,7 @@ function corsHeaders(request: Request, env: Env): Headers {
   const headers = new Headers({
     'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Request-ID',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Request-ID, Idempotency-Key',
     'Access-Control-Expose-Headers': 'X-Request-ID, Retry-After',
     'Cache-Control': 'no-store',
     'Content-Type': 'application/json; charset=utf-8',
@@ -200,6 +226,258 @@ async function guardInitialManagementBootstrap(
   }
 }
 
+function requestId(request: Request): string {
+  const supplied = request.headers.get('X-Request-ID')?.trim()
+  return supplied && supplied.length <= 128 ? supplied : crypto.randomUUID()
+}
+
+async function authenticatePaperTrader(
+  request: Request,
+  env: AgentEnv,
+): Promise<{ actorId: string } | { response: Response }> {
+  const authorization = request.headers.get('Authorization')?.trim()
+  if (!authorization?.toLowerCase().startsWith('bearer ')) {
+    return {
+      response: jsonResponse(request, env, {
+        error: 'A valid authenticated session is required for paper execution.',
+        code: 'UNAUTHENTICATED',
+        request_id: requestId(request),
+      }, 401),
+    }
+  }
+
+  const authHeaders = new Headers({
+    Accept: 'application/json',
+    Authorization: authorization,
+    'X-Request-ID': requestId(request),
+  })
+  const origin = request.headers.get('Origin')
+  if (origin) authHeaders.set('Origin', origin)
+
+  const authUrl = new URL('/v1/management/me', request.url)
+  const authResponse = await handleManagementRequest(
+    new Request(authUrl, { method: 'GET', headers: authHeaders }),
+    env,
+  )
+  const payload = await authResponse.clone().json().catch(() => null) as ManagementMePayload | null
+
+  if (!authResponse.ok) {
+    return {
+      response: jsonResponse(request, env, {
+        error: payload?.error ?? 'Authentication failed.',
+        code: payload?.code ?? 'UNAUTHENTICATED',
+        request_id: payload?.request_id ?? requestId(request),
+      }, authResponse.status),
+    }
+  }
+
+  const actorId = typeof payload?.profile?.actor_id === 'string' ? payload.profile.actor_id : ''
+  const active = payload?.access_allowed === true && payload?.profile?.status === 'ACTIVE'
+  if (!actorId || !active) {
+    return {
+      response: jsonResponse(request, env, {
+        error: 'The authenticated account is not active.',
+        code: 'ACCOUNT_INACTIVE',
+        request_id: payload?.request_id ?? requestId(request),
+      }, 403),
+    }
+  }
+
+  const hasGlobalTrader = (payload?.roles ?? []).some((role) => (
+    role.role === 'TRADER'
+    && role.scope_type === 'GLOBAL'
+    && role.scope_key === 'global'
+  ))
+  if (!hasGlobalTrader) {
+    return {
+      response: jsonResponse(request, env, {
+        error: 'A current GLOBAL TRADER role is required for paper execution.',
+        code: 'TRADER_ROLE_REQUIRED',
+        required_role: 'TRADER',
+        required_scope: { type: 'GLOBAL', key: 'global' },
+        request_id: payload?.request_id ?? requestId(request),
+      }, 403),
+    }
+  }
+
+  return { actorId }
+}
+
+function normalizePaperIntent(input: PaperIntentInput): Record<string, unknown> | null {
+  const symbol = typeof input.symbol === 'string' ? input.symbol.trim().toUpperCase() : ''
+  const side = typeof input.side === 'string' ? input.side.trim().toUpperCase() : ''
+  if (!/^[A-Z0-9]{2,20}(?:USDT|USD)?$/.test(symbol)) return null
+  if (side !== 'BUY' && side !== 'SELL') return null
+
+  const quantity = numberOr(input.quantity ?? input.qty, 0)
+  const notional = numberOr(input.notional_usdt ?? input.amount, 0)
+  if (quantity <= 0 && notional <= 0) return null
+  if (quantity > 1_000_000 || notional > 1_000_000_000) return null
+
+  const idempotencyKey = typeof input.idempotency_key === 'string'
+    ? input.idempotency_key.trim().slice(0, 128)
+    : undefined
+
+  return {
+    symbol,
+    side,
+    ...(quantity > 0 ? { quantity } : {}),
+    ...(notional > 0 ? { notional_usdt: notional } : {}),
+    ...(idempotencyKey ? { idempotency_key: idempotencyKey } : {}),
+  }
+}
+
+async function recordPaperIntentUsage(request: Request, env: AgentEnv): Promise<void> {
+  const authorization = request.headers.get('Authorization')?.trim()
+  if (!authorization) return
+  const headers = new Headers({
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+    Authorization: authorization,
+    'X-Request-ID': requestId(request),
+  })
+  const origin = request.headers.get('Origin')
+  if (origin) headers.set('Origin', origin)
+  await handleManagementRequest(
+    new Request(new URL('/v1/management/usage/events', request.url), {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ category: 'paper_intent' }),
+    }),
+    env,
+  ).catch(() => undefined)
+}
+
+async function handlePaperIntent(
+  request: Request,
+  env: AgentEnv,
+  ctx: ExecutionContext,
+): Promise<Response> {
+  const auth = await authenticatePaperTrader(request, env)
+  if ('response' in auth) return auth.response
+
+  const operatorKey = env.BACKEND_API_KEY?.trim()
+  if (!operatorKey) {
+    return jsonResponse(request, env, {
+      error: 'Server-side paper execution is unavailable because the operator secret is not configured.',
+      code: 'DEPENDENCY_UNAVAILABLE',
+      request_id: requestId(request),
+    }, 503)
+  }
+
+  const rawBody = await request.text()
+  if (!rawBody || rawBody.length > 16_384) {
+    return jsonResponse(request, env, {
+      error: 'Paper intent body is missing or exceeds the allowed size.',
+      code: 'VALIDATION_ERROR',
+      request_id: requestId(request),
+    }, 400)
+  }
+
+  let input: PaperIntentInput
+  try {
+    const parsed = JSON.parse(rawBody)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('invalid')
+    input = parsed as PaperIntentInput
+  } catch {
+    return jsonResponse(request, env, {
+      error: 'Paper intent must be a valid JSON object.',
+      code: 'VALIDATION_ERROR',
+      request_id: requestId(request),
+    }, 400)
+  }
+
+  const normalized = normalizePaperIntent(input)
+  if (!normalized) {
+    return jsonResponse(request, env, {
+      error: 'A valid symbol, BUY/SELL side, and positive quantity or notional are required.',
+      code: 'VALIDATION_ERROR',
+      request_id: requestId(request),
+    }, 400)
+  }
+
+  const headers = new Headers({
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+    'X-API-Key': operatorKey,
+    'X-Request-ID': requestId(request),
+  })
+  const internalRequest = new Request(new URL('/orders', request.url), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(normalized),
+  })
+  const response = await worker.fetch(internalRequest, env, ctx)
+  const payload = await response.clone().json().catch(() => null) as Record<string, unknown> | null
+
+  if (response.ok) ctx.waitUntil(recordPaperIntentUsage(request, env))
+
+  return jsonResponse(request, env, {
+    ...(payload ?? { error: 'Paper execution returned an invalid response.' }),
+    certification_mode: true,
+    provider_mutation_enabled: false,
+    real_funds_enabled: false,
+    request_id: requestId(request),
+  }, response.status)
+}
+
+async function handleRealtimeWebSocket(request: Request, env: AgentEnv): Promise<Response> {
+  if (request.method !== 'GET' || request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
+    return jsonResponse(request, env, {
+      error: 'WebSocket upgrade required.',
+      code: 'UPGRADE_REQUIRED',
+    }, 426)
+  }
+
+  const pair = new WebSocketPair()
+  const client = pair[0]
+  const server = pair[1]
+  server.accept()
+
+  const send = (payload: unknown) => {
+    try {
+      server.send(JSON.stringify(payload))
+    } catch {
+      // Socket may already be closed; close/error handlers perform cleanup.
+    }
+  }
+
+  const guardian = await readGuardianSnapshot(env)
+  send({ type: 'status', ws: 'online', backend: 'online' })
+  send({
+    type: 'health',
+    kill_switch_active: guardian.halted,
+    mode: 'paper',
+    api_error_count: 0,
+    guardian_triggered: guardian.halted,
+    market_data_mode: 'live_public_paper',
+    market_data_connected: true,
+  })
+  send({
+    type: 'exchange_status',
+    exchange: env.MARKET_DATA_PUBLIC_EXCHANGE || 'coinbase',
+    market_data_mode: 'live_public_paper',
+    connected: true,
+    connection_state: 'connected',
+    fallback_active: false,
+    last_update_ts: Date.now(),
+    last_error: null,
+    stale: false,
+    symbols: [],
+    source: env.MARKET_DATA_PUBLIC_EXCHANGE || 'coinbase',
+  })
+
+  const heartbeat = setInterval(() => send({ type: 'ping' }), 20_000)
+  const cleanup = () => clearInterval(heartbeat)
+  server.addEventListener('close', cleanup)
+  server.addEventListener('error', cleanup)
+  server.addEventListener('message', (event) => {
+    if (String(event.data).toLowerCase() === 'ping') send({ type: 'ping' })
+  })
+
+  return new Response(null, { status: 101, webSocket: client })
+}
+
 export default {
   async fetch(request: Request, env: AgentEnv, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url)
@@ -208,12 +486,15 @@ export default {
     const isPrivilegedD1Query = url.pathname === '/d1/query/readonly'
     const isManagementRoute = url.pathname.startsWith('/v1/management/')
     const isManagementBootstrap = url.pathname === '/v1/management/bootstrap'
+    const isPaperIntent = url.pathname === '/intent/paper'
+    const isRealtimeWebSocket = url.pathname === '/ws/updates'
 
     if (request.method === 'OPTIONS' && (
       url.pathname.startsWith('/v2/')
       || Boolean(memoryMatch)
       || isPrivilegedD1Query
       || isManagementRoute
+      || isPaperIntent
     )) {
       return new Response(null, { status: 204, headers: corsHeaders(request, env) })
     }
@@ -235,6 +516,17 @@ export default {
       return handleManagementRequest(request, env, {
         bootstrapAuthorized: isManagementBootstrap,
       })
+    }
+
+    if (isPaperIntent) {
+      if (request.method !== 'POST') {
+        return jsonResponse(request, env, { error: 'Method not allowed', code: 'METHOD_NOT_ALLOWED' }, 405)
+      }
+      return handlePaperIntent(request, env, ctx)
+    }
+
+    if (isRealtimeWebSocket) {
+      return handleRealtimeWebSocket(request, env)
     }
 
     if (request.method === 'GET' && url.pathname === '/v2/infrastructure/status') {
