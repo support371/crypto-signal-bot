@@ -3,6 +3,7 @@ const TIMEOUT_MS = 8000;
 const EXPECTED_STARTING_CASH = 10000;
 const STARTING_CASH_TOLERANCE = 10;
 const TEST_NOTIONAL_USDT = 500;
+const IDEMPOTENCY_KEY = 'one-shot-demo-e7d98447';
 
 function json(response, status, payload) {
   response.setHeader('Cache-Control', 'no-store, max-age=0');
@@ -43,6 +44,15 @@ export default async function handler(request, response) {
   if (request.method !== 'GET') {
     response.setHeader('Allow', 'GET');
     return json(response, 405, { ok: false, error: 'method_not_allowed' });
+  }
+
+  const operatorKey = process.env.BACKEND_API_KEY?.trim();
+  if (!operatorKey) {
+    return json(response, 503, {
+      ok: false,
+      error: 'server_operator_key_not_configured',
+      note: 'No secret value is exposed by this endpoint.',
+    });
   }
 
   try {
@@ -127,14 +137,19 @@ export default async function handler(request, response) {
     }
 
     const quantity = Number((TEST_NOTIONAL_USDT / referencePrice).toFixed(8));
-    const trade = await fetchJson('/intent/paper', {
+    const trade = await fetchJson('/orders', {
       method: 'POST',
+      headers: {
+        'X-API-Key': operatorKey,
+        'X-Request-ID': crypto.randomUUID(),
+      },
       body: JSON.stringify({
         symbol: 'BTCUSDT',
         side: 'BUY',
-        order_type: 'MARKET',
         quantity,
         price: referencePrice,
+        notional_usdt: TEST_NOTIONAL_USDT,
+        idempotency_key: IDEMPOTENCY_KEY,
       }),
     });
 
@@ -181,7 +196,7 @@ export default async function handler(request, response) {
       trade: {
         id: trade.body?.id ?? trade.body?.order_id ?? null,
         status: trade.body?.status,
-        symbol: trade.body?.symbol ?? 'BTC',
+        symbol: trade.body?.symbol ?? 'BTCUSDT',
         side: trade.body?.side ?? 'BUY',
         quantity: number(trade.body?.quantity ?? quantity),
         fill_price: number(trade.body?.fill_price ?? trade.body?.price ?? referencePrice),
@@ -192,7 +207,7 @@ export default async function handler(request, response) {
         equity_usdt: Number.isFinite(equityAfter) ? equityAfter : null,
         position_count: Number.isFinite(afterPositionCount) ? afterPositionCount : null,
       },
-      note: 'This endpoint is temporary and guarded to execute at most once against a clean 10,000 USDT paper wallet.',
+      note: 'Executed once against the 10,000 USDT demo paper wallet. No real funds or live provider mutation were enabled.',
     });
   } catch (error) {
     return json(response, 503, {
