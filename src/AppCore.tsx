@@ -10,6 +10,7 @@ import { QueryClientProvider } from './providers/QueryClientProvider';
 const Account = lazy(() => import('./pages/Account'));
 const AdminCenter = lazy(() => import('./pages/AdminCenter'));
 const Auth = lazy(() => import('./pages/Auth'));
+const AuthRepair = lazy(() => import('./pages/AuthRepair'));
 const Backtest = lazy(() => import('./pages/Backtest'));
 const Index = lazy(() => import('./pages/Index'));
 const Infrastructure = lazy(() => import('./pages/Infrastructure'));
@@ -146,6 +147,7 @@ export default function AppCore() {
           <Routes>
             <Route path="/" element={<PublicHome />} />
             <Route path="/auth" element={<Auth />} />
+            <Route path="/auth/repair" element={<AuthRepair />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/waitlist" element={<Waitlist />} />
             <Route path="/status" element={<ProductionStatus />} />
