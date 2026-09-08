@@ -7,6 +7,7 @@ import { useAuth } from './context/AuthContext';
 import { useManagementAccess } from './hooks/useManagementAccess';
 import { QueryClientProvider } from './providers/QueryClientProvider';
 
+const AccessTest = lazy(() => import('./pages/AccessTest'));
 const Account = lazy(() => import('./pages/Account'));
 const AdminCenter = lazy(() => import('./pages/AdminCenter'));
 const Auth = lazy(() => import('./pages/Auth'));
@@ -145,6 +146,7 @@ export default function AppCore() {
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/waitlist" element={<Waitlist />} />
             <Route path="/status" element={<ProductionStatus />} />
+            <Route path="/access-test" element={<DashboardPage><AccessTest /></DashboardPage>} />
             <Route path="/dashboard" element={<DashboardPage><Index /></DashboardPage>} />
             <Route path="/backtest" element={<ProtectedPage><Backtest /></ProtectedPage>} />
             <Route path="/portfolio" element={<ProtectedPage><Portfolio /></ProtectedPage>} />
