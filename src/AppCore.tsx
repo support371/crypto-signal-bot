@@ -62,7 +62,7 @@ function AccessGate({
   const location = useLocation();
   const access = useManagementAccess();
 
-  if (isLoading || (user && !isDemoMode && access.loading)) {
+  if (isLoading || (user && !isDemoMode && access.loading && !allowAuthorizationFailure)) {
     return <RouteLoading label="Loading secure account authorization…" />;
   }
 
@@ -75,6 +75,10 @@ function AccessGate({
     if (admin) {
       return <AccessFailure title="Administrative access unavailable" detail="The certification demo identity can never receive administrative authority." />;
     }
+    return children;
+  }
+
+  if (access.loading && allowAuthorizationFailure) {
     return children;
   }
 
