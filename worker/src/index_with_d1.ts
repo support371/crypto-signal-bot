@@ -20,6 +20,18 @@ type D1ReadonlyRequest = {
   params?: unknown[]
 }
 
+type ManagementRoleGrant = {
+  role?: string
+  scope_type?: string
+  scope_key?: string
+}
+
+type ManagementMePayload = {
+  profile?: { status?: string }
+  roles?: ManagementRoleGrant[]
+  access_allowed?: boolean
+}
+
 function numberOr(value: unknown, fallback = 0): number {
   const parsed = typeof value === 'number' ? value : Number.parseFloat(String(value ?? ''))
   return Number.isFinite(parsed) ? parsed : fallback
@@ -40,10 +52,21 @@ function isSelectOnly(sql: string): boolean {
   return false
 }
 
-function corsHeaders(request: Request, env: Env): Headers {
-  const configured = env.CORS_ALLOWED_ORIGINS
+function configuredOrigins(env: Env): string[] {
+  return env.CORS_ALLOWED_ORIGINS
     ? env.CORS_ALLOWED_ORIGINS.split(',').map((value) => value.trim()).filter(Boolean)
     : ['*']
+}
+
+function isAllowedOrigin(request: Request, env: Env): boolean {
+  const origin = request.headers.get('Origin')
+  if (!origin) return true
+  const configured = configuredOrigins(env)
+  return configured.includes('*') || configured.includes(origin)
+}
+
+function corsHeaders(request: Request, env: Env): Headers {
+  const configured = configuredOrigins(env)
   const origin = request.headers.get('Origin') ?? '*'
   const allowedOrigin = configured.includes('*')
     ? origin
@@ -200,6 +223,160 @@ async function guardInitialManagementBootstrap(
   }
 }
 
+async function authorizePaperIntent(request: Request, env: AgentEnv): Promise<Response | null> {
+  const authorization = request.headers.get('Authorization')?.trim()
+  if (!authorization?.toLowerCase().startsWith('bearer ')) {
+    return jsonResponse(request, env, {
+      error: 'A valid authenticated session is required for paper execution.',
+      code: 'UNAUTHENTICATED',
+    }, 401)
+  }
+
+  const url = new URL(request.url)
+  url.pathname = '/v1/management/me'
+  url.search = ''
+
+  const headers = new Headers({
+    Authorization: authorization,
+    Accept: 'application/json',
+  })
+  const origin = request.headers.get('Origin')
+  if (origin) headers.set('Origin', origin)
+  const suppliedRequestId = request.headers.get('X-Request-ID')
+  if (suppliedRequestId) headers.set('X-Request-ID', suppliedRequestId)
+
+  const authResponse = await handleManagementRequest(
+    new Request(url.toString(), { method: 'GET', headers }),
+    env,
+  )
+  if (!authResponse.ok) return authResponse
+
+  const payload = await authResponse.json().catch(() => null) as ManagementMePayload | null
+  if (payload?.profile?.status !== 'ACTIVE' || payload.access_allowed !== true) {
+    return jsonResponse(request, env, {
+      error: 'Account access is not active.',
+      code: 'FORBIDDEN',
+    }, 403)
+  }
+
+  const permittedRoles = new Set(['TRADER', 'RISK_OPERATOR', 'RISK_ADMIN', 'RELEASE_ADMIN'])
+  const authorized = (payload.roles ?? []).some((grant) => {
+    if (!grant.role || !permittedRoles.has(grant.role)) return false
+    const globalScope = grant.scope_type === 'GLOBAL' && grant.scope_key === 'global'
+    const paperAccountScope = grant.scope_type === 'ACCOUNT' && grant.scope_key === 'paper'
+    return globalScope || paperAccountScope
+  })
+
+  if (!authorized) {
+    return jsonResponse(request, env, {
+      error: 'A paper-trading role is required for this rehearsal action.',
+      code: 'FORBIDDEN',
+      required_roles: Array.from(permittedRoles),
+      accepted_scopes: ['GLOBAL:global', 'ACCOUNT:paper'],
+    }, 403)
+  }
+
+  return null
+}
+
+async function handlePaperIntent(
+  request: Request,
+  env: AgentEnv,
+  ctx: ExecutionContext,
+): Promise<Response> {
+  const authBlock = await authorizePaperIntent(request, env)
+  if (authBlock) return authBlock
+
+  const operatorKey = env.BACKEND_API_KEY?.trim()
+  if (!operatorKey) {
+    return jsonResponse(request, env, {
+      error: 'Server-side paper execution authority is not configured.',
+      code: 'DEPENDENCY_UNAVAILABLE',
+    }, 503)
+  }
+
+  const body = await request.text()
+  const internalUrl = new URL(request.url)
+  internalUrl.pathname = '/orders'
+  internalUrl.search = ''
+  const headers = new Headers(request.headers)
+  headers.delete('Authorization')
+  headers.set('X-API-Key', operatorKey)
+  headers.set('Content-Type', request.headers.get('Content-Type') || 'application/json')
+
+  return worker.fetch(new Request(internalUrl.toString(), {
+    method: 'POST',
+    headers,
+    body,
+  }), env, ctx)
+}
+
+async function handleRealtimeWebSocket(request: Request, env: AgentEnv): Promise<Response> {
+  if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
+    return jsonResponse(request, env, {
+      error: 'WebSocket upgrade required.',
+      code: 'UPGRADE_REQUIRED',
+    }, 426)
+  }
+
+  if (!isAllowedOrigin(request, env)) {
+    return jsonResponse(request, env, {
+      error: 'Origin is not allowed for realtime status.',
+      code: 'FORBIDDEN',
+    }, 403)
+  }
+
+  const pair = new WebSocketPair()
+  const client = pair[0]
+  const server = pair[1]
+  server.accept()
+
+  const guardian = await readGuardianSnapshot(env)
+  server.send(JSON.stringify({
+    type: 'status',
+    ws: 'connected',
+    backend: 'cloudflare-worker',
+    mode: 'paper',
+    timestamp: Date.now(),
+  }))
+  server.send(JSON.stringify({
+    type: 'health',
+    kill_switch_active: guardian.halted,
+    mode: 'paper',
+    api_error_count: 0,
+    guardian_triggered: guardian.halted,
+    market_data_mode: 'live_public_paper',
+    market_data_connected: true,
+  }))
+  server.send(JSON.stringify({
+    type: 'exchange_status',
+    exchange: 'coinbase',
+    market_data_mode: 'live_public_paper',
+    connected: true,
+    connection_state: 'connected',
+    fallback_active: false,
+    last_update_ts: Date.now(),
+    last_error: null,
+    stale: false,
+    symbols: ['BTC', 'ETH', 'SOL', 'BNB'],
+    source: 'coinbase',
+  }))
+
+  server.addEventListener('message', (event) => {
+    if (String(event.data).toLowerCase() === 'ping') {
+      server.send(JSON.stringify({
+        type: 'status',
+        ws: 'connected',
+        backend: 'cloudflare-worker',
+        mode: 'paper',
+        timestamp: Date.now(),
+      }))
+    }
+  })
+
+  return new Response(null, { status: 101, webSocket: client })
+}
+
 export default {
   async fetch(request: Request, env: AgentEnv, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url)
@@ -208,12 +385,14 @@ export default {
     const isPrivilegedD1Query = url.pathname === '/d1/query/readonly'
     const isManagementRoute = url.pathname.startsWith('/v1/management/')
     const isManagementBootstrap = url.pathname === '/v1/management/bootstrap'
+    const isRealtimeRoute = url.pathname === '/ws/updates' || url.pathname === '/ws' || url.pathname === '/stream'
 
     if (request.method === 'OPTIONS' && (
       url.pathname.startsWith('/v2/')
       || Boolean(memoryMatch)
       || isPrivilegedD1Query
       || isManagementRoute
+      || url.pathname === '/intent/paper'
     )) {
       return new Response(null, { status: 204, headers: corsHeaders(request, env) })
     }
@@ -235,6 +414,14 @@ export default {
       return handleManagementRequest(request, env, {
         bootstrapAuthorized: isManagementBootstrap,
       })
+    }
+
+    if (request.method === 'POST' && url.pathname === '/intent/paper') {
+      return handlePaperIntent(request, env, ctx)
+    }
+
+    if (request.method === 'GET' && isRealtimeRoute) {
+      return handleRealtimeWebSocket(request, env)
     }
 
     if (request.method === 'GET' && url.pathname === '/v2/infrastructure/status') {
