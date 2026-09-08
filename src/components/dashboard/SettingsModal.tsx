@@ -9,12 +9,10 @@ import {
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { Settings, Shield, Activity, Wallet, Volume2, KeyRound } from 'lucide-react';
+import { Settings, Shield, Activity, Wallet, Volume2 } from 'lucide-react';
 import { DEFAULT_SETTINGS } from '@/components/dashboard/settingsDefaults';
-import { readOperatorApiKey, writeOperatorApiKey } from '@/lib/operatorAuth';
 
 export interface UserSettings {
   riskTolerance: number;
@@ -23,7 +21,6 @@ export interface UserSettings {
   spreadStressThreshold: number;
   autoTradeEnabled: boolean;
   soundAlertsEnabled: boolean;
-  operatorApiKey: string;
 }
 
 interface SettingsModalProps {
@@ -34,43 +31,26 @@ interface SettingsModalProps {
   systemMode?: string;
 }
 
-export function SettingsModal({ 
-  open, 
-  onOpenChange, 
-  settings, 
+export function SettingsModal({
+  open,
+  onOpenChange,
+  settings,
   onSettingsChange,
   systemMode = 'paper',
 }: SettingsModalProps) {
-  const [localSettings, setLocalSettings] = useState<UserSettings>(() => ({
-    ...settings,
-    operatorApiKey: readOperatorApiKey() || settings.operatorApiKey || '',
-  }));
+  const [localSettings, setLocalSettings] = useState<UserSettings>(settings);
 
   useEffect(() => {
-    setLocalSettings({
-      ...settings,
-      operatorApiKey: readOperatorApiKey() || settings.operatorApiKey || '',
-    });
+    setLocalSettings(settings);
   }, [settings]);
 
   const handleSave = () => {
-    const trimmedOperatorKey = localSettings.operatorApiKey.trim();
-    writeOperatorApiKey(trimmedOperatorKey);
-    onSettingsChange({
-      ...localSettings,
-      operatorApiKey: trimmedOperatorKey,
-    });
+    onSettingsChange(localSettings);
     onOpenChange(false);
   };
 
   const handleReset = () => {
-    writeOperatorApiKey('');
     setLocalSettings(DEFAULT_SETTINGS);
-  };
-
-  const handleClearOperatorKey = () => {
-    writeOperatorApiKey('');
-    setLocalSettings(s => ({ ...s, operatorApiKey: '' }));
   };
 
   const getRiskLabel = (value: number) => {
@@ -94,12 +74,11 @@ export function SettingsModal({
             Risk Agent Settings
           </DialogTitle>
           <DialogDescription className="text-muted-foreground">
-            Configure your trading parameters, risk preferences, and operator access
+            Configure certification-mode risk and portfolio preferences. Authentication and privileged access are managed through your signed-in account and server-side RBAC.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6 py-4">
-          {/* Risk Tolerance */}
           <div className="space-y-4">
             <div className="flex items-center gap-2">
               <Shield className="w-4 h-4 text-primary" />
@@ -115,7 +94,7 @@ export function SettingsModal({
               </div>
               <Slider
                 value={[localSettings.riskTolerance]}
-                onValueChange={([value]) => 
+                onValueChange={([value]) =>
                   setLocalSettings(s => ({ ...s, riskTolerance: value }))
                 }
                 min={0.1}
@@ -124,14 +103,13 @@ export function SettingsModal({
                 className="w-full"
               />
               <p className="text-xs text-muted-foreground">
-                Higher values allow trades with greater risk scores
+                Higher values allow rehearsals with greater modeled risk scores.
               </p>
             </div>
           </div>
 
           <Separator className="bg-border" />
 
-          {/* Volatility Sensitivity */}
           <div className="space-y-4">
             <div className="flex items-center gap-2">
               <Activity className="w-4 h-4 text-secondary" />
@@ -147,7 +125,7 @@ export function SettingsModal({
               </div>
               <Slider
                 value={[localSettings.volatilitySensitivity]}
-                onValueChange={([value]) => 
+                onValueChange={([value]) =>
                   setLocalSettings(s => ({ ...s, volatilitySensitivity: value }))
                 }
                 min={0.1}
@@ -156,14 +134,13 @@ export function SettingsModal({
                 className="w-full"
               />
               <p className="text-xs text-muted-foreground">
-                How much volatility spikes affect risk calculations
+                How much volatility spikes affect risk calculations.
               </p>
             </div>
           </div>
 
           <Separator className="bg-border" />
 
-          {/* Position Size */}
           <div className="space-y-4">
             <div className="flex items-center gap-2">
               <Wallet className="w-4 h-4 text-accent" />
@@ -179,7 +156,7 @@ export function SettingsModal({
               </div>
               <Slider
                 value={[localSettings.positionSizeFraction]}
-                onValueChange={([value]) => 
+                onValueChange={([value]) =>
                   setLocalSettings(s => ({ ...s, positionSizeFraction: value }))
                 }
                 min={0.01}
@@ -188,14 +165,13 @@ export function SettingsModal({
                 className="w-full"
               />
               <p className="text-xs text-muted-foreground">
-                Maximum position size as percentage of portfolio
+                Maximum certification position size as a percentage of portfolio.
               </p>
             </div>
           </div>
 
           <Separator className="bg-border" />
 
-          {/* Spread Stress Threshold */}
           <div className="space-y-4">
             <div className="flex items-center gap-2">
               <Activity className="w-4 h-4 text-warning" />
@@ -211,7 +187,7 @@ export function SettingsModal({
               </div>
               <Slider
                 value={[localSettings.spreadStressThreshold]}
-                onValueChange={([value]) => 
+                onValueChange={([value]) =>
                   setLocalSettings(s => ({ ...s, spreadStressThreshold: value }))
                 }
                 min={0.001}
@@ -220,49 +196,21 @@ export function SettingsModal({
                 className="w-full"
               />
               <p className="text-xs text-muted-foreground">
-                Spread percentage above which stress is flagged
+                Spread percentage above which stress is flagged.
               </p>
             </div>
           </div>
 
           <Separator className="bg-border" />
 
-          {/* Operator Access */}
           <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <KeyRound className="w-4 h-4 text-primary" />
-              <Label className="text-sm font-semibold">Operator API Key</Label>
-            </div>
-            <div className="space-y-2 pl-6">
-              <Input
-                type="password"
-                value={localSettings.operatorApiKey}
-                onChange={event => setLocalSettings(s => ({ ...s, operatorApiKey: event.target.value }))}
-                placeholder="Enter backend X-API-Key"
-                autoComplete="current-password"
-                className="font-mono text-xs"
-              />
-              <p className="text-xs text-muted-foreground">
-                Used only by this browser to unlock protected operator actions when backend auth is enabled.
+            <div className="rounded-md border border-border bg-muted/20 p-3 text-xs text-muted-foreground">
+              <p className="font-medium text-foreground">Secure access</p>
+              <p className="mt-1">
+                No backend operator key is stored in this browser. Protected Worker actions use your authenticated Supabase session and server-authoritative RBAC; server secrets remain in Cloudflare/Vercel only.
               </p>
-              {localSettings.operatorApiKey && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs font-mono text-muted-foreground hover:text-destructive"
-                  onClick={handleClearOperatorKey}
-                >
-                  Clear operator key
-                </Button>
-              )}
             </div>
-          </div>
 
-          <Separator className="bg-border" />
-
-          {/* Toggles */}
-          <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Volume2 className="w-4 h-4 text-muted-foreground" />
@@ -270,7 +218,7 @@ export function SettingsModal({
               </div>
               <Switch
                 checked={localSettings.soundAlertsEnabled}
-                onCheckedChange={(checked) => 
+                onCheckedChange={(checked) =>
                   setLocalSettings(s => ({ ...s, soundAlertsEnabled: checked }))
                 }
               />
@@ -281,13 +229,13 @@ export function SettingsModal({
                 <div>
                   <Label className="text-sm">Auto-Trade Mode</Label>
                   <p className="text-xs text-muted-foreground">
-                    Uses current backend mode ({systemMode})
+                    Paper/certification rehearsal only; current backend mode is {systemMode}.
                   </p>
                 </div>
               </div>
               <Switch
                 checked={localSettings.autoTradeEnabled}
-                onCheckedChange={(checked) => 
+                onCheckedChange={(checked) =>
                   setLocalSettings(s => ({ ...s, autoTradeEnabled: checked }))
                 }
               />
@@ -295,7 +243,6 @@ export function SettingsModal({
           </div>
         </div>
 
-        {/* Actions */}
         <div className="flex justify-between pt-4 border-t border-border">
           <Button variant="ghost" onClick={handleReset}>
             Reset to Defaults
