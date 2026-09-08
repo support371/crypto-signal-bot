@@ -116,7 +116,7 @@ export default async function handler(request, response) {
       });
     }
 
-    const price = await fetchJson('/price?symbol=BTCUSDT');
+    const price = await fetchJson('/market/price/BTC');
     const referencePrice = number(price.body?.price);
     if (!price.ok || !Number.isFinite(referencePrice) || referencePrice <= 0) {
       return json(response, 503, {
