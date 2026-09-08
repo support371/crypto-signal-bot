@@ -1,4 +1,5 @@
 import { getConfiguredBackendUrl, getConfiguredWebSocketUrl } from './env';
+import { getSupabaseClient, SUPABASE_CONFIGURED } from '@/integrations/supabase/client';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const BROWSER_BLOCKED_PATH = /\/(?:intent\/live|withdraw(?:al)?s?|mainnet)(?:\/|$)/i;
@@ -65,6 +66,20 @@ async function readError(response: Response): Promise<string> {
   }
 }
 
+async function attachSupabaseSession(headers: Headers): Promise<void> {
+  if (headers.has('Authorization') || !SUPABASE_CONFIGURED) return;
+
+  try {
+    const supabase = await getSupabaseClient();
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token?.trim();
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+  } catch {
+    // Public/read-only routes remain usable when auth restoration is unavailable.
+    // Protected routes still fail closed at the Worker with 401/403.
+  }
+}
+
 async function backendFetch(path: string, init: BackendRequestInit = {}): Promise<Response> {
   const method = (init.method ?? 'GET').toUpperCase();
   assertBrowserSafe(path, method);
@@ -81,12 +96,14 @@ async function backendFetch(path: string, init: BackendRequestInit = {}): Promis
     if (init.body && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json');
     }
+    await attachSupabaseSession(headers);
 
     const response = await fetch(buildBackendUrl(path), {
       ...init,
       headers,
       signal: init.signal ?? controller.signal,
       credentials: 'omit',
+      cache: 'no-store',
     });
 
     if (!response.ok) {
