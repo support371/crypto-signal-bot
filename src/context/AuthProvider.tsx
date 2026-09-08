@@ -112,10 +112,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: new Error("Supabase is not configured on this deployment.") };
       }
       const client = await getSupabaseClient();
-      const { error } = await client.auth.signInWithPassword({
+      const { data, error } = await client.auth.signInWithPassword({
         email: email.trim().toLowerCase(),
         password,
       });
+
+      if (!error && data.session && data.user) {
+        // Commit the verified identity to React state before the auth page redirects
+        // to /dashboard. Waiting only for onAuthStateChange creates a race where the
+        // protected route can briefly see `user === null` and bounce back to /auth.
+        setSession(data.session as AuthSession);
+        setUser(data.user as AuthUser);
+        setIsLoading(false);
+      }
+
       return { error: error as Error | null };
     },
     []
