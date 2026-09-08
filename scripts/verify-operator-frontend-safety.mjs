@@ -7,7 +7,12 @@ const app = await readFile(new URL('../src/AppCore.tsx', import.meta.url), 'utf8
 const layout = await readFile(new URL('../src/components/LayoutCore.tsx', import.meta.url), 'utf8');
 const gateway = await readFile(new URL('../api/operator/readiness.js', import.meta.url), 'utf8');
 const responseSchema = await readFile(new URL('../contracts/operator-readiness-response.schema.json', import.meta.url), 'utf8');
+const settingsModal = await readFile(new URL('../src/components/dashboard/SettingsModal.tsx', import.meta.url), 'utf8');
+const settingsDefaults = await readFile(new URL('../src/components/dashboard/settingsDefaults.ts', import.meta.url), 'utf8');
+const persistedSettings = await readFile(new URL('../src/hooks/usePersistedSettings.ts', import.meta.url), 'utf8');
+const backendRuntime = await readFile(new URL('../src/lib/backendRuntime.ts', import.meta.url), 'utf8');
 const browserBoundary = `${client}\n${page}`;
+const settingsBoundary = `${settingsModal}\n${settingsDefaults}`;
 
 JSON.parse(responseSchema);
 
@@ -129,5 +134,33 @@ for (const forbidden of [
 ]) {
   assert.doesNotMatch(gateway, forbidden, `operator gateway placeholder must not match ${forbidden}`);
 }
+
+for (const forbidden of [
+  /operatorApiKey/i,
+  /readOperatorApiKey/i,
+  /writeOperatorApiKey/i,
+  /X-API-Key/i,
+  /VITE_.*(?:OPERATOR|API_KEY|SECRET)/i,
+]) {
+  assert.doesNotMatch(settingsBoundary, forbidden, `browser settings must not expose operator credentials: ${forbidden}`);
+}
+
+assert.ok(
+  persistedSettings.includes('Rewrite immediately so legacy fields such as operatorApiKey are removed.'),
+  'persisted settings must scrub legacy operator key fields',
+);
+assert.ok(
+  backendRuntime.includes('getCurrentAccessToken'),
+  'backend runtime must source user authentication from the current application session',
+);
+assert.ok(
+  backendRuntime.includes("headers.set('Authorization', `Bearer ${accessToken}`)"),
+  'backend runtime must send the current authenticated bearer session',
+);
+assert.doesNotMatch(
+  backendRuntime,
+  /headers\.set\(['"]X-API-Key['"]/i,
+  'backend runtime must never attach the server operator key from the browser',
+);
 
 console.log('operator frontend safety verified');
