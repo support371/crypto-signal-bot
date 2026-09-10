@@ -82,14 +82,13 @@ const PAPER_SCHEMA_STATEMENTS = [
 
 async function ensurePaperSchema(env: RuntimeEnv): Promise<void> {
   if (!schemaInitialization) {
-    schemaInitialization = (async () => {
-      for (const statement of PAPER_SCHEMA_STATEMENTS) {
-        await env.DB.prepare(statement).run()
-      }
-    })().catch((error) => {
-      schemaInitialization = null
-      throw error
-    })
+    schemaInitialization = env.DB
+      .batch(PAPER_SCHEMA_STATEMENTS.map((statement) => env.DB.prepare(statement)))
+      .then(() => undefined)
+      .catch((error) => {
+        schemaInitialization = null
+        throw error
+      })
   }
   await schemaInitialization
 }
