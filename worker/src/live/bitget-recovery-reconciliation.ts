@@ -14,6 +14,8 @@ export interface BitgetRecoveryReconciliationResult {
   recoverySnapshotHash: string
   providerMutationAllowed: false
   automaticRetryAllowed: false
+  automaticStateProjectionAllowed: false
+  requiresAttestedPersistence: true
 }
 
 export class BitgetRecoveryReconciliationError extends Error {
@@ -111,5 +113,7 @@ export function reconcileBitgetRecoverySnapshot(
     recoverySnapshotHash: recovery.snapshotHash,
     providerMutationAllowed: false as const,
     automaticRetryAllowed: false as const,
+    automaticStateProjectionAllowed: false as const,
+    requiresAttestedPersistence: true as const,
   })
 }
