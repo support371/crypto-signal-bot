@@ -33,7 +33,8 @@ const PAPER_SCHEMA_STATEMENTS = [
     idempotency_key TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_idempotency_key ON orders (idempotency_key)`,
+  // NOTE: idx_orders_idempotency_key is created in ensurePaperSchema() after a
+  // forward-safe column backfill, not here — the batch runs before the backfill.
   `CREATE TABLE IF NOT EXISTS audit_trail (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     event TEXT NOT NULL, detail TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -84,13 +85,25 @@ const PAPER_SCHEMA_STATEMENTS = [
 
 async function ensurePaperSchema(env: RuntimeEnv): Promise<void> {
   if (!schemaInitialization) {
-    schemaInitialization = env.DB
-      .batch(PAPER_SCHEMA_STATEMENTS.map((statement) => env.DB.prepare(statement)))
-      .then(() => undefined)
-      .catch((error) => {
-        schemaInitialization = null
-        throw error
-      })
+    schemaInitialization = (async () => {
+      // Base tables/indexes (all IF NOT EXISTS — safe to re-run).
+      await env.DB.batch(PAPER_SCHEMA_STATEMENTS.map((statement) => env.DB.prepare(statement)))
+      // Forward-safe backfill for databases created before migration 032:
+      // the unique index on orders(idempotency_key) requires the column to
+      // exist, but CREATE TABLE IF NOT EXISTS won't add it to an existing
+      // table. Add it here before creating the index.
+      const columns = await env.DB.prepare(`PRAGMA table_info(orders)`).all<{ name: string }>()
+      const columnNames = new Set((columns.results ?? []).map((column) => column.name))
+      if (!columnNames.has('idempotency_key')) {
+        await env.DB.prepare(`ALTER TABLE orders ADD COLUMN idempotency_key TEXT`).run()
+      }
+      await env.DB.prepare(
+        `CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_idempotency_key ON orders (idempotency_key)`
+      ).run()
+    })().catch((error) => {
+      schemaInitialization = null
+      throw error
+    })
   }
   await schemaInitialization
 }
