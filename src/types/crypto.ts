@@ -21,6 +21,8 @@ export interface RiskAssessment {
   decision: 'ENTER_LONG' | 'ENTER_SHORT' | 'HOLD' | 'EXIT';
   approved: boolean;
   positionSize: number;
+  /** Server-computed paper notional in USDT; the risk engine is the sole sizing authority. */
+  positionNotionalUsdt?: number;
   reasoning: string;
 }
 
