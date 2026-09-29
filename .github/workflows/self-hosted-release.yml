@@ -49,38 +49,10 @@ jobs:
         shell: bash
         run: |
           set -eo pipefail
-          # Prefer the runner's pre-provisioned tool-cache Python (deterministic,
-          # no network) and fall back to a PATH python3 when absent.
-          PYROOT=""
-          for candidate in \
-            "${RUNNER_TOOL_CACHE:-/home/ghrunner/actions-runner/_work/_tool}/Python/3.11.16/x64" \
-            "$HOME/actions-runner/_work/_tool/Python/3.11.16/x64"; do
-            if [ -x "$candidate/bin/python3" ]; then
-              PYROOT="$candidate"
-              break
-            fi
-          done
-          if [ -z "$PYROOT" ]; then
-            echo "Tool-cache Python 3.11 not found; using PATH python3."
-            python3 --version
-            exit 0
-          fi
-          echo "Python from tool cache: $PYROOT"
-          if [ -n "${GITHUB_PATH:-}" ]; then
-            echo "$PYROOT/bin" >> "$GITHUB_PATH"
-            echo "Added $PYROOT/bin to GITHUB_PATH"
-          else
-            echo "GITHUB_PATH not set; exporting PATH for this step only"
-            export PATH="$PYROOT/bin:$PATH"
-          fi
-          if [ -n "${GITHUB_ENV:-}" ]; then
-            echo "LD_LIBRARY_PATH=$PYROOT/lib" >> "$GITHUB_ENV"
-            echo "Set LD_LIBRARY_PATH via GITHUB_ENV"
-          else
-            export LD_LIBRARY_PATH="$PYROOT/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-            echo "GITHUB_ENV not set; exported LD_LIBRARY_PATH for this step only"
-          fi
-          "$PYROOT/bin/python3" --version
+          # The self-hosted runner pre-provisions Python 3.11 via its service
+          # environment (PATH/LD_LIBRARY_PATH); just verify it here.
+          python3 --version
+          python3 -c "import sys; assert sys.version_info[:2] == (3, 11), sys.version"
 
       - name: Confirm paper-safety environment
         shell: bash
