@@ -154,6 +154,15 @@ async function cbIsOpen(env: Env, source: string): Promise<boolean> {
 }
 
 async function cbRecordSuccess(env: Env, source: string): Promise<void> {
+  // Skip the write when the breaker is already clean — the steady-state
+  // success path was rewriting an identical (open=0, fail_count=0) row on
+  // every price fetch. A cheap read eliminates the no-op write; if the state
+  // is dirty we reset it as before. Eventual consistency is fine here: a
+  // missed reset is corrected on the next success.
+  const row = await env.DB.prepare(
+    `SELECT open, fail_count FROM circuit_breaker_state WHERE source = ? LIMIT 1`
+  ).bind(source).first<{ open: number; fail_count: number }>().catch(() => null)
+  if (row && !row.open && !row.fail_count) return
   await env.DB.prepare(
     `INSERT INTO circuit_breaker_state (source, open, fail_count, last_fail_at)
      VALUES (?, 0, 0, NULL)
@@ -292,6 +301,23 @@ async function isHalted(env: Env): Promise<boolean> {
   return bool(row?.triggered ?? 0)
 }
 
+// Mutation-gate variant: fails CLOSED. If the guardian state cannot be read
+// (D1 degradation), mutations must not proceed — a halted kill-switch must
+// never be bypassed by a database outage. Read paths keep using isHalted()
+// and report degraded status separately.
+async function isHaltedForMutation(env: Env): Promise<boolean> {
+  try {
+    await ensureGuardian(env)
+    const row = await env.DB.prepare(
+      'SELECT triggered FROM guardian_state WHERE id = 1'
+    ).first<{ triggered: number }>()
+    if (!row) return true // No row = unknown state = fail closed
+    return bool(row.triggered)
+  } catch {
+    return true // D1 error = unknown state = fail closed
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Balance & portfolio helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -413,13 +439,25 @@ async function placePaperOrder(env: Env, input: OrderInput) {
     },
   })
 
-  if (await isHalted(env)) {
+  if (await isHaltedForMutation(env)) {
     return { status: 403 as const, body: { error: 'Guardian kill switch active — trading paused', ...safeRuntime(env) } }
   }
 
   const px     = await resolvePrice(env, input.symbol, input.price)
   const symbol = px.symbol
   const side   = String(input.side ?? 'BUY').toUpperCase()
+
+  // Safety: never execute at a stale or static-fallback price unless the
+  // caller explicitly supplied a price. Dashboard intents carry no price and
+  // must not fill at a day-old cache entry or hardcoded fallback.
+  const explicitPrice = n(input.price)
+  if (!explicitPrice && px.stale) {
+    return { status: 503 as const, body: {
+      error: 'Live market price unavailable — order rejected rather than filled at stale price',
+      code: 'PRICE_UNAVAILABLE', price_source: px.source, price_stale: true,
+      ...safeRuntime(env), ts: ts(),
+    } }
+  }
 
   if (side !== 'BUY' && side !== 'SELL') {
     return { status: 400 as const, body: { error: 'Invalid side — must be BUY or SELL', ...safeRuntime(env) } }
@@ -556,16 +594,17 @@ export async function checkRateLimit(env: Env, req: Request): Promise<boolean> {
   const ip  = req.headers.get('CF-Connecting-IP') ?? 'unknown'
   const bucket = `${ip}:${Math.floor(Date.now() / 60000)}`
   try {
+    // Atomic increment via single UPSERT with RETURNING — eliminates the
+    // read-then-write race where concurrent requests could both read N and
+    // both write N+1 (allowing ~2x the limit). The database serializes the
+    // increment; we compare the returned count against the limit.
     const row = await env.DB.prepare(
-      'SELECT count FROM rate_limit_counters WHERE bucket = ?'
+      `INSERT INTO rate_limit_counters (bucket, count) VALUES (?, 1)
+       ON CONFLICT(bucket) DO UPDATE SET count = count + 1
+       RETURNING count`
     ).bind(bucket).first<{ count: number }>()
-    const count = n(row?.count) + 1
+    const count = n(row?.count)
     if (count > rpm) return false
-    if (row) {
-      await env.DB.prepare('UPDATE rate_limit_counters SET count = ? WHERE bucket = ?').bind(count, bucket).run()
-    } else {
-      await env.DB.prepare('INSERT INTO rate_limit_counters (bucket, count) VALUES (?, ?)').bind(bucket, 1).run()
-    }
   } catch {
     // Fail closed for state-changing requests when the limiter's storage is
     // unavailable: a D1 degradation must not silently disable abuse protection

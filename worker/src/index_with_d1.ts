@@ -444,6 +444,23 @@ async function handleRealtimeWebSocket(request: Request, env: AgentEnv): Promise
     }, 426)
   }
 
+  // Defense-in-depth: validate Origin against the configured allowlist when
+  // one is set (not '*'). The socket currently serves public data only, but
+  // this closes cross-site socket opening before any authenticated message
+  // types are introduced.
+  const configuredOrigins = env.CORS_ALLOWED_ORIGINS
+    ? env.CORS_ALLOWED_ORIGINS.split(',').map((value) => value.trim()).filter(Boolean)
+    : ['*']
+  if (!configuredOrigins.includes('*')) {
+    const origin = request.headers.get('Origin')
+    if (!origin || !configuredOrigins.includes(origin)) {
+      return jsonResponse(request, env, {
+        error: 'Origin not allowed.',
+        code: 'ORIGIN_FORBIDDEN',
+      }, 403)
+    }
+  }
+
   const pair = new WebSocketPair()
   const client = pair[0]
   const server = pair[1]
