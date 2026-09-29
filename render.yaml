@@ -12,13 +12,13 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.9
 
-      # ── LIVE MODE — $100 controlled test ─────────────────────────
+      # ── FAIL-CLOSED DEFAULT — paper/testnet only ──────────────────
       - key: EXCHANGE_MODE
-        value: live
+        value: paper
       - key: NETWORK
-        value: mainnet
+        value: testnet
       - key: ALLOW_MAINNET
-        value: "true"
+        value: "false"
 
       # ── Exchange ──────────────────────────────────────────────────
       - key: EXCHANGE
@@ -36,7 +36,7 @@ services:
       - key: BITGET_API_PASSPHRASE
         sync: false
 
-      # ── Capital cap — $100 live test ──────────────────────────────
+      # ── Legacy sizing controls (inactive while paper/testnet) ─────
       - key: LIVE_CAPITAL_CAP_USDT
         value: "100"
       - key: EXECUTOR_POSITION_PCT
