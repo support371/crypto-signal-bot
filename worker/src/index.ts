@@ -379,9 +379,19 @@ async function getPortfolio(env: Env) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function placePaperOrder(env: Env, input: OrderInput) {
-  // Idempotency check — duplicate intents must never produce duplicate fills.
-  // The key is stored on the orders row; a UNIQUE index makes the check
-  // race-safe (a conflicting INSERT is treated as a duplicate delivery).
+  // Idempotency: reserve-first claim pattern for crash-safety under concurrency.
+  //
+  // The idempotency key is claimed with an atomic INSERT (guarded by the UNIQUE
+  // index) BEFORE any ledger mutation. This converts the catastrophic failure
+  // mode — crash between ledger writes leaving a mutated ledger with no key,
+  // causing retries to double-execute — into a visible, fail-closed 409.
+  //
+  // States: PENDING (claimed, ledger writes in progress) → FILLED (complete).
+  // - Duplicate key + FILLED → return original order (idempotent replay).
+  // - Duplicate key + PENDING → 409 CONFLICT (another attempt in progress;
+  //   fail closed rather than risk double-mutation).
+  // - Crash after claim → orphan PENDING row, ledger untouched or partially
+  //   written; retry gets 409, never a silent double-execution.
   const idempotencyKey = typeof input.idempotency_key === 'string'
     ? input.idempotency_key.trim().slice(0, 128)
     : ''
@@ -393,12 +403,15 @@ async function placePaperOrder(env: Env, input: OrderInput) {
       ...safeRuntime(env), ts: ts(),
     },
   })
-  if (idempotencyKey) {
-    const existing = await env.DB.prepare(
-      'SELECT id FROM orders WHERE idempotency_key = ? LIMIT 1'
-    ).bind(idempotencyKey).first<{ id: number }>().catch(() => null)
-    if (existing) return idempotentResponse(existing.id)
-  }
+  const conflictResponse = (orderId: number | null) => ({
+    status: 409 as const,
+    body: {
+      error: 'Duplicate intent already in progress — retry with a new idempotency key or check order status',
+      code: 'IDEMPOTENT_CONFLICT', order_id: orderId,
+      idempotency_key: idempotencyKey || undefined,
+      ...safeRuntime(env), ts: ts(),
+    },
+  })
 
   if (await isHalted(env)) {
     return { status: 403 as const, body: { error: 'Guardian kill switch active — trading paused', ...safeRuntime(env) } }
@@ -423,8 +436,38 @@ async function placePaperOrder(env: Env, input: OrderInput) {
   const value = qty * px.price
   let realized = 0
 
+  // Reserve-first idempotency claim: atomically INSERT the order row with
+  // PENDING status before any ledger mutation. The UNIQUE index makes this
+  // the single atomic claim point — concurrent duplicates cannot both pass.
+  let claimedOrderId: number | null = null
+  if (idempotencyKey) {
+    try {
+      const claimed = await env.DB.prepare(
+        'INSERT INTO orders (symbol, side, quantity, price, status, mode, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      ).bind(symbol, side, qty, px.price, 'PENDING', PAPER, idempotencyKey).run()
+      claimedOrderId = typeof claimed?.meta?.last_row_id === 'number' ? claimed.meta.last_row_id : null
+    } catch (err) {
+      if (/unique|constraint/i.test(String((err as Error)?.message ?? err))) {
+        const existing = await env.DB.prepare(
+          'SELECT id, status FROM orders WHERE idempotency_key = ? LIMIT 1'
+        ).bind(idempotencyKey).first<{ id: number; status: string }>().catch(() => null)
+        if (existing && String(existing.status).toUpperCase() === 'FILLED') {
+          return idempotentResponse(existing.id)
+        }
+        return conflictResponse(existing?.id ?? null)
+      }
+      throw err
+    }
+  }
+
   if (side === 'BUY') {
     if (cash < value) {
+      // Validation failed before any ledger mutation — release the claim so
+      // the key can be retried (delete by ID, never by key, to avoid
+      // releasing a concurrent claim).
+      if (claimedOrderId !== null) {
+        await env.DB.prepare(`DELETE FROM orders WHERE id = ? AND status = 'PENDING'`).bind(claimedOrderId).run().catch(() => undefined)
+      }
       return { status: 400 as const, body: { error: 'Insufficient paper balance', balance_usdt: cash, required_usdt: value, ...safeRuntime(env) } }
     }
     await setBalance(env, cash - value)
@@ -435,6 +478,10 @@ async function placePaperOrder(env: Env, input: OrderInput) {
     const lots = (await openPositions(env, symbol))
     const available = lots.reduce((s, p) => s + n(p.quantity), 0)
     if (available < qty - 0.00000001) {
+      // Validation failed before any ledger mutation — release the claim.
+      if (claimedOrderId !== null) {
+        await env.DB.prepare(`DELETE FROM orders WHERE id = ? AND status = 'PENDING'`).bind(claimedOrderId).run().catch(() => undefined)
+      }
       return { status: 400 as const, body: { error: 'Insufficient paper position', available_quantity: available, requested_quantity: qty, ...safeRuntime(env) } }
     }
     let remaining = qty
@@ -460,21 +507,19 @@ async function placePaperOrder(env: Env, input: OrderInput) {
     await recordPnl(env, realized)
   }
 
-  let orderId: number | null = null
-  try {
+  // Finalize: mark the claimed order FILLED (keyed) or insert fresh (keyless).
+  // For keyed orders the row already exists from the reserve step — we UPDATE
+  // it rather than INSERT, so there is no second UNIQUE race.
+  let orderId: number | null = claimedOrderId
+  if (claimedOrderId !== null) {
+    await env.DB.prepare(
+      `UPDATE orders SET status = 'FILLED' WHERE id = ? AND status = 'PENDING'`
+    ).bind(claimedOrderId).run()
+  } else {
     const inserted = await env.DB.prepare(
       'INSERT INTO orders (symbol, side, quantity, price, status, mode, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).bind(symbol, side, qty, px.price, 'FILLED', PAPER, idempotencyKey || null).run()
+    ).bind(symbol, side, qty, px.price, 'FILLED', PAPER, null).run()
     orderId = typeof inserted?.meta?.last_row_id === 'number' ? inserted.meta.last_row_id : null
-  } catch (err) {
-    // UNIQUE(idempotency_key) violation → this intent was already filled.
-    if (idempotencyKey && /unique|constraint/i.test(String((err as Error)?.message ?? err))) {
-      const existing = await env.DB.prepare(
-        'SELECT id FROM orders WHERE idempotency_key = ? LIMIT 1'
-      ).bind(idempotencyKey).first<{ id: number }>().catch(() => null)
-      return idempotentResponse(existing?.id ?? null)
-    }
-    throw err
   }
 
   const result = {
