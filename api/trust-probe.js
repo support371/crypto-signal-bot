@@ -7,9 +7,13 @@ const checks = [
   { id: 'infra', method: 'GET', path: '/v2/infrastructure/status', expect: 200 },
   { id: 'breakers', method: 'GET', path: '/exchange/circuit-breakers', expect: 200 },
   { id: 'paper-auth', method: 'POST', path: '/intent/paper', expect: 401, body: { symbol: 'BTCUSDT', side: 'BUY', notional_usdt: 1, idempotency_key: 'anonymous-trust-probe' } },
-  { id: 'live-blocked', method: 'POST', path: '/intent/live', expect: 403, body: {} },
-  { id: 'live-order-blocked', method: 'POST', path: '/live/order', expect: 403, body: {} },
-  { id: 'withdraw-blocked', method: 'POST', path: '/withdraw', expect: 403, body: {} },
+  // Disabled mutation routes may be rejected by the safety lock (403) or by
+  // the fail-closed mutation rate limiter (429). Both outcomes prove that no
+  // mutation was admitted; treating 429 as a probe failure makes repeated
+  // synthetic checks flap while the production safety boundary is working.
+  { id: 'live-blocked', method: 'POST', path: '/intent/live', expect: [403, 429], body: {} },
+  { id: 'live-order-blocked', method: 'POST', path: '/live/order', expect: [403, 429], body: {} },
+  { id: 'withdraw-blocked', method: 'POST', path: '/withdraw', expect: [403, 429], body: {} },
   { id: 'ws-upgrade-required', method: 'GET', path: '/ws/updates', expect: 426 },
 ];
 
@@ -52,7 +56,7 @@ async function runCheck(check) {
       path: check.path,
       expected_status: check.expect,
       actual_status: response.status,
-      passed: response.status === check.expect,
+      passed: (Array.isArray(check.expect) ? check.expect : [check.expect]).includes(response.status),
       latency_ms: latency,
       code: body && typeof body === 'object' ? body.code ?? body.error ?? null : null,
     };
@@ -95,7 +99,7 @@ export default async function handler(req, res) {
 
   const report = {
     ok: failures.length === 0,
-    probe_version: '2026-09-29.1',
+    probe_version: '2026-09-29.2',
     generated_at: new Date().toISOString(),
     worker: WORKER,
     mode: 'paper-certification',
