@@ -57,6 +57,9 @@ test('recovery scan is read-only and selects explicit plus stale exchange-active
   assert.match(capture.sql, /^SELECT /)
   assert.doesNotMatch(capture.sql, /\b(?:INSERT|UPDATE|DELETE)\b/i)
   assert.ok(capture.sql.includes("state = 'RECOVERY_REQUIRED'"))
+  for (const state of ['SUBMITTING', 'SUBMITTED', 'OPEN', 'PARTIALLY_FILLED', 'CANCEL_REQUESTED', 'CANCEL_PENDING']) {
+    assert.ok(capture.bindings.includes(state), `missing recovery-active state: ${state}`)
+  }
   assert.deepEqual(capture.bindings.slice(-2), [
     '2026-09-29T07:45:00.000Z',
     25,
