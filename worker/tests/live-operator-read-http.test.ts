@@ -49,6 +49,17 @@ class FakeStatement {
     if (this.sql.includes('FROM live_alerts')) {
       return { results: [] }
     }
+    if (this.sql.includes('FROM live_orders')) {
+      return { results: [{
+        internal_order_id: 'order-recovery-1',
+        exchange_account_id: ACCOUNT_ID,
+        exchange_order_id: 'exchange-order-1',
+        client_order_id: 'client-order-1',
+        product_id: 'BTC-USDT',
+        state: 'RECOVERY_REQUIRED',
+        updated_at: '2026-09-29T07:00:00.000Z',
+      }] as T[] }
+    }
     if (this.sql.includes('FROM live_bitget_read_only_certification_checks')) {
       return { results: [] }
     }
@@ -298,6 +309,7 @@ test('all seven operator GET routes preserve permanent non-live locks', async ()
   const accountRoutes = [
     ['/v1/operator/certification', 'CERTIFICATION'],
     ['/v1/operator/recovery-readiness', 'RECOVERY_READINESS'],
+    ['/v1/operator/recovery-candidates?stale_before=2026-09-29T07%3A45%3A00.000Z', 'RECOVERY_CANDIDATES'],
     ['/v1/operator/reconciliation', 'RECONCILIATION'],
     ['/v1/operator/alerts?limit=1000', 'ALERTS'],
     ['/v1/operator/audit-head', 'AUDIT_HEAD'],
@@ -318,7 +330,13 @@ test('all seven operator GET routes preserve permanent non-live locks', async ()
     assert.equal(body.executionAllowed, false)
     assert.equal(body.withdrawalsAllowed, false)
     if (resource === 'ALERTS') assert.deepEqual(body.evidence, [])
-    else assert.equal(body.evidence, null)
+    else if (resource === 'RECOVERY_CANDIDATES') {
+      const evidence = body.evidence as Array<Record<string, unknown>>
+      assert.equal(evidence.length, 1)
+      assert.equal(evidence[0]?.internalOrderId, 'order-recovery-1')
+      assert.equal(evidence[0]?.exchangeAccountId, ACCOUNT_ID)
+      assert.equal(evidence[0]?.recoveryReason, 'EXPLICIT_RECOVERY_REQUIRED')
+    } else assert.equal(body.evidence, null)
   }
 })
 
@@ -343,4 +361,29 @@ test('HEAD suppresses bodies and unknown/non-operator paths are explicit', async
     new Request('https://candidate.example/v1/live/capabilities'),
     env,
   ), null)
+})
+
+test('recovery-candidate route requires account scope and explicit stale cutoff', async () => {
+  const env = await environment()
+
+  const missingAccount = requireResponse(await routeOperatorReadRequest(
+    operatorRequest('/v1/operator/recovery-candidates?stale_before=2026-09-29T07%3A45%3A00.000Z', 'auditor', 'auditor-secret'),
+    env,
+  ))
+  assert.equal(missingAccount.status, 400)
+  assert.equal((await jsonBody(missingAccount)).code, 'OPERATOR_ACCOUNT_ID_REQUIRED')
+
+  const missingCutoff = requireResponse(await routeOperatorReadRequest(
+    operatorRequest(`/v1/operator/recovery-candidates?account_id=${ACCOUNT_ID}`, 'viewer', 'viewer-secret'),
+    env,
+  ))
+  assert.equal(missingCutoff.status, 400)
+  assert.equal((await jsonBody(missingCutoff)).code, 'OPERATOR_STALE_BEFORE_REQUIRED')
+
+  const wrongAccount = requireResponse(await routeOperatorReadRequest(
+    operatorRequest('/v1/operator/recovery-candidates?account_id=account-2&stale_before=2026-09-29T07%3A45%3A00.000Z', 'viewer', 'viewer-secret'),
+    env,
+  ))
+  assert.equal(wrongAccount.status, 403)
+  assert.equal((await jsonBody(wrongAccount)).code, 'OPERATOR_READ_FORBIDDEN')
 })

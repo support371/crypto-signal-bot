@@ -81,3 +81,19 @@ test('recovery scan validates cutoff and bounds work per invocation', async () =
     /limit must be an integer between 1 and 500/,
   )
 })
+
+test('recovery scan can be restricted to one authorized exchange account', async () => {
+  const { env, capture } = fakeEnv([])
+  await scanLiveOrdersForRecovery(env, {
+    staleBefore: '2026-09-29T07:45:00.000Z',
+    exchangeAccountId: 'acct-1',
+    limit: 10,
+  })
+
+  assert.match(capture.sql, /exchange_account_id = \?/)
+  assert.deepEqual(capture.bindings.slice(-3), [
+    '2026-09-29T07:45:00.000Z',
+    'acct-1',
+    10,
+  ])
+})

@@ -66,23 +66,27 @@ export async function scanLiveOrdersForRecovery(
   input: {
     staleBefore: string
     limit?: number
+    exchangeAccountId?: string
   },
 ): Promise<readonly LiveRecoveryCandidate[]> {
   const staleBefore = validIso(input.staleBefore, 'staleBefore')
   const limit = boundedLimit(input.limit)
   const placeholders = EXCHANGE_ACTIVE_STATES.map(() => '?').join(', ')
+  const exchangeAccountId = input.exchangeAccountId?.trim() || null
+  const accountFilter = exchangeAccountId ? ' AND exchange_account_id = ?' : ''
 
   const result = await env.DB.prepare(
     `SELECT internal_order_id, exchange_account_id, exchange_order_id,
             client_order_id, product_id, state, updated_at
        FROM live_orders
-      WHERE state = 'RECOVERY_REQUIRED'
-         OR (state IN (${placeholders}) AND updated_at <= ?)
+      WHERE (state = 'RECOVERY_REQUIRED'
+         OR (state IN (${placeholders}) AND updated_at <= ?))${accountFilter}
       ORDER BY updated_at ASC, internal_order_id ASC
       LIMIT ?`,
   ).bind(
     ...EXCHANGE_ACTIVE_STATES,
     staleBefore,
+    ...(exchangeAccountId ? [exchangeAccountId] : []),
     limit,
   ).all<LiveRecoveryCandidateRow>()
 
