@@ -1,4 +1,4 @@
-import worker, { requireApiKey, type Env } from './index'
+import worker, { requireApiKey, checkRateLimit, type Env } from './index'
 import { fastPathDecisionMetrics, fastPathFeedRegistry } from './fast-path'
 import { buildV2InfrastructureStatus } from './routes/v2-infrastructure'
 import { buildV2MarketFeedsStatus } from './routes/v2-market-feeds'
@@ -353,6 +353,18 @@ async function handlePaperIntent(
   env: AgentEnv,
   ctx: ExecutionContext,
 ): Promise<Response> {
+  // /intent/paper is handled before the Hono app's global rate-limit middleware,
+  // so enforce the same per-IP limiter here (fail-closed for mutations).
+  const rateLimited = await checkRateLimit(env, request)
+  if (!rateLimited) {
+    return jsonResponse(request, env, {
+      error: 'Rate limit exceeded. Please wait a moment and try again.',
+      code: 'RATE_LIMITED',
+      retry_after: 60,
+      request_id: requestId(request),
+    }, 429)
+  }
+
   const auth = await authenticatePaperTrader(request, env)
   if ('response' in auth) return auth.response
 
@@ -401,6 +413,9 @@ async function handlePaperIntent(
     'Content-Type': 'application/json',
     'X-API-Key': operatorKey,
     'X-Request-ID': requestId(request),
+    // Propagate the true client IP so the internal /orders subrequest counts
+    // against the same per-IP rate-limit bucket instead of a shared 'unknown' bucket.
+    'CF-Connecting-IP': request.headers.get('CF-Connecting-IP') ?? 'unknown',
   })
   const internalRequest = new Request(new URL('/orders', request.url), {
     method: 'POST',
