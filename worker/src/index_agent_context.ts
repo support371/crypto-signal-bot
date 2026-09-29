@@ -30,8 +30,10 @@ const PAPER_SCHEMA_STATEMENTS = [
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     symbol TEXT NOT NULL, side TEXT NOT NULL, quantity REAL NOT NULL,
     price REAL NOT NULL, status TEXT DEFAULT 'filled', mode TEXT DEFAULT 'paper',
+    idempotency_key TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_idempotency_key ON orders (idempotency_key)`,
   `CREATE TABLE IF NOT EXISTS audit_trail (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     event TEXT NOT NULL, detail TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP

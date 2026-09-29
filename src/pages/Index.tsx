@@ -204,8 +204,11 @@ const Index = () => {
     lastAutoTradeSig.current = sig;
 
     const side = signal.direction === 'DOWN' ? 'SELL' : 'BUY';
+    const notional = risk.positionNotionalUsdt && risk.positionNotionalUsdt > 0
+      ? risk.positionNotionalUsdt
+      : risk.positionSize * 1000;
     const qty = selectedCoin.price > 0
-      ? Number(((risk.positionSize * 1000) / selectedCoin.price).toFixed(6))
+      ? Number((notional / selectedCoin.price).toFixed(6))
       : 0.001;
 
     fetchBackendJson('/intent/paper', {

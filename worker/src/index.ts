@@ -379,12 +379,25 @@ async function getPortfolio(env: Env) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function placePaperOrder(env: Env, input: OrderInput) {
-  // Idempotency check
-  if (input.idempotency_key) {
+  // Idempotency check — duplicate intents must never produce duplicate fills.
+  // The key is stored on the orders row; a UNIQUE index makes the check
+  // race-safe (a conflicting INSERT is treated as a duplicate delivery).
+  const idempotencyKey = typeof input.idempotency_key === 'string'
+    ? input.idempotency_key.trim().slice(0, 128)
+    : ''
+  const idempotentResponse = (orderId: number | null) => ({
+    status: 200 as const,
+    body: {
+      status: 'FILLED', idempotent: true, order_id: orderId,
+      idempotency_key: idempotencyKey || undefined,
+      ...safeRuntime(env), ts: ts(),
+    },
+  })
+  if (idempotencyKey) {
     const existing = await env.DB.prepare(
-      "SELECT id FROM orders WHERE mode = 'paper' AND status = 'FILLED' AND detail LIKE ? LIMIT 1"
-    ).bind(`%${input.idempotency_key}%`).first<{ id: number }>().catch(() => null)
-    if (existing) return { status: 200 as const, body: { status: 'FILLED', idempotent: true, ...safeRuntime(env) } }
+      'SELECT id FROM orders WHERE idempotency_key = ? LIMIT 1'
+    ).bind(idempotencyKey).first<{ id: number }>().catch(() => null)
+    if (existing) return idempotentResponse(existing.id)
   }
 
   if (await isHalted(env)) {
@@ -447,15 +460,30 @@ async function placePaperOrder(env: Env, input: OrderInput) {
     await recordPnl(env, realized)
   }
 
-  await env.DB.prepare(
-    'INSERT INTO orders (symbol, side, quantity, price, status, mode) VALUES (?, ?, ?, ?, ?, ?)'
-  ).bind(symbol, side, qty, px.price, 'FILLED', PAPER).run()
+  let orderId: number | null = null
+  try {
+    const inserted = await env.DB.prepare(
+      'INSERT INTO orders (symbol, side, quantity, price, status, mode, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).bind(symbol, side, qty, px.price, 'FILLED', PAPER, idempotencyKey || null).run()
+    orderId = typeof inserted?.meta?.last_row_id === 'number' ? inserted.meta.last_row_id : null
+  } catch (err) {
+    // UNIQUE(idempotency_key) violation → this intent was already filled.
+    if (idempotencyKey && /unique|constraint/i.test(String((err as Error)?.message ?? err))) {
+      const existing = await env.DB.prepare(
+        'SELECT id FROM orders WHERE idempotency_key = ? LIMIT 1'
+      ).bind(idempotencyKey).first<{ id: number }>().catch(() => null)
+      return idempotentResponse(existing?.id ?? null)
+    }
+    throw err
+  }
 
   const result = {
     status: 'FILLED', symbol, side, quantity: qty,
     price: px.price, fill_price: px.price,
     notional_usdt: value, realized_pnl: realized,
     price_source: px.source, price_stale: px.stale,
+    order_id: orderId,
+    idempotency_key: idempotencyKey || undefined,
     ...safeRuntime(env), ts: ts(),
   }
   await audit(env, 'paper_order', result)
@@ -805,6 +833,44 @@ app.get('/portfolio/positions', async (c) => {
 app.get('/portfolio/balance', async (c) => {
   const balance = await getBalance(c.env)
   return c.json({ balance_usdt: balance, cash_usdt: balance, ...safeRuntime(c.env), ts: ts() })
+})
+
+// ── RISK DECISION (authoritative, server-side) ─────────────────────────────
+// The risk engine is the sole authority for capital allocation. This read-only
+// endpoint is the contract the dashboard consumes: the browser must display
+// the decision, never derive its own. Paper/certification only.
+app.get('/risk/decision', async (c) => {
+  const symbol = sym(c.req.query('symbol') ?? 'BTCUSDT')
+  const guardian = await getGuardian(c.env)
+  const portfolio = await getPortfolio(c.env)
+  const halted = guardian.triggered === true
+  const equity = n(portfolio.equity_usdt)
+  const riskScore = Math.min(100, Math.max(0,
+    n(guardian.drawdown_pct) * 4 + n(portfolio.position_count) * 5))
+  const approved = !halted && riskScore < 80 && equity > 0
+  const positionSizeFraction = approved ? 0.02 : 0
+  const positionNotionalUsdt = approved
+    ? Math.round(Math.min(equity, Math.max(0, equity * positionSizeFraction)) * 100) / 100
+    : 0
+  const reasoning = halted
+    ? 'Guardian kill switch is active — paper rehearsal blocked.'
+    : riskScore >= 80
+      ? `Risk score ${riskScore} at or above the 80 block threshold — paper rehearsal blocked.`
+      : equity <= 0
+        ? 'Paper portfolio equity is not positive — paper rehearsal blocked.'
+        : `Approved for paper rehearsal: risk score ${riskScore}, 2% of NAV sizing.`
+  return c.json({
+    symbol,
+    approved,
+    decision: approved ? 'ENTER' : 'HOLD',
+    position_size_fraction: positionSizeFraction,
+    position_notional_usdt: positionNotionalUsdt,
+    risk_score: riskScore,
+    reasoning,
+    guardian_halted: halted,
+    ...safeRuntime(c.env),
+    ts: ts(),
+  })
 })
 
 // ── GUARDIAN ──────────────────────────────────────────────────────────────────

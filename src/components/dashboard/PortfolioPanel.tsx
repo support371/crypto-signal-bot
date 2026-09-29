@@ -39,7 +39,13 @@ function QuickTrade({ symbol, signal, risk, price, tradingMode, onFilled }: Quic
     }
     setSubmitting(true);
     try {
-      const qty = price > 0 ? Number(((risk.positionSize * 1000) / price).toFixed(6)) : 0.001;
+      // Sizing authority is the Worker's risk decision (positionNotionalUsdt).
+      // The legacy fraction-of-1000 fallback only applies if an older Worker
+      // response carries no notional.
+      const notional = risk.positionNotionalUsdt && risk.positionNotionalUsdt > 0
+        ? risk.positionNotionalUsdt
+        : risk.positionSize * 1000;
+      const qty = price > 0 ? Number((notional / price).toFixed(6)) : 0.001;
       await fetchBackendJson('/intent/paper', {
         method: 'POST',
         body: JSON.stringify({

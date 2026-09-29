@@ -13,6 +13,13 @@ const checks = [
   { id: 'ws-upgrade-required', method: 'GET', path: '/ws/updates', expect: 426 },
 ];
 
+// Informational only — never gates `ok`. Tracks rollout of the authoritative
+// paper risk-decision endpoint (PR #216): expected to fail until the Worker is
+// redeployed with GET /risk/decision, then flip to passing.
+const informationalChecks = [
+  { id: 'risk-decision', method: 'GET', path: '/risk/decision?symbol=BTCUSDT', expect: 200 },
+];
+
 function errorText(error) {
   return error instanceof Error ? error.message : String(error);
 }
@@ -82,12 +89,13 @@ export default async function handler(req, res) {
 
   const started = Date.now();
   const results = await Promise.all(checks.map(runCheck));
+  const informational = await Promise.all(informationalChecks.map(runCheck));
   const latencies = results.filter((item) => item.actual_status !== null).map((item) => item.latency_ms);
   const failures = results.filter((item) => !item.passed);
 
   const report = {
     ok: failures.length === 0,
-    probe_version: '2026-09-10.1',
+    probe_version: '2026-09-29.1',
     generated_at: new Date().toISOString(),
     worker: WORKER,
     mode: 'paper-certification',
@@ -106,6 +114,7 @@ export default async function handler(req, res) {
     },
     results,
     failures,
+    informational,
   };
 
   return res.status(report.ok ? 200 : 503).json(report);
