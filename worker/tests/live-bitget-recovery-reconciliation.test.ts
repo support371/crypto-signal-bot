@@ -91,6 +91,8 @@ test('reconciles an exact recovered Bitget order into a terminal decision', () =
   assert.equal(result.recoverySnapshotHash, 'a'.repeat(64))
   assert.equal(result.providerMutationAllowed, false)
   assert.equal(result.automaticRetryAllowed, false)
+  assert.equal(result.automaticStateProjectionAllowed, false)
+  assert.equal(result.requiresAttestedPersistence, true)
 })
 
 test('supports client-order identity for ambiguous-submission recovery', () => {
