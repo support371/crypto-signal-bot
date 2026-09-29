@@ -46,9 +46,29 @@ jobs:
           cache: npm
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Prefer the runner's pre-provisioned tool-cache Python (deterministic,
+          # no network) and fall back to a PATH python3 when absent.
+          PYROOT=""
+          for candidate in \
+            "${RUNNER_TOOL_CACHE:-}/Python/3.11.16/x64" \
+            "$HOME/actions-runner/_work/_tool/Python/3.11.16/x64"; do
+            if [ -x "$candidate/bin/python3" ]; then
+              PYROOT="$candidate"
+              break
+            fi
+          done
+          if [ -n "$PYROOT" ]; then
+            echo "$PYROOT/bin" >> "$GITHUB_PATH"
+            echo "LD_LIBRARY_PATH=$PYROOT/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+            echo "Python from tool cache: $PYROOT"
+            "$PYROOT/bin/python3" --version
+          else
+            echo "Tool-cache Python 3.11 not found; using PATH python3."
+            python3 --version
+          fi
 
       - name: Confirm paper-safety environment
         shell: bash
