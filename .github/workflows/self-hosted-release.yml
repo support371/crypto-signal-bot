@@ -48,27 +48,39 @@ jobs:
       - name: Set up Python 3.11
         shell: bash
         run: |
-          set -euo pipefail
+          set -eo pipefail
           # Prefer the runner's pre-provisioned tool-cache Python (deterministic,
           # no network) and fall back to a PATH python3 when absent.
           PYROOT=""
           for candidate in \
-            "${RUNNER_TOOL_CACHE:-}/Python/3.11.16/x64" \
+            "${RUNNER_TOOL_CACHE:-/home/ghrunner/actions-runner/_work/_tool}/Python/3.11.16/x64" \
             "$HOME/actions-runner/_work/_tool/Python/3.11.16/x64"; do
             if [ -x "$candidate/bin/python3" ]; then
               PYROOT="$candidate"
               break
             fi
           done
-          if [ -n "$PYROOT" ]; then
-            echo "$PYROOT/bin" >> "$GITHUB_PATH"
-            echo "LD_LIBRARY_PATH=$PYROOT/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
-            echo "Python from tool cache: $PYROOT"
-            "$PYROOT/bin/python3" --version
-          else
+          if [ -z "$PYROOT" ]; then
             echo "Tool-cache Python 3.11 not found; using PATH python3."
             python3 --version
+            exit 0
           fi
+          echo "Python from tool cache: $PYROOT"
+          if [ -n "${GITHUB_PATH:-}" ]; then
+            echo "$PYROOT/bin" >> "$GITHUB_PATH"
+            echo "Added $PYROOT/bin to GITHUB_PATH"
+          else
+            echo "GITHUB_PATH not set; exporting PATH for this step only"
+            export PATH="$PYROOT/bin:$PATH"
+          fi
+          if [ -n "${GITHUB_ENV:-}" ]; then
+            echo "LD_LIBRARY_PATH=$PYROOT/lib" >> "$GITHUB_ENV"
+            echo "Set LD_LIBRARY_PATH via GITHUB_ENV"
+          else
+            export LD_LIBRARY_PATH="$PYROOT/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+            echo "GITHUB_ENV not set; exported LD_LIBRARY_PATH for this step only"
+          fi
+          "$PYROOT/bin/python3" --version
 
       - name: Confirm paper-safety environment
         shell: bash
