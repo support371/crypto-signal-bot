@@ -506,7 +506,7 @@ export function requireApiKey(env: Env, req: Request): boolean {
 // Rate limiter (D1, per-IP per-minute bucket)
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function checkRateLimit(env: Env, req: Request): Promise<boolean> {
+export async function checkRateLimit(env: Env, req: Request): Promise<boolean> {
   const rpm = n(env.RATE_LIMIT_RPM, 120)
   const ip  = req.headers.get('CF-Connecting-IP') ?? 'unknown'
   const bucket = `${ip}:${Math.floor(Date.now() / 60000)}`
@@ -522,7 +522,11 @@ async function checkRateLimit(env: Env, req: Request): Promise<boolean> {
       await env.DB.prepare('INSERT INTO rate_limit_counters (bucket, count) VALUES (?, ?)').bind(bucket, 1).run()
     }
   } catch {
-    // If D1 fails, allow the request through
+    // Fail closed for state-changing requests when the limiter's storage is
+    // unavailable: a D1 degradation must not silently disable abuse protection
+    // on mutations. Reads stay available so health/status contracts keep reporting.
+    const method = req.method.toUpperCase()
+    if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') return false
   }
   return true
 }
