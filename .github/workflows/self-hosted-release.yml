@@ -124,7 +124,7 @@ jobs:
           TRADING_MODE: paper
           EXCHANGE_MODE: paper
           ALLOW_MAINNET: "false"
-        run: wrangler deploy --dry-run --outdir .wrangler-dry-run
+        run: npx wrangler deploy --dry-run --outdir .wrangler-dry-run
 
       - name: Deploy Cloudflare Worker when manually enabled
         if: ${{ github.event.inputs.deploy_worker == 'true' }}
@@ -135,7 +135,7 @@ jobs:
           TRADING_MODE: paper
           EXCHANGE_MODE: paper
           ALLOW_MAINNET: "false"
-        run: wrangler deploy
+        run: npx wrangler deploy
 
       - name: Smoke check Worker endpoints after deploy
         if: ${{ github.event.inputs.deploy_worker == 'true' }}
