@@ -366,6 +366,13 @@ test('HEAD suppresses bodies and unknown/non-operator paths are explicit', async
 test('recovery-candidate route requires account scope and explicit stale cutoff', async () => {
   const env = await environment()
 
+  const missingAccount = requireResponse(await routeOperatorReadRequest(
+    operatorRequest('/v1/operator/recovery-candidates?stale_before=2026-09-29T07%3A45%3A00.000Z', 'auditor', 'auditor-secret'),
+    env,
+  ))
+  assert.equal(missingAccount.status, 400)
+  assert.equal((await jsonBody(missingAccount)).code, 'OPERATOR_ACCOUNT_ID_REQUIRED')
+
   const missingCutoff = requireResponse(await routeOperatorReadRequest(
     operatorRequest(`/v1/operator/recovery-candidates?account_id=${ACCOUNT_ID}`, 'viewer', 'viewer-secret'),
     env,
