@@ -9,6 +9,7 @@ websockets
 prometheus_client
 httpx
 sqlalchemy>=2.0
+greenlet  # required by SQLAlchemy asyncio (create_async_engine); no longer pulled in transitively
 aiosqlite
 asyncpg
 
