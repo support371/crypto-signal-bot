@@ -19,6 +19,7 @@ import {
   readLatestFillReconciliation,
   type OperatorReadModelEnv,
 } from './operator-read-model.ts'
+import { scanLiveOrdersForRecovery } from './recovery-scan.ts'
 import {
   liveCandidateJson,
   type LiveCandidateResponseEnv,
@@ -164,6 +165,7 @@ async function handleOperatorRead(
     const resourceByPath: Readonly<Record<string, OperatorReadResource>> = {
       '/v1/operator/certification': 'CERTIFICATION',
       '/v1/operator/recovery-readiness': 'RECOVERY_READINESS',
+      '/v1/operator/recovery-candidates': 'RECOVERY_CANDIDATES',
       '/v1/operator/reconciliation': 'RECONCILIATION',
       '/v1/operator/alerts': 'ALERTS',
       '/v1/operator/audit-head': 'AUDIT_HEAD',
@@ -186,7 +188,21 @@ async function handleOperatorRead(
     if (principal instanceof Response) return principal
 
     let evidence: unknown
-    if (resource === 'CERTIFICATION') {
+    if (resource === 'RECOVERY_CANDIDATES') {
+      const staleBefore = requiredQuery(url, 'stale_before')
+      if (!staleBefore) {
+        return liveCandidateJson(request, env, {
+          error: 'stale_before is required',
+          code: 'OPERATOR_STALE_BEFORE_REQUIRED',
+        }, 400)
+      }
+      const requestedLimit = Number(url.searchParams.get('limit') ?? '100')
+      evidence = await scanLiveOrdersForRecovery(env, {
+        staleBefore,
+        exchangeAccountId,
+        limit: Number.isFinite(requestedLimit) ? requestedLimit : 100,
+      })
+    } else if (resource === 'CERTIFICATION') {
       evidence = await readLatestBitgetCertification(env, exchangeAccountId, productId)
     } else if (resource === 'RECOVERY_READINESS') {
       evidence = await readLatestAttestedRecoveryReadiness(env, exchangeAccountId, productId)
