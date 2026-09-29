@@ -27,31 +27,17 @@ jobs:
         working-directory: worker
         run: npm ci
 
-      - name: List existing KV namespaces
-        id: kvlist
+      - name: Create AGENT_MEMORY KV namespace
+        id: kvcreate
         working-directory: worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          set -euo pipefail
-          npx wrangler kv namespace list > "$RUNNER_TEMP/kv-list.json"
-          cat "$RUNNER_TEMP/kv-list.json"
-
-      - name: Create AGENT_MEMORY KV namespace if missing
-        working-directory: worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          set -euo pipefail
-          if grep -q '"title":"AGENT_MEMORY"' "$RUNNER_TEMP/kv-list.json" \
-             || grep -q '"title": "AGENT_MEMORY"' "$RUNNER_TEMP/kv-list.json"; then
-            echo "AGENT_MEMORY namespace already exists; skipping creation."
-          else
-            echo "Creating AGENT_MEMORY KV namespace..."
-            npx wrangler kv namespace create AGENT_MEMORY
-          fi
+          set -uo pipefail
+          echo "--- attempting KV namespace creation ---"
+          npx wrangler kv namespace create AGENT_MEMORY 2>&1 | tee "$RUNNER_TEMP/kv-create.log"
+          echo "--- wrangler exit: ${PIPESTATUS[0]} ---"
 
       - name: Check R2 bucket status (read-only)
         working-directory: worker
@@ -60,4 +46,5 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -uo pipefail
-          npx wrangler r2 bucket list || echo "R2_CHECK_FAILED_OR_NOT_ENABLED"
+          echo "--- R2 bucket list ---"
+          npx wrangler r2 bucket list 2>&1 || echo "R2_CHECK_FAILED_OR_NOT_ENABLED"
