@@ -259,12 +259,15 @@ async def lifespan(application):
     except Exception as _exc:
         logger.warning("Surge scanner start skipped: %s", _exc)
     logger.info("All background services registered.")
-    try:
-        from backend.services.market_data.ingestion import pipeline as _ingestion_pipeline
-        await _ingestion_pipeline.start()
-        logger.info("Ingestion pipeline started (%d symbols).", len(_ingestion_pipeline._active))
-    except Exception as _exc:
-        logger.warning("Ingestion pipeline start skipped (non-fatal): %s", _exc)
+    if PAPER_USE_LIVE_MARKET_DATA:
+        try:
+            from backend.services.market_data.ingestion import pipeline as _ingestion_pipeline
+            await _ingestion_pipeline.start()
+            logger.info("Ingestion pipeline started (%d symbols).", len(_ingestion_pipeline._active))
+        except Exception as _exc:
+            logger.warning("Ingestion pipeline start skipped (non-fatal): %s", _exc)
+    else:
+        logger.info("Ingestion pipeline skipped (PAPER_USE_LIVE_MARKET_DATA=false).")
 
     try:
         yield
