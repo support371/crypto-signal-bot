@@ -50,6 +50,29 @@ When implementation details conflict with these documents, treat the documents a
 
 Some of these paths are migration targets and may not exist yet. Create them only in the phase that owns them.
 
+## Base44 dev environment
+
+The dev environment runs via `docker compose -f docker-compose.base44.yml up -d` and
+exposes the Vite dev server on host port 3000. Three services are involved:
+
+- **web** (node:22.12-alpine): Vite dev server on port 3000, bind-mounted to repo
+  root. Proxies `/api` requests to the backend via `BACKEND_INTERNAL_URL`
+  (defaults to `http://localhost:8000`, set to `http://backend:8000` in compose).
+  Frontend runs in demo mode (`VITE_DEMO_MODE=true`) with `VITE_BACKEND_URL=/api`
+  so all API calls go through the Vite proxy (single-origin).
+- **backend** (python:3.11-slim): FastAPI/uvicorn with `--reload`, entry point
+  `backend.render_entrypoint:app` on port 8000. Uses SQLite at
+  `/app/backend/data/crypto_bot.db` (no external DB needed). `BACKEND_API_KEY` is
+  intentionally unset — auth is disabled in dev so the demo-mode frontend can
+  access all routes without Supabase credentials.
+- **redis** (redis:7-alpine): Used for rate limiting, caching, and pub/sub.
+
+To verify the app is working: curl `http://localhost:3000/` (frontend) and
+`http://localhost:3000/api/health` (proxied backend health check).
+
+Exchange API errors (Bitget 400, Binance geo-block) are expected in paper mode —
+the backend handles them with circuit breakers and fallbacks.
+
 ## Definition of done
 
 A change is complete only when:

@@ -1,0 +1,76 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  backend:
+    image: python:3.11-slim
+    working_dir: /app
+    volumes:
+      - ./:/app
+    command:
+      - sh
+      - -ec
+      - >
+        pip install --no-cache-dir -r backend/requirements.txt
+        && mkdir -p backend/data
+        && exec uvicorn backend.render_entrypoint:app
+        --host 0.0.0.0 --port 8000 --reload
+    environment:
+      - TRADING_MODE=paper
+      - NETWORK=testnet
+      - DATABASE_URL=sqlite:////app/backend/data/crypto_bot.db
+      - REDIS_URL=redis://redis:6379/0
+      - AUDIT_STORE_PATH=backend/data/audit.json
+      - EARNINGS_STORE_PATH=backend/data/earnings.json
+      - PAPER_USE_LIVE_MARKET_DATA=false
+      - CORS_ORIGINS=*
+      - RATE_LIMIT_RPM=120
+      - GUARDIAN_MAX_API_ERRORS=10
+      - GUARDIAN_MAX_FAILED_ORDERS=5
+      - GUARDIAN_MAX_DRAWDOWN_PCT=0.05
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 40s
+    restart: on-failure
+
+  web:
+    image: node:22.12-alpine
+    working_dir: /app
+    volumes:
+      - ./:/app
+    ports:
+      - "3000:3000"
+    command:
+      - sh
+      - -ec
+      - >
+        npm install --no-audit --no-fund
+        && exec npm run dev -- --host 0.0.0.0
+    environment:
+      - VITE_DEMO_MODE=true
+      - VITE_BACKEND_URL=/api
+      - BACKEND_INTERNAL_URL=http://backend:8000
+      - __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 40s
+    restart: on-failure
