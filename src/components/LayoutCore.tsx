@@ -13,7 +13,13 @@ export default function LayoutCore() {
         <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
         <main className={`flex-1 transition-all duration-300 ${sidebarOpen ? 'ml-0 md:ml-64' : 'ml-0'}`}>
           <div className="border-b border-secondary-200 bg-white px-4 py-2 md:px-6 lg:px-8">
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
+              <Link
+                to="/market-review"
+                className="rounded-lg border border-secondary-200 bg-white px-3 py-1.5 text-sm font-semibold text-secondary-700 transition hover:bg-secondary-50"
+              >
+                Market review
+              </Link>
               <Link
                 to="/operator-readiness"
                 className="rounded-lg border border-secondary-200 bg-white px-3 py-1.5 text-sm font-semibold text-secondary-700 transition hover:bg-secondary-50"

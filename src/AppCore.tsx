@@ -15,6 +15,7 @@ const Backtest = lazy(() => import('./pages/Backtest'));
 const Index = lazy(() => import('./pages/Index'));
 const Infrastructure = lazy(() => import('./pages/Infrastructure'));
 const IntegrationsStatus = lazy(() => import('./pages/IntegrationsStatus'));
+const MarketReview = lazy(() => import('./pages/MarketReview'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 const OperatorReadiness = lazy(() => import('./pages/OperatorReadiness'));
 const Portfolio = lazy(() => import('./pages/Portfolio'));
@@ -157,6 +158,7 @@ export default function AppCore() {
             <Route path="/settings" element={<ProtectedPage><Settings /></ProtectedPage>} />
             <Route path="/account" element={<AccountPage><Account /></AccountPage>} />
             <Route path="/integrations" element={<ProtectedPage><IntegrationsStatus /></ProtectedPage>} />
+            <Route path="/market-review" element={<ProtectedPage><MarketReview /></ProtectedPage>} />
             <Route path="/infrastructure" element={<ProtectedPage><Infrastructure /></ProtectedPage>} />
             <Route path="/operator-readiness" element={<ProtectedPage><OperatorReadiness /></ProtectedPage>} />
             {[
