@@ -154,7 +154,7 @@ function parseBitgetEnvelope(value: unknown): unknown {
   }
   const envelope = value as Record<string, unknown>
   const code = String(envelope.code ?? '').trim()
-  if (code && code !== '00000') {
+  if (code !== '00000') {
     const message = String(envelope.msg ?? envelope.message ?? 'Bitget request failed').trim()
     throw new BitgetReadOnlyClientError('BITGET_API_ERROR', `${code}: ${message}`)
   }
