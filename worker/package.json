@@ -67,7 +67,8 @@
     "prepare:reviewed-migrations": "node ../scripts/prepare-reviewed-migrations.mjs",
     "migrate:reviewed:remote": "npm run verify:projection-resources && npm run prepare:reviewed-migrations && wrangler d1 migrations apply crypto-signal-bot-live-candidate-db --remote --config ../wrangler.reviewed-coordinator.toml",
     "deploy:reviewed-coordinator": "npm run verify:projection-resources && wrangler deploy --config ../wrangler.reviewed-coordinator.toml",
-    "verify:reviewed-bindings": "node ../scripts/verify-reviewed-deployment-resources.mjs --projection --require-gateway"
+    "verify:reviewed-bindings": "node ../scripts/verify-reviewed-deployment-resources.mjs --projection --require-gateway",
+    "verify:provider-secret-store": "node ../scripts/verify-bitget-secret-store-resources.mjs"
   },
   "dependencies": {
     "hono": "^4.13.10"

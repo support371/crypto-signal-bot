@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { verifyWorkerDeploymentTarget } from './verify-worker-deployment-target.mjs';
+import { certificationStoreConfig, inspectCertificationStore } from './verify-bitget-secret-store-resources.mjs';
 
 const production = {
   db: '6046c4fd-87de-4b56-be9d-917d6994a86b',
@@ -169,6 +170,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       requireCoordinator: process.argv.includes('--require-coordinator'),
       requireGateway: process.argv.includes('--require-gateway'),
     });
-    console.log(JSON.stringify(result));
+    if (!projection) await inspectCertificationStore(certificationStoreConfig(candidate));
+    console.log(JSON.stringify({ ...result, ...(!projection ? { providerSecretMetadataVerified: true } : {}) }));
   } catch (error) { console.error(error.message); process.exitCode = 1; }
 }
