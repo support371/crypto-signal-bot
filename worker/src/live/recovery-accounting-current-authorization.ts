@@ -58,7 +58,8 @@ export async function assertCurrentRecoveryAccountingAuthorization(
   const orderById = new Map((orders.results ?? []).map((row) => [row.internal_order_id, row]))
   for (const command of approved.plan.commands) {
     const order = orderById.get(command.internalOrderId)
-    if (!order || order.exchange_account_id !== approved.plan.exchangeAccountId
+    if (command.fill.productId !== `${command.baseAsset}-${command.quoteAsset}`
+      || !order || order.exchange_account_id !== approved.plan.exchangeAccountId
       || order.exchange_order_id !== command.fill.exchangeOrderId
       || order.product_id !== command.fill.productId || order.side !== command.fill.side) {
       throw new RecoveryAccountingDispatchNotApprovedError('reviewed fill does not match the persisted account order')

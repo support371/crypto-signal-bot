@@ -90,12 +90,13 @@ function command(side: 'BUY' | 'SELL'): VerifiedSpotFillAccountingInput {
   }
 }
 
-async function approve(db: SqliteD1, options: { expired?: boolean; actorId?: string; suffix?: string } = {}) {
+async function approve(db: SqliteD1, options: { expired?: boolean; actorId?: string; suffix?: string; wrongAsset?: boolean } = {}) {
   const suffix = options.suffix ?? '1'
   const now = Date.now() - (options.expired ? 600_000 : 10_000)
   const evaluatedAt = new Date(now).toISOString()
   const hashable = { exchangeName: 'BITGET' as const, exchangeAccountId: ACCOUNT, productId: 'BTC-USDT',
-    recoverySnapshotHash: 'a'.repeat(64), commandCount: 2, commands: [command('BUY'), command('SELL')],
+    recoverySnapshotHash: 'a'.repeat(64), commandCount: 2,
+    commands: [command('BUY'), command('SELL')].map((c) => options.wrongAsset ? { ...c, baseAsset: 'ETH' } : c),
     accountingEvidenceReady: true as const, automaticallyDispatched: false as const,
     providerMutationAllowed: false as const, reservationApplied: false as const, executionAllowed: false as const }
   const actorId = options.actorId ?? 'risk-reviewer'
@@ -265,6 +266,17 @@ test('reviewed commands cannot target another account ledger/order or a frozen l
       assert.equal(db.count('live_fills'), 0)
     } finally { db.sql.close() }
   }
+})
+
+test('product identity cannot be rebound to another base asset even with matching ledger ownership and a valid plan hash', async () => {
+  const db = new SqliteD1()
+  try {
+    await approve(db, { wrongAsset: true })
+    db.sql.exec("UPDATE ledger_accounts SET asset = 'ETH' WHERE asset = 'BTC'")
+    assert.equal((await coordinator(db).fetch(request())).status, 403)
+    assert.equal(db.count('live_recovery_accounting_dispatch_attempts'), 0)
+    assert.equal(db.count('live_fills'), 0)
+  } finally { db.sql.close() }
 })
 
 test('interruption after FIFO commits leaves an orphan claim; fresh review resumes with receipt replay and no duplicate fills', async () => {
