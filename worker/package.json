@@ -20,7 +20,7 @@
     "verify:certification-safety": "node scripts/verify-certification-safety.mjs",
     "verify:cryptoops-readonly-openapi": "node scripts/verify-cryptoops-readonly-openapi.mjs",
     "verify:migrations": "node --experimental-sqlite --no-warnings scripts/verify-live-candidate-migrations.mjs",
-    "deploy": "wrangler deploy --config ../wrangler.toml",
+    "deploy": "node ../scripts/verify-worker-deployment-target.mjs && wrangler deploy --config ../wrangler.toml",
     "cf:whoami": "wrangler whoami --config ../wrangler.toml",
     "migrate": "wrangler d1 execute crypto-signal-bot-db --config ../wrangler.toml --file=migrations/001_init.sql",
     "migrate:local": "wrangler d1 execute crypto-signal-bot-db --config ../wrangler.toml --local --file=migrations/001_init.sql",
