@@ -182,7 +182,7 @@ function roleInScope(
   nowMs: number,
 ): boolean {
   if (role.revokedAt !== null) return false
-  if (role.expiresAt !== null && Date.parse(role.expiresAt) <= nowMs) return false
+  if (role.expiresAt !== null && (!Number.isFinite(Date.parse(role.expiresAt)) || Date.parse(role.expiresAt) <= nowMs)) return false
   if (role.scopeType === 'GLOBAL') return true
   if (role.scopeType === 'EXCHANGE') return role.scopeKey === request.exchangeName
   return role.scopeKey === request.exchangeAccountId
@@ -198,7 +198,8 @@ function validStepUp(
   if (!session) return false
   if (session.actorId !== request.actorId) return false
   if (session.revokedAt !== null) return false
-  if (Date.parse(session.issuedAt) > nowMs || Date.parse(session.expiresAt) <= nowMs) return false
+  if (!Number.isFinite(Date.parse(session.issuedAt)) || !Number.isFinite(Date.parse(session.expiresAt))
+    || Date.parse(session.issuedAt) > nowMs || Date.parse(session.expiresAt) <= nowMs) return false
   if (!['AAL2', 'AAL3'].includes(session.assuranceLevel)) return false
   return policy.stepUpAudience === null || session.audience === policy.stepUpAudience
 }
