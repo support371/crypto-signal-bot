@@ -132,7 +132,7 @@ function normalizeHealth(raw: BackendHealth): NormalizedBackendHealth {
     halted: raw.halted ?? Boolean(triggered),
     guardian_triggered: raw.guardian_triggered ?? Boolean(triggered),
     market_data_mode: raw.market_data_mode ?? 'live_public_paper',
-    market_data_connected: raw.market_data_connected ?? true,
+    market_data_connected: raw.market_data_connected ?? false,
     market_data_source: raw.market_data_source ?? 'coinbase',
   };
 }
