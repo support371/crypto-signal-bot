@@ -103,6 +103,51 @@ test('projection-only preflight verifies the same private namespace without requ
   assert.throws(()=>validateReviewedResourceIsolation({...parsed,dbId:'6046c4fd-87de-4b56-be9d-917d6994a86b'}),/PRODUCTION_RESOURCE/)
 })
 
+test('deployed private service verification requires one shared namespace, matching D1, credential bindings and disabled URLs',async()=>{
+  const current={...config,profile:'PROJECTION_ONLY',gatewayWorker:'crypto-signal-bot-reviewed-operations'}
+  for(const bad of [null,'namespace','database','owner','secret','candidate-secret','public','preview','missing-url-field']){
+    const requests:string[]=[]
+    const run=()=>inspectReviewedDeploymentResources(current,{environment,requireGateway:true,
+      fetcher:async(url:string,options:RequestInit)=>{
+        assert.equal(options.method,'GET');requests.push(url)
+        const gateway=url.includes('/crypto-signal-bot-reviewed-operations/')
+        let result:any
+        if(url.endsWith('/subdomain')){
+          result={enabled:false,previews_enabled:false}
+          if(gateway&&bad==='public')result.enabled=true
+          if(!gateway&&bad==='preview')result.previews_enabled=true
+          if(bad==='missing-url-field')delete result.previews_enabled
+        }else{
+          result=fixture(url)
+          if(url.endsWith('/settings')){
+            result.bindings.push({name:'CANDIDATE_ACCOUNTING_TOKEN',type:'secret_text'})
+            if(gateway){
+              result.bindings[0].script_name=current.candidateWorker
+              if(bad==='namespace')result.bindings[0].namespace_id='second-writer'
+              if(bad==='owner')result.bindings[0].script_name='crypto-signal-bot-api'
+              if(bad==='database')result.bindings[1].id='another-database'
+            }
+            if((gateway&&bad==='secret')||(!gateway&&bad==='candidate-secret'))result.bindings.pop()
+          }
+        }
+        return Response.json({success:true,result})
+      }})
+    if(bad)await assert.rejects(run,/UNVERIFIED/,bad)
+    else{
+      const result=await run()
+      assert.equal(result.deployedCoordinator,true)
+      assert.equal(result.deployedGatewayBindingsVerified,true)
+      assert.equal(result.internalCredentialBindingsVerified,true)
+      assert.equal(result.publicUrlsDisabled,true)
+      assert.equal(result.operatorCredentialBindingConfigured,false)
+      assert.equal(result.providerCertificationVerified,false)
+      assert.equal(result.mainnetActivationVerified,false)
+      assert.doesNotMatch(JSON.stringify(result),/private-fixture-token/)
+    }
+    assert.equal(requests.length,5)
+  }
+})
+
 test('isolated migration preparation excludes production paths and verifies empty application plus tracked replay',async()=>{
   const {reviewedMigrationNames,reviewedMigrationFiles,renderReviewedMigration}=await import('../../scripts/prepare-reviewed-migrations.mjs')
   const {DatabaseSync}=await import('node:sqlite')

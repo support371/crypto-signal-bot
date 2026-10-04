@@ -124,5 +124,17 @@ or settlement tables. The generated copies rewrite conditional trigger aborts to
 equivalent `SELECT RAISE(...) WHERE NOT EXISTS (...)` SQL, avoiding the remote
 parser's rejection of an inner `CASE ... END;`. Original source migrations,
 tracking names and abort conditions remain intact. Local equivalence tests cover
-matching, missing and null backing evidence. Remote retry and namespace/service
-deployment are still pending; do not infer deployment from dry-run evidence.
+matching, missing and null backing evidence. Remote retry succeeded for all 31 files; a repeat apply had no pending migrations.
+Both private Workers deployed from reviewed source f3aa456e5b66d15cf214a95d80b372826996fc2d.
+Actual API metadata confirms shared namespace `f847b9626f464c69a322b2c99b474ab1`,
+the same isolated D1 and internal secret bindings. Both workers.dev and preview
+URLs are disabled. Operator credential hashes and provider credentials remain
+unconfigured; deployment does not grant trading authority or certification.
+
+`npm --prefix worker run verify:reviewed-bindings` performs bounded GET inspection
+of both deployed Workers, D1 and subdomain settings. It rejects a second namespace,
+wrong namespace owner, mismatched database, missing internal credential binding or
+enabled/missing public-URL settings. It reports operator credential binding
+configuration separately and never reports provider certification or mainnet
+activation as verified. Metadata verifies credential binding presence, not secret
+values or a successful financial command.

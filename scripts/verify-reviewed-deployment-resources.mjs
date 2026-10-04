@@ -25,6 +25,7 @@ export function reviewedResourceConfig(candidateText, gatewayText) {
   return { dbId, kvId, bucketName, gatewayDbId: field(gatewayText, 'database_id'),
     databaseName: field(candidateText, 'database_name'),
     gatewayDatabaseName: field(gatewayText, 'database_name'),
+    gatewayWorker: field(gatewayText.split('[[d1_databases]]')[0], 'name'),
     candidateWorker: field(candidateText.split('[vars]')[0], 'name'),
     coordinatorWorker: field(gatewayText, 'script_name'),
     gatewayPrivate: field(gatewayText, 'main') === 'worker/src/index_reviewed_operations.ts'
@@ -39,6 +40,7 @@ export function reviewedCoordinatorConfig(coordinatorText, gatewayText) {
   return { profile: 'PROJECTION_ONLY', dbId: field(coordinatorText,'database_id'),
     gatewayDbId: field(gatewayText,'database_id'), databaseName: field(coordinatorText,'database_name'),
     gatewayDatabaseName: field(gatewayText,'database_name'),
+    gatewayWorker: field(gatewayText.split('[[d1_databases]]')[0],'name'),
     candidateWorker: field(coordinatorText.split('[vars]')[0],'name'),
     coordinatorWorker: field(gatewayText,'script_name'),
     gatewayPrivate: field(gatewayText,'main') === 'worker/src/index_reviewed_operations.ts'
@@ -66,9 +68,13 @@ export function validateReviewedResourceIsolation(config) {
 }
 
 export async function inspectReviewedDeploymentResources(config, { environment = process.env,
-  fetcher = fetch, requireCoordinator = false } = {}) {
+  fetcher = fetch, requireCoordinator = false, requireGateway = false } = {}) {
   const account = verifyWorkerDeploymentTarget(environment);
   validateReviewedResourceIsolation(config);
+  if (requireGateway) {
+    requireCoordinator = true;
+    if (config.gatewayWorker !== 'crypto-signal-bot-reviewed-operations') return fail('REVIEWED_GATEWAY_CONFIG_MISMATCH');
+  }
   const token = environment.CLOUDFLARE_API_TOKEN;
   if (typeof token !== 'string' || !token.trim()) return fail('CLOUDFLARE_RESOURCE_INSPECTION_AUTH_REQUIRED');
   const get = async (path) => {
@@ -101,6 +107,9 @@ export async function inspectReviewedDeploymentResources(config, { environment =
     ...(config.profile === 'PROJECTION_ONLY' ? [] : [get('storage/kv/namespaces?per_page=100'),
       get(`r2/buckets/${encodeURIComponent(config.bucketName)}`)]),
     ...(requireCoordinator ? [get(`workers/scripts/${config.candidateWorker}/settings`)] : []),
+    ...(requireGateway ? [get(`workers/scripts/${config.gatewayWorker}/settings`),
+      get(`workers/scripts/${config.candidateWorker}/subdomain`),
+      get(`workers/scripts/${config.gatewayWorker}/subdomain`)] : []),
   ]);
   if (results.some((r) => r.status !== 'fulfilled')) return fail('CLOUDFLARE_RESOURCE_INSPECTION_UNAVAILABLE');
   const values = results.map((r) => r.value);
@@ -120,8 +129,30 @@ export async function inspectReviewedDeploymentResources(config, { environment =
       return fail('DEPLOYED_COORDINATOR_BINDING_UNVERIFIED');
     }
   }
+  let operatorCredentialBindingConfigured = false;
+  if (requireGateway) {
+    const index = config.profile === 'PROJECTION_ONLY' ? 2 : 4;
+    const gateway = values[index]; const candidateUrls = values[index+1]; const gatewayUrls = values[index+2];
+    const coordinator = worker.bindings.find((b)=>b.name === 'EXCHANGE_ACCOUNT_COORDINATOR');
+    const bindings = gateway.bindings ?? [];
+    const imported = bindings.find((b)=>b.name === 'EXCHANGE_ACCOUNT_COORDINATOR');
+    const secretBound = (bindings,name)=>bindings.some((b)=>b.name === name && b.type === 'secret_text');
+    if (!imported || imported.type !== 'durable_object_namespace'
+      || imported.class_name !== 'ExchangeAccountCoordinator'
+      || imported.script_name !== config.candidateWorker
+      || imported.namespace_id !== coordinator.namespace_id
+      || !bindings.some((b)=>b.name === 'DB' && b.type === 'd1' && b.id === config.dbId)
+      || !secretBound(bindings,'CANDIDATE_ACCOUNTING_TOKEN')
+      || !secretBound(worker.bindings,'CANDIDATE_ACCOUNTING_TOKEN')) return fail('DEPLOYED_GATEWAY_BINDINGS_UNVERIFIED');
+    if ([candidateUrls,gatewayUrls].some((s)=>s.enabled !== false || s.previews_enabled !== false)) {
+      return fail('DEPLOYED_PRIVATE_URLS_UNVERIFIED');
+    }
+    operatorCredentialBindingConfigured = secretBound(bindings,'OPERATOR_API_KEY_HASHES');
+  }
   return Object.freeze({ status: 'RESOURCE_METADATA_VERIFIED', accountId: account,
     resourceProfile: config.profile ?? 'FULL_CANDIDATE', deployedCoordinator: requireCoordinator,
+    ...(requireGateway ? { deployedGatewayBindingsVerified:true, publicUrlsDisabled:true,
+      internalCredentialBindingsVerified:true, operatorCredentialBindingConfigured } : {}),
     providerCertificationVerified: false, mainnetActivationVerified: false });
 }
 
@@ -136,6 +167,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const result = await inspectReviewedDeploymentResources(projection ? reviewedCoordinatorConfig(candidate, gateway)
       : reviewedResourceConfig(candidate, gateway), {
       requireCoordinator: process.argv.includes('--require-coordinator'),
+      requireGateway: process.argv.includes('--require-gateway'),
     });
     console.log(JSON.stringify(result));
   } catch (error) { console.error(error.message); process.exitCode = 1; }

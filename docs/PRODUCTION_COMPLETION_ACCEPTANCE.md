@@ -16,13 +16,13 @@ provider certification.
 | Private operator routing | Actor-bound credentials; persisted scope; shared candidate namespace; queue-time revocation | Source verified |
 | Private realtime order delivery | Supabase/D1 account authorization, event cursor and reconnect tests | Source verified |
 | Current production paper deployment | Previously deployed canonical Worker; current KV/D1/R2 binding metadata rechecked | Paper deployment verified; new integration not deployed |
-| Isolated candidate/private service bindings | Canonical isolated D1 created and metadata verified; projection profiles reference its UUID; namespace/service not deployed | D1 configured; deployment pending |
+| Isolated candidate/private service bindings | 31 migrations remotely applied and replayed; actual shared namespace/D1/secrets metadata verified; public URLs disabled | Private projection bindings deployed; operator access inactive |
 | Bitget external provider certification | Current Classic/UTA docs inspected; no authenticated account-specific run | Unverified |
 | BTCC authoritative contract and certification | Current official REST mutation contract not established | Blocked on provider evidence |
 | Mainnet submission/cancellation | No reviewed executable artifact wired to an activated release | Incomplete |
 | Real-money activation / withdrawals | Independent gates remain closed | Inactive |
 
-Combined validation before remote packaging follow-up: 563 Worker foundation tests, 188 provider contract tests, 54 HTTP contract tests, 51 frontend tests,
+Combined validation: 565 Worker foundation tests, 188 provider contract tests, 54 HTTP contract tests, 51 frontend tests,
 worker/architecture typechecks, frontend lint, production/target/usage contracts,
 operator frontend safety, paper/regulated/certification/candidate safety gates,
 and isolated migration empty/upgrade/replay checks passed. Private operations, coordinator-only and
@@ -53,7 +53,13 @@ Generated migration packaging now expresses conditional trigger aborts as
 `SELECT RAISE(...) WHERE NOT EXISTS (...)` instead of `SELECT CASE ... END;`,
 preserving the guards and original source migrations. Equivalent abort behavior,
 all guard counts, empty application and tracked replay pass locally. Remote
-retry, namespace deployment and service/provider activation remain pending.
+retry succeeded for all 31 files; a repeat apply had no pending migrations.
+Both private Workers deployed from reviewed source f3aa456e5b66d15cf214a95d80b372826996fc2d.
+Actual metadata confirms shared namespace `f847b9626f464c69a322b2c99b474ab1`,
+same isolated D1, internal credential bindings and disabled workers.dev/preview
+URLs. Read-only D1 inspection confirms all three settlement/release guards.
+Operator credential hashes and provider credentials are not bound; user trading
+authority, external provider certification and mainnet activation remain inactive.
 The projection-only profile needs D1 and keeps the same candidate namespace;
 R2 permissions are unnecessary for this scoped projection artifact.
 
@@ -63,3 +69,13 @@ cannot override a missing/error code. A demo cancel acknowledgement now retains
 its matching GET recovery instruction. Runner tests prove one cancel POST and
 one read-only recovery call, preserving incomplete observations without another
 mutation or automatic accounting. This does not activate a live cancel route.
+
+Deployed coordinator version after internal secret binding:
+`5e6184f9-9b5e-4251-906f-63b1b14d2c6b`, deployment
+`6b44a0ac-b399-477e-bee7-7a8bca3707ce`. Operations version:
+`e45d8590-75a3-4fb1-adec-218d59bf88d6`, deployment
+`c65b169d-231f-49d0-8850-e4fa58682350`. Both carry 100% of their own private
+service versions, with no public targets. These are projection artifacts, not
+real-money execution releases. Fresh public paper smoke was unavailable from
+GEM-ASSIST (DNS resolution) and the container (proxy CONNECT 403); no paper
+production code/resource mutation was performed.
