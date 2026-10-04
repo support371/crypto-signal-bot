@@ -1,3 +1,4 @@
+import { readBoundedResponseBody as readBoundedProviderResponse } from './bounded-response.ts'
 import { canonicalHash, canonicalJson, sha256Hex } from '../../canonical-json.ts'
 import { BITGET_API_ORIGIN, normalizeBitgetSymbol } from './endpoints.ts'
 import {
@@ -582,8 +583,12 @@ function classifyResponse(input: {
   return makeResult({
     ...base,
     category: 'ACKNOWLEDGED',
-    reason: 'provider_acknowledgment_identity_verified',
-    recoveryRequired: false,
+    reason: input.candidate.operation === 'CANCEL'
+      ? 'cancel_acknowledgment_requires_order_lookup'
+      : 'provider_acknowledgment_identity_verified',
+    // Cancel ACK confirms receipt only. A fill may race cancellation, so the
+    // existing one-shot GET recovery must establish the actual order outcome.
+    recoveryRequired: input.candidate.operation === 'CANCEL',
     providerAcknowledgmentVerified: true,
   })
 }
@@ -610,60 +615,9 @@ function assertRateLimitClaim(
   }
 }
 
-async function readBoundedResponseBody(
-  response: Response,
-  maxResponseBytes: number,
-  signal: AbortSignal,
-): Promise<string> {
-  const contentLength = response.headers.get('content-length')
-  if (contentLength !== null) {
-    const parsedLength = Number(contentLength)
-    if (!Number.isSafeInteger(parsedLength) || parsedLength < 0) {
-      throw new BitgetDemoRequestError('provider_content_length_is_invalid', response.status)
-    }
-    if (parsedLength > maxResponseBytes) {
-      throw new BitgetDemoRequestError('provider_response_exceeds_size_limit', response.status)
-    }
-  }
-  if (response.body === null) return ''
-
-  const reader = response.body.getReader()
-  const chunks: Uint8Array[] = []
-  let totalBytes = 0
-  let aborted = false
-  const abortReader = () => {
-    aborted = true
-    void reader.cancel('demo response deadline exceeded').catch(() => undefined)
-  }
-  signal.addEventListener('abort', abortReader, { once: true })
-  if (signal.aborted) abortReader()
-  try {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (aborted) {
-        throw new BitgetDemoRequestError('demo_response_timed_out', response.status)
-      }
-      if (done) break
-      if (!value) continue
-      totalBytes += value.byteLength
-      if (totalBytes > maxResponseBytes) {
-        await reader.cancel('response byte limit exceeded')
-        throw new BitgetDemoRequestError('provider_response_exceeds_size_limit', response.status)
-      }
-      chunks.push(value)
-    }
-  } finally {
-    signal.removeEventListener('abort', abortReader)
-    reader.releaseLock()
-  }
-
-  const bytes = new Uint8Array(totalBytes)
-  let offset = 0
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-  return new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes)
+async function readBoundedResponseBody(response: Response, maxResponseBytes: number, signal: AbortSignal): Promise<string> {
+  return readBoundedProviderResponse(response, maxResponseBytes, signal,
+    (reason, status) => new BitgetDemoRequestError(reason, status))
 }
 
 async function performBoundedDemoRequest(input: {

@@ -67,6 +67,7 @@ export async function scanLiveOrdersForRecovery(
     staleBefore: string
     limit?: number
     exchangeAccountId?: string
+    excludeDiscovered?: boolean
   },
 ): Promise<readonly LiveRecoveryCandidate[]> {
   const staleBefore = validIso(input.staleBefore, 'staleBefore')
@@ -74,13 +75,25 @@ export async function scanLiveOrdersForRecovery(
   const placeholders = EXCHANGE_ACTIVE_STATES.map(() => '?').join(', ')
   const exchangeAccountId = input.exchangeAccountId?.trim() || null
   const accountFilter = exchangeAccountId ? ' AND exchange_account_id = ?' : ''
+  const discoveryFilter = input.excludeDiscovered ? ` AND NOT EXISTS (
+    SELECT 1 FROM live_queue_messages q
+     WHERE q.message_type = 'RECONCILE_ACCOUNT'
+       AND q.exchange_account_id = live_orders.exchange_account_id
+       AND json_extract(q.payload_json, '$.kind') = 'RECOVERY_DISCOVERY'
+       AND json_extract(q.payload_json, '$.plan.candidate.internalOrderId') = live_orders.internal_order_id
+       AND json_extract(q.payload_json, '$.plan.candidate.updatedAt') = live_orders.updated_at
+       AND json_extract(q.payload_json, '$.plan.candidate.state') = live_orders.state
+       AND json_extract(q.payload_json, '$.plan.candidate.productId') = live_orders.product_id
+       AND json_extract(q.payload_json, '$.plan.candidate.exchangeOrderId') IS live_orders.exchange_order_id
+       AND json_extract(q.payload_json, '$.plan.candidate.clientOrderId') IS live_orders.client_order_id
+  )` : ''
 
   const result = await env.DB.prepare(
     `SELECT internal_order_id, exchange_account_id, exchange_order_id,
             client_order_id, product_id, state, updated_at
        FROM live_orders
       WHERE (state = 'RECOVERY_REQUIRED'
-         OR (state IN (${placeholders}) AND updated_at <= ?))${accountFilter}
+         OR (state IN (${placeholders}) AND updated_at <= ?))${accountFilter}${discoveryFilter}
       ORDER BY updated_at ASC, internal_order_id ASC
       LIMIT ?`,
   ).bind(

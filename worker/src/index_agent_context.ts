@@ -1,4 +1,5 @@
 import worker from './index_with_d1'
+import { EXCHANGE_PROVIDERS } from './live/exchange-registry'
 import {
   handleAgentContextRequest,
   type AgentContextEnv,
@@ -117,6 +118,7 @@ function executionMetadata(env: RuntimeEnv) {
     execution_exchanges: [primary, secondary],
     market_data_public_exchange: (env.MARKET_DATA_PUBLIC_EXCHANGE || 'coinbase').trim().toLowerCase(),
     optional_public_data_exchange: (env.OPTIONAL_PUBLIC_DATA_EXCHANGE || 'coinbase').trim().toLowerCase(),
+    execution_provider_availability: EXCHANGE_PROVIDERS,
   }
 }
 

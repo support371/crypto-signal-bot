@@ -137,7 +137,7 @@ const Index = () => {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [operationsView, setOperationsView] = useState<'audit' | 'system' | 'command' | 'monitoring'>('audit');
   const { settings, setSettings } = usePersistedSettings();
-  const { isDemoMode } = useAuth();
+  const { isDemoMode, session, user } = useAuth();
 
   const { health, config, exchangeStatus, paperBalance, isConnected, isLoading: backendLoading, endpointErrors, backendUrl, refetch: refetchStatus } = useBackendStatus();
   const systemMode = health?.mode ?? 'paper';
@@ -331,7 +331,9 @@ const Index = () => {
     []
   );
 
-  const { connected: wsConnected } = useBackendWebSocket({
+  const { connected: wsConnected, orderEvents, orderStreamAuthenticated } = useBackendWebSocket({
+    accessToken: isDemoMode ? undefined : session?.access_token,
+    actorId: user?.id,
     onHealthUpdate: handleHealthUpdate,
     onExchangeStatus: handleExchangeStatus,
     onGuardianAlert: handleGuardianAlert,
@@ -514,6 +516,19 @@ const Index = () => {
                 }}
               />
             </aside>
+          </div>
+        </section>
+
+        <section className="space-y-3" aria-label="Order activity">
+          <SectionHeading eyebrow="Orders" title="Order activity"
+            description={orderStreamAuthenticated ? 'Verified account events' : 'Authenticated order updates unavailable'} />
+          <div className="rounded-lg border border-border p-4 font-mono text-sm">
+            {orderEvents.length === 0 ? <p className="text-muted-foreground">No verified order events received.</p> :
+              <ul className="space-y-2">{orderEvents.slice(-10).reverse().map((event) =>
+                <li key={event.event_id} className="flex flex-wrap justify-between gap-2">
+                  <span>{event.order_id} · {event.state.replaceAll('_', ' ')}</span>
+                  <time dateTime={event.occurred_at}>{new Date(event.occurred_at).toLocaleTimeString()}</time>
+                </li>)}</ul>}
           </div>
         </section>
 

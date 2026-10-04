@@ -24,6 +24,7 @@ import {
 } from '../src/live/adapters/bitget/demo-certification-runner.ts'
 import type { ReviewedBitgetDemoDispatchOutcome } from '../src/live/adapters/bitget/demo-dispatch-orchestrator.ts'
 import {
+  buildBitgetCancelOrderCandidate,
   buildBitgetPlaceOrderCandidate,
   type BitgetUnsignedMutationCandidate,
 } from '../src/live/adapters/bitget/execution-candidate.ts'
@@ -122,8 +123,8 @@ function freshEvidence(current: BitgetUnsignedMutationCandidate): BitgetDemoFres
   })
 }
 
-async function fixture() {
-  const current = await candidate()
+async function fixture(supplied?: BitgetUnsignedMutationCandidate) {
+  const current = supplied ?? await candidate()
   const evidence = freshEvidence(current)
   const [guardianEvidenceHash, riskEvidenceHash, idempotencyEvidenceHash] = await Promise.all([
     bitgetDemoControlEvidenceBindingHash(evidence.guardian),
@@ -505,7 +506,62 @@ test('ambiguous result invokes one hash-bound read-only recovery without retry o
   assert.equal(receipt?.automaticRetryAllowed, false)
 })
 
-test('acknowledged result does not call recovery and a forged recovery receipt fails closed', async () => {
+test('acknowledged cancel enters GET-only recovery once and preserves incomplete evidence', async () => {
+  const cancel = await buildBitgetCancelOrderCandidate({
+    productId: 'BTC-USDT',
+    identity: { orderId: 'demo-provider-order-0001', clientOrderId: null },
+    builtAt: '2026-07-18T03:00:00.000Z',
+    expiresAt: '2026-07-18T03:02:00.000Z',
+  })
+  const { current, evidence, authorization } = await fixture(cancel)
+  const events: string[] = []
+  let posts = 0
+  const result = await certificationExecutor({ evidence, events,
+    fetcher: async (url, init) => {
+      posts += 1
+      assert.equal(url, 'https://api.bitget.com/api/v2/spot/trade/cancel-order')
+      assert.equal(init?.method, 'POST')
+      return new Response(JSON.stringify({ code: '00000', data: {
+        orderId: 'demo-provider-order-0001',
+      } }), { status: 200 })
+    },
+  }).dispatch(current, authorization)
+  assert.equal(result.category, 'ACKNOWLEDGED')
+  const resultHash = await canonicalHash(result)
+  let lookups = 0
+  const receipt = await recoverReviewedBitgetDemoDispatch(
+    reviewedOutcome({ result, resultHash }),
+    { async recover(input) {
+      lookups += 1
+      assert.deepEqual(input.lookups, [{ method: 'GET',
+        endpoint: '/api/v2/spot/trade/orderInfo',
+        query: { symbol: 'BTCUSDT', orderId: 'demo-provider-order-0001' },
+      }])
+      const base: BitgetDemoReadOnlyRecoveryReceiptBase = {
+        schemaVersion: 1, recoveryId: 'cancel-recovery-incomplete',
+        dispatchAttemptId: input.result.dispatchAttemptId,
+        authorizationId: input.result.authorizationId,
+        exchangeAccountId: input.result.exchangeAccountId,
+        candidateHash: input.result.candidateHash,
+        resultHash: input.resultHash, lookupPlanHash: input.lookupPlanHash,
+        lookupCount: input.lookups.length, status: 'INCOMPLETE', snapshotHash: null,
+        observedAt: new Date(NOW).toISOString(), readOnly: true,
+        providerMutationAllowed: false, executionAllowed: false,
+        accountingAutomaticallyDispatched: false, ...capabilityLocks(),
+      }
+      return { ...base, receiptHash: await canonicalHash(base) }
+    } },
+    { now: () => new Date(NOW) },
+  )
+  assert.equal(posts, 1)
+  assert.equal(lookups, 1)
+  assert.equal(receipt?.status, 'INCOMPLETE')
+  assert.equal(receipt?.snapshotHash, null)
+  assert.equal(receipt?.accountingAutomaticallyDispatched, false)
+  assert.equal(receipt?.automaticRetryAllowed, false)
+})
+
+test('acknowledged place result does not call recovery and a forged recovery receipt fails closed', async () => {
   const { current, evidence, authorization } = await fixture()
   const events: string[] = []
   const executor = certificationExecutor({

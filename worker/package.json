@@ -20,7 +20,7 @@
     "verify:certification-safety": "node scripts/verify-certification-safety.mjs",
     "verify:cryptoops-readonly-openapi": "node scripts/verify-cryptoops-readonly-openapi.mjs",
     "verify:migrations": "node --experimental-sqlite --no-warnings scripts/verify-live-candidate-migrations.mjs",
-    "deploy": "wrangler deploy --config ../wrangler.toml",
+    "deploy": "node ../scripts/verify-worker-deployment-target.mjs && npm run migrate:paper:003:remote && wrangler deploy --config ../wrangler.toml",
     "cf:whoami": "wrangler whoami --config ../wrangler.toml",
     "migrate": "wrangler d1 execute crypto-signal-bot-db --config ../wrangler.toml --file=migrations/001_init.sql",
     "migrate:local": "wrangler d1 execute crypto-signal-bot-db --config ../wrangler.toml --local --file=migrations/001_init.sql",
@@ -57,7 +57,17 @@
     "migrate:028:local": "wrangler d1 execute crypto-signal-bot-live-candidate-db --config ../wrangler.live-candidate.toml --local --file=migrations/028_live_bitget_demo_deployment_readiness.sql",
     "migrate:029:local": "wrangler d1 execute crypto-signal-bot-live-candidate-db --config ../wrangler.live-candidate.toml --local --file=migrations/029_live_bitget_demo_operational_rehearsals.sql",
     "migrate:030:local": "wrangler d1 execute crypto-signal-bot-live-candidate-db --config ../wrangler.live-candidate.toml --local --file=migrations/030_live_certification_market_simulations.sql",
-    "smoke": "node scripts/smoke-check.mjs"
+    "smoke": "node scripts/smoke-check.mjs",
+    "migrate:paper:003:local": "wrangler d1 execute crypto-signal-bot-db --config ../wrangler.toml --local --file=migrations/paper/003_request_admission_counters.sql",
+    "migrate:paper:003:remote": "wrangler d1 execute crypto-signal-bot-db --config ../wrangler.toml --remote --file=migrations/paper/003_request_admission_counters.sql",
+    "verify:candidate-resources": "node ../scripts/verify-reviewed-deployment-resources.mjs",
+    "verify:reviewed-resources": "node ../scripts/verify-reviewed-deployment-resources.mjs --projection --require-coordinator",
+    "deploy:reviewed-operations": "npm run verify:reviewed-resources && wrangler deploy --config ../wrangler.reviewed-operations.toml",
+    "verify:projection-resources": "node ../scripts/verify-reviewed-deployment-resources.mjs --projection",
+    "prepare:reviewed-migrations": "node ../scripts/prepare-reviewed-migrations.mjs",
+    "migrate:reviewed:remote": "npm run verify:projection-resources && npm run prepare:reviewed-migrations && wrangler d1 migrations apply crypto-signal-bot-live-candidate-db --remote --config ../wrangler.reviewed-coordinator.toml",
+    "deploy:reviewed-coordinator": "npm run verify:projection-resources && wrangler deploy --config ../wrangler.reviewed-coordinator.toml",
+    "verify:reviewed-bindings": "node ../scripts/verify-reviewed-deployment-resources.mjs --projection --require-gateway"
   },
   "dependencies": {
     "hono": "^4.13.10"

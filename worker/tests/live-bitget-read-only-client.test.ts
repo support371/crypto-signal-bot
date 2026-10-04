@@ -9,6 +9,28 @@ import {
 } from '../src/live/adapters/bitget/read-only-client.ts'
 import { BITGET_SPOT_ENDPOINTS } from '../src/live/adapters/bitget/endpoints.ts'
 
+for (const mode of ['stalled-fetch', 'stalled-body', 'oversized-stream', 'invalid-length'] as const) {
+  test(`read-only transport bounds ${mode} without relying on fetch abort cooperation`, async () => {
+    let cancelled = false
+    const fetcher: typeof fetch = async () => {
+      if (mode === 'stalled-fetch') return new Promise<Response>(() => {})
+      if (mode === 'invalid-length') return new Response('{}', { headers: { 'Content-Length': '-1' } })
+      return new Response(new ReadableStream<Uint8Array>({
+        start(controller) { if (mode === 'oversized-stream') controller.enqueue(new Uint8Array(2048)) },
+        cancel() { cancelled = true; return new Promise<void>(() => {}) },
+      }))
+    }
+    const client = new BitgetReadOnlyClient({ secretProvider: { read: async () => { throw new Error('must not read credentials for public GET') } },
+      fetcher, timeoutMs: 100, maxResponseBytes: 1024 })
+    await assert.rejects(client.request(BITGET_SPOT_ENDPOINTS.symbols), (error: unknown) => {
+      assert.ok(error instanceof BitgetReadOnlyClientError)
+      assert.equal(error.code, mode.startsWith('stalled') ? 'TIMEOUT' : 'RESPONSE_TOO_LARGE')
+      return true
+    })
+    if (mode === 'stalled-body' || mode === 'oversized-stream') assert.equal(cancelled, true)
+  })
+}
+
 test('Bitget signature prehash is deterministic and query-bound', () => {
   assert.equal(
     buildBitgetPrehash(

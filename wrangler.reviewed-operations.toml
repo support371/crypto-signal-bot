@@ -1,0 +1,19 @@
+name = "crypto-signal-bot-reviewed-operations"
+main = "worker/src/index_reviewed_operations.ts"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+preview_urls = false
+# No public routes, cron triggers or second coordinator class. The namespace
+# belongs to the isolated candidate Worker. Never bind this service to paper D1.
+# Configure OPERATOR_API_KEY_HASHES and CANDIDATE_ACCOUNTING_TOKEN as secrets.
+
+[[d1_databases]]
+binding = "DB"
+database_name = "crypto-signal-bot-live-candidate-db"
+database_id = "45d89a06-e8de-432b-a3f0-bd4a5c47e922"
+
+[[durable_objects.bindings]]
+name = "EXCHANGE_ACCOUNT_COORDINATOR"
+class_name = "ExchangeAccountCoordinator"
+script_name = "crypto-signal-bot-live-candidate"

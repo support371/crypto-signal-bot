@@ -1,3 +1,4 @@
+import { readBoundedResponseBody } from './bounded-response.ts'
 import {
   BITGET_API_ORIGIN,
   BITGET_SPOT_ENDPOINTS,
@@ -220,24 +221,25 @@ export class BitgetReadOnlyClient {
 
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), this.timeoutMs)
+    const deadline = new Promise<never>((_resolve, reject) => {
+      controller.signal.addEventListener('abort', () => reject(new BitgetReadOnlyClientError('TIMEOUT', 'Bitget read-only request timed out')), { once: true })
+    })
     try {
-      const response = await this.fetcher(url.toString(), {
+      const response = await Promise.race([this.fetcher(url.toString(), {
         method: 'GET',
         headers,
         redirect: 'error',
         signal: controller.signal,
-      })
+      }), deadline])
       if (!response.ok) {
         throw new BitgetReadOnlyClientError('HTTP_ERROR', `Bitget HTTP ${response.status}`, response.status)
       }
-      const contentLength = response.headers.get('content-length')
-      if (contentLength && Number(contentLength) > this.maxResponseBytes) {
-        throw new BitgetReadOnlyClientError('RESPONSE_TOO_LARGE', 'Bitget response exceeds configured size limit')
-      }
-      const body = await response.text()
-      if (new TextEncoder().encode(body).byteLength > this.maxResponseBytes) {
-        throw new BitgetReadOnlyClientError('RESPONSE_TOO_LARGE', 'Bitget response exceeds configured size limit')
-      }
+      const body = await Promise.race([
+        readBoundedResponseBody(response, this.maxResponseBytes, controller.signal, (reason, status) =>
+          new BitgetReadOnlyClientError(reason.includes('timed_out') ? 'TIMEOUT' : 'RESPONSE_TOO_LARGE',
+            'Bitget read-only response violates its deadline or byte boundary', status)),
+        deadline,
+      ])
       let parsed: unknown
       try {
         parsed = JSON.parse(body) as unknown

@@ -417,6 +417,14 @@ export function classifyBitgetCandidateOutcome(
   if (/duplicate|client.?oid.*exist|already exists/.test(providerText)) {
     return outcome('DUPLICATE_CLIENT_ORDER_ID', 'client_order_id_requires_read_only_lookup', true)
   }
+  // A successful HTTP response is only the envelope. Unknown/missing API codes
+  // cannot prove acknowledgement or terminal rejection, even with echoed IDs.
+  if (input.providerCode !== '00000') {
+    return outcome('AMBIGUOUS_REQUIRES_LOOKUP', 'provider_code_requires_review', true)
+  }
+  if (!Number.isInteger(input.httpStatus) || input.httpStatus < 200 || input.httpStatus >= 300) {
+    return outcome('AMBIGUOUS_REQUIRES_LOOKUP', 'provider_http_result_requires_review', true)
+  }
   if (input.httpStatus >= 200 && input.httpStatus < 300) {
     if (
       input.expectedClientOrderId !== null

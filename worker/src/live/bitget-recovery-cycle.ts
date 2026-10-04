@@ -75,6 +75,8 @@ export async function runAttestedBitgetRecoveryCycle(
     input.instruction,
     input.recovery,
     input.requestedQuantity,
+    // Replay uses the observation clock, not the Worker wall clock.
+    { now: new Date(input.recoveredAt) },
   )
 
   const ingestionPlan = await buildBitgetRecoveryIngestionPlan({

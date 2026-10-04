@@ -582,6 +582,47 @@ test('provider authorization, terminal, rate-limit, and unknown codes fail close
   }
 })
 
+test('cancel acknowledgment retains one matching GET lookup without proving terminal cancellation or retrying', async () => {
+  const identities = [
+    { orderId: null, clientOrderId: 'demo-place-0001' },
+    { orderId: 'provider-order-0001', clientOrderId: null },
+  ]
+  for (const [index, identity] of identities.entries()) {
+    const candidate = await buildBitgetCancelOrderCandidate({
+      productId: 'BTC-USDT', identity,
+      builtAt: '2026-07-18T01:00:00.000Z',
+      expiresAt: '2026-07-18T01:02:00.000Z',
+    })
+    let sends = 0
+    const transport = new BitgetDemoWriteTransport({
+      fetcher: async (_url, init) => {
+        sends += 1
+        assert.equal(init?.method, 'POST')
+        assert.equal(new Headers(init?.headers).get('paptrading'), '1')
+        return jsonResponse({ code: '00000', data: {
+          orderId: identity.orderId, clientOid: identity.clientOrderId,
+        } })
+      },
+      rateLimitAuthority: rateLimitAuthority([]), now: () => NOW,
+    })
+    const result = await transport.dispatch(candidate,
+      verifyBitgetDemoDispatchAuthorization(authorizationInput(candidate, {
+        authorizationId: `demo-cancel-authorization-${index}`,
+        dispatchAttemptId: `demo-cancel-attempt-${index}`,
+      })), SIGNING_MATERIAL)
+    assert.equal(sends, 1)
+    assert.equal(result.category, 'ACKNOWLEDGED')
+    assert.equal(result.providerAcknowledgmentVerified, true)
+    assert.equal(result.requiresReadOnlyRecovery, true)
+    assert.equal(result.reason, 'cancel_acknowledgment_requires_order_lookup')
+    assert.deepEqual(result.recoveryLookups, candidate.recoveryLookups)
+    assert.equal(result.recoveryLookups.length, 1)
+    assert.equal(result.recoveryLookups[0]?.method, 'GET')
+    assert.equal(result.automaticRetryAllowed, false)
+    assert.equal(result.liveExecutionAllowed, false)
+  }
+})
+
 test('cancel-replace acknowledgment always requires both old and new identity lookups', async () => {
   const candidate = await cancelReplaceCandidate()
   const transport = new BitgetDemoWriteTransport({

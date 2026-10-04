@@ -257,6 +257,44 @@ test('provider outcome classification never enables automatic retry', () => {
   assert.equal(acknowledged.automaticRetryAllowed, false)
 })
 
+test('HTTP success with missing or non-success provider code cannot acknowledge echoed identities', () => {
+  for (const providerCode of [null, '', '0', '00000 ', '40010', '40725', '45001', '99999']) {
+    const result = classifyBitgetCandidateOutcome({
+      httpStatus: 200,
+      providerCode,
+      providerMessage: 'success',
+      transportError: null,
+      expectedClientOrderId: 'candidate-order-0001',
+      expectedExchangeOrderId: null,
+      acknowledgedClientOrderId: 'candidate-order-0001',
+      acknowledgedExchangeOrderId: 'provider-order-1',
+    })
+    assert.equal(result.category, 'AMBIGUOUS_REQUIRES_LOOKUP', String(providerCode))
+    assert.equal(result.providerAcknowledgmentVerified, false)
+    assert.equal(result.recoveryRequired, true)
+    assert.equal(result.automaticRetryAllowed, false)
+  }
+})
+
+test('invalid HTTP status or conflicting success envelope requires recovery rather than terminalizing an order', () => {
+  for (const httpStatus of [NaN, Infinity, -1, 0, 199, 200.5, 300, 400]) {
+    const result = classifyBitgetCandidateOutcome({
+      httpStatus,
+      providerCode: '00000',
+      providerMessage: 'success',
+      transportError: null,
+      expectedClientOrderId: 'candidate-order-0001',
+      expectedExchangeOrderId: null,
+      acknowledgedClientOrderId: 'candidate-order-0001',
+      acknowledgedExchangeOrderId: 'provider-order-1',
+    })
+    assert.equal(result.category, 'AMBIGUOUS_REQUIRES_LOOKUP', String(httpStatus))
+    assert.equal(result.providerAcknowledgmentVerified, false)
+    assert.equal(result.recoveryRequired, true)
+    assert.equal(result.automaticRetryAllowed, false)
+  }
+})
+
 test('locked command binds preview risk reservation and candidate hashes', async () => {
   const command = await buildBitgetLockedOrderCommand({
     ...assessmentInput(),

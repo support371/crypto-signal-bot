@@ -24,16 +24,14 @@ echo "Target: $WORKER_URL"
 echo "Account: $CLOUDFLARE_ACCOUNT_ID"
 
 echo "[1/4] Validate current account credentials"
+node scripts/verify-worker-deployment-target.mjs
 npm --prefix worker exec -- wrangler whoami --config ../wrangler.toml >/dev/null
 
 echo "[2/4] Run complete paper Worker release gates"
 npm run verify:paper-worker-release
 
 echo "[3/4] Deploy checked wrangler.toml to the supplied account"
-(
-  cd worker
-  ./node_modules/.bin/wrangler deploy --config ../wrangler.toml
-)
+npm --prefix worker run deploy
 
 echo "[4/4] Smoke the migrated Worker"
 npm --prefix worker run smoke -- "$WORKER_URL"

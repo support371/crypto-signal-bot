@@ -68,6 +68,14 @@ test('viewer can read but cannot create orders', () => {
   assert.ok(create.reasons.includes('required_role_missing'))
 })
 
+test('malformed role and step-up timestamps cannot authorize reads or financial mutations', () => {
+  assert.equal(evaluateAuthorization(request({ roles: [{ ...role('VIEWER'), expiresAt: 'invalid' }] })).allowed, false)
+  for (const field of ['issuedAt', 'expiresAt'] as const) {
+    assert.equal(evaluateAuthorization(request({ action: 'CREATE_ORDER', roles: [role('TRADER')],
+      stepUpSession: { ...stepUp('actor-1', 'trading'), [field]: 'invalid' } })).allowed, false)
+  }
+})
+
 test('trading actions require both scoped trader role and step-up session', () => {
   const noStepUp = evaluateAuthorization(request({
     action: 'CREATE_ORDER',

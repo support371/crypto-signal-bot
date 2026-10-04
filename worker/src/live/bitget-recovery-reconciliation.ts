@@ -1,4 +1,5 @@
 import type { DecimalString } from './decimal.ts'
+import { compareDecimal } from './decimal.ts'
 import type { ExchangeOrderSnapshot } from './exchange-contracts.ts'
 import {
   reconcileOrderObservation,
@@ -93,10 +94,31 @@ export function reconcileBitgetRecoverySnapshot(
   }
 
   const matchedOrder = candidates[0]!
+  if (
+    (instruction.expectedExchangeOrderId != null
+      && matchedOrder.exchangeOrderId !== instruction.expectedExchangeOrderId)
+    || (instruction.expectedClientOrderId != null
+      && matchedOrder.clientOrderId !== instruction.expectedClientOrderId)
+  ) {
+    throw new BitgetRecoveryReconciliationError(
+      'RECOVERY_IDENTITY_MISMATCH',
+      'the recovered provider identities conflict with the persisted order',
+    )
+  }
   if (matchedOrder.productId !== instruction.productId) {
     throw new BitgetRecoveryReconciliationError(
       'RECOVERY_PRODUCT_MISMATCH',
       'the recovered provider order product does not match the persisted order',
+    )
+  }
+
+  if (
+    matchedOrder.requestedBaseQuantity === null
+    || compareDecimal(matchedOrder.requestedBaseQuantity, requestedQuantity) !== 0
+  ) {
+    throw new BitgetRecoveryReconciliationError(
+      'RECOVERY_QUANTITY_MISMATCH',
+      'base-sized recovery requires the exact persisted requested quantity',
     )
   }
 

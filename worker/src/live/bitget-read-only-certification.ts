@@ -135,7 +135,7 @@ function record(value: unknown, field: string): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
-function responseRows(
+export function responseRows(
   value: unknown,
   field: string,
   collectionKeys: readonly string[],

@@ -132,3 +132,35 @@ test('fails closed on product mismatch', () => {
       && error.code === 'RECOVERY_PRODUCT_MISMATCH',
   )
 })
+
+test('a matching exchange ID cannot hide a conflicting persisted client ID', () => {
+  assert.throws(() => reconcileBitgetRecoverySnapshot(
+    instruction({ expectedExchangeOrderId: 'exchange-1', expectedClientOrderId: 'client-other' }),
+    recovery([order()]),
+    asDecimalString('0.01'),
+  ), (error: unknown) => error instanceof BitgetRecoveryReconciliationError
+    && error.code === 'RECOVERY_IDENTITY_MISMATCH')
+})
+
+test('a matching client ID cannot hide a conflicting persisted exchange ID', () => {
+  assert.throws(() => reconcileBitgetRecoverySnapshot(
+    instruction({ lookupBy: 'CLIENT_ORDER_ID', lookupValue: 'client-1', expectedExchangeOrderId: 'exchange-other' }),
+    recovery([order()]),
+    asDecimalString('0.01'),
+  ), (error: unknown) => error instanceof BitgetRecoveryReconciliationError
+    && error.code === 'RECOVERY_IDENTITY_MISMATCH')
+})
+
+test('provider quantity mismatch cannot finalize a different persisted order size', () => {
+  assert.throws(() => reconcileBitgetRecoverySnapshot(
+    instruction(), recovery([order()]), asDecimalString('0.02'),
+  ), (error: unknown) => error instanceof BitgetRecoveryReconciliationError
+    && error.code === 'RECOVERY_QUANTITY_MISMATCH')
+})
+
+test('duplicate provider identities fail closed before reconciliation', () => {
+  assert.throws(() => reconcileBitgetRecoverySnapshot(
+    instruction(), recovery([order(), order()]), asDecimalString('0.01'),
+  ), (error: unknown) => error instanceof BitgetRecoveryReconciliationError
+    && error.code === 'RECOVERY_ORDER_AMBIGUOUS')
+})
