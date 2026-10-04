@@ -83,6 +83,15 @@ export interface WsExchangeStatusMessage {
   source: string;
 }
 
+export interface WsOrderStateMessage {
+  type: 'order_state'; sequence_id: number; event_id: string; order_id: string;
+  account_id: string; previous_state: string | null; state: string;
+  source: string; occurred_at: string; evidence_hash: string; audit_hash: string;
+}
+export interface WsOrderStreamStatusMessage {
+  type: 'order_stream_status'; authenticated: boolean; cursor?: number; code?: string;
+}
+
 export interface WsPingMessage {
   type: 'ping';
 }
@@ -96,9 +105,13 @@ export type WsMessage =
   | WsKillSwitchMessage
   | WsMarketUpdateMessage
   | WsExchangeStatusMessage
-  | WsPingMessage;
+  | WsPingMessage
+  | WsOrderStateMessage
+  | WsOrderStreamStatusMessage;
 
 interface UseBackendWebSocketOptions {
+  accessToken?: string;
+  actorId?: string;
   onHealthUpdate?: (msg: WsHealthMessage) => void;
   onTickerUpdate?: (msg: WsTickerMessage) => void;
   onOrderUpdate?: (msg: WsOrderUpdateMessage) => void;
@@ -112,6 +125,8 @@ interface WebSocketState {
   connected: boolean;
   lastMessage: WsMessage | null;
   lastGuardianAlert: WsGuardianAlertMessage | null;
+  orderEvents: WsOrderStateMessage[];
+  orderStreamAuthenticated: boolean;
 }
 
 // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s max
@@ -127,6 +142,10 @@ export function useBackendWebSocket(options: UseBackendWebSocketOptions = {}): W
   const [lastMessage, setLastMessage] = useState<WsMessage | null>(null);
   const [lastGuardianAlert, setLastGuardianAlert] = useState<WsGuardianAlertMessage | null>(null);
 
+  const [orderEvents, setOrderEvents] = useState<WsOrderStateMessage[]>([]);
+  const [orderStreamAuthenticated, setOrderStreamAuthenticated] = useState(false);
+  const eventCursorRef = useRef(0);
+  const identityRef = useRef(options.actorId);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
@@ -178,6 +197,8 @@ export function useBackendWebSocket(options: UseBackendWebSocketOptions = {}): W
       attemptRef.current = 0; // Reset backoff on successful connect
       setConnected(true);
       lastPingRef.current = Date.now();
+      if (cbRef.current.accessToken) ws.send(JSON.stringify({ type: 'authenticate_orders',
+        access_token: cbRef.current.accessToken, after_sequence: eventCursorRef.current }));
     };
 
     ws.onmessage = (event) => {
@@ -202,6 +223,16 @@ export function useBackendWebSocket(options: UseBackendWebSocketOptions = {}): W
         return;
       }
 
+      if (msg.type === 'order_state') {
+        if (!Number.isSafeInteger(msg.sequence_id) || msg.sequence_id <= eventCursorRef.current) return;
+        eventCursorRef.current = msg.sequence_id;
+        setOrderEvents((events) => [...events, msg].slice(-100));
+        return;
+      }
+      if (msg.type === 'order_stream_status') {
+        setOrderStreamAuthenticated(msg.authenticated === true);
+        return;
+      }
       setLastMessage(msg);
 
       const cbs = cbRef.current;
@@ -237,6 +268,7 @@ export function useBackendWebSocket(options: UseBackendWebSocketOptions = {}): W
       // reconnect), don't clobber the new connection.
       if (wsRef.current !== ws) return;
       setConnected(false);
+      setOrderStreamAuthenticated(false);
       wsRef.current = null;
       scheduleReconnect();
     };
@@ -297,7 +329,18 @@ export function useBackendWebSocket(options: UseBackendWebSocketOptions = {}): W
         wsRef.current = null;
       }
     };
-  }, [connectWs, clearReconnectTimer]);
+  }, [connectWs, clearReconnectTimer, options.accessToken, options.actorId]);
 
-  return { connected, lastMessage, lastGuardianAlert };
+  useEffect(() => {
+    if (identityRef.current !== options.actorId) {
+      identityRef.current = options.actorId;
+      eventCursorRef.current = 0;
+      setOrderEvents([]);
+    }
+    setOrderStreamAuthenticated(false);
+  }, [options.actorId, options.accessToken]);
+
+  return { connected, lastMessage, lastGuardianAlert,
+    orderEvents: identityRef.current === options.actorId ? orderEvents : [],
+    orderStreamAuthenticated: identityRef.current === options.actorId && orderStreamAuthenticated };
 }

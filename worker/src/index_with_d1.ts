@@ -1,3 +1,4 @@
+import { createRealtimeOrderDelivery } from './routes/realtime-order-events'
 import worker, { requireApiKey, checkRateLimit, type Env } from './index'
 import { fastPathDecisionMetrics, fastPathFeedRegistry } from './fast-path'
 import { buildV2InfrastructureStatus } from './routes/v2-infrastructure'
@@ -482,6 +483,7 @@ async function handleRealtimeWebSocket(request: Request, env: AgentEnv): Promise
     }
   }
 
+  const orderDelivery = createRealtimeOrderDelivery(request, env, send)
   send({ type: 'status', ws: 'online', backend: 'online' })
   let refreshing = false
   let closed = false
@@ -511,15 +513,23 @@ async function handleRealtimeWebSocket(request: Request, env: AgentEnv): Promise
   const heartbeat = setInterval(() => {
     send({ type: 'ping' })
     void refreshStatus().catch(() => cleanup())
+    void orderDelivery.refresh()
   }, 20_000)
   const cleanup = () => {
     closed = true
     clearInterval(heartbeat)
+    orderDelivery.close()
   }
   server.addEventListener('close', cleanup)
   server.addEventListener('error', cleanup)
   server.addEventListener('message', (event) => {
-    if (String(event.data).toLowerCase() === 'ping') send({ type: 'ping' })
+    const text = String(event.data)
+    if (text.toLowerCase() === 'ping') send({ type: 'ping' })
+    if (text.length > 9000) return
+    try {
+      const message = JSON.parse(text)
+      if (message?.type === 'authenticate_orders') void orderDelivery.authenticate(message)
+    } catch { /* Public ping/pong frames contain no private authorization. */ }
   })
 
   return new Response(null, { status: 101, webSocket: client })

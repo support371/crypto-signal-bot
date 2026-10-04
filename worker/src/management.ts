@@ -1,3 +1,4 @@
+import type { ScopedRole } from './live/authorization'
 export type ManagementRole =
   | 'VIEWER'
   | 'TRADER'
@@ -1171,6 +1172,18 @@ async function systemStatus(request: Request, env: ManagementEnv, id: string): P
     },
     request_id: id,
   }, 200, id)
+}
+
+/** Reuse the canonical Supabase identity and database role boundary for private reads. */
+export async function authenticateManagedRead(request: Request, env: ManagementEnv): Promise<{
+  actorId: string; roles: readonly ScopedRole[]
+} | null> {
+  const actor = await authenticate(request, env)
+  if ('response' in actor || actor.profile.status !== 'ACTIVE') return null
+  return { actorId: actor.identity.actorId, roles: actor.roles.map((role) => ({
+    role: role.role, scopeType: role.scope_type, scopeKey: role.scope_key,
+    expiresAt: role.expires_at, revokedAt: role.revoked_at,
+  })) }
 }
 
 export async function handleManagementRequest(
