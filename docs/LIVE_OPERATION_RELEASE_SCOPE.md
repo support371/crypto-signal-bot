@@ -36,3 +36,11 @@ the original OAuth login received HTTP 403 for store metadata. After adding the
 Secrets Store scope, authenticated canonical-account metadata returned zero
 stores (`total_count: 0`) and the referenced store returned HTTP 404. Actual secrets,
 Classic/UTA account model and external provider certification remain unverified.
+
+The subsequent authorized provisioning created and verified store
+`b5f2c2cdae2c445b8ead1ceda7620fed`; source bindings now reference that store.
+It is empty pending owner-supplied credentials. The durable source-only admission
+primitive is implemented in `live-dispatch-admission-store.ts`; it atomically
+claims attempt, idempotency and logical-order identity with exact daily exposure,
+rejects replay after restart and rolls back interrupted commits. It grants no
+execution capability and is not wired into a deployed transport.

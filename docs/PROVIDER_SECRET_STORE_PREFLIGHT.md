@@ -20,7 +20,7 @@ Authenticated inspection on 2026-10-04 confirmed the canonical account
 (`page=1`, `per_page=100`, `count=0`, `total_count=0`). The checked-in store ID
 `077d4599269544239a34ade0f64d2f48` returned HTTP 404 after OAuth access was
 renewed with `secrets_store:write`. The historical account returned HTTP 403;
-its store ownership is unverified. No secret store was created or deleted.
+its store ownership is unverified. No secret store was created or deleted during that inspection.
 
 Therefore certification credentials are not available through the declared
 canonical store. Correct provisioning requires actual owner-supplied provider
@@ -28,3 +28,9 @@ credentials via a secure channel and independently verified read-only permission
 and account identity/model. Empty repo templates, trade credential names and
 passing fixture tests cannot substitute for that evidence. External certification,
 the live executable runtime and real-money activation remain incomplete.
+
+Subsequent provisioning created and verified canonical store
+`b5f2c2cdae2c445b8ead1ceda7620fed` (`crypto-signal-bot-provider-credentials`).
+The source configs now reference it, and the store is empty pending secure owner
+entry. See PROVIDER_CREDENTIAL_PROVISIONING.md for the direct dashboard URL and
+exact names. This changes store readiness, not provider certification or activation.
