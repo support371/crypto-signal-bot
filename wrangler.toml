@@ -1,5 +1,5 @@
 name = "crypto-signal-bot-api"
-main = "worker/src/index_agent_context.ts"
+main = "worker/src/index_rate_limited.ts"
 compatibility_date = "2024-01-01"
 compatibility_flags = ["nodejs_compat"]
 
@@ -17,6 +17,10 @@ GUARDIAN_MAX_DRAWDOWN_PCT = "15"
 GUARDIAN_MAX_API_ERRORS = "10"
 GUARDIAN_MAX_FAILED_ORDERS = "5"
 RATE_LIMIT_RPM = "120"
+# Recovery discovery uses the existing D1 outbox, after live migrations and
+# an explicit account allowlist are configured. It cannot submit provider orders.
+LIVE_RECOVERY_DISCOVERY_ENABLED = "false"
+LIVE_RECOVERY_ACCOUNT_IDS = "[]"
 # Browser-safe Supabase project identity values. These do not grant service-role access;
 # user authorization still requires a valid Supabase session JWT.
 SUPABASE_URL = "https://pxcahgcoeewvkhsdvylu.supabase.co"

@@ -9,6 +9,9 @@ export interface ExchangeProviderDescriptor {
   candidateExecutionEnabled: false
   candidateWithdrawalsEnabled: false
   implementationStatus: 'FOUNDATION' | 'READ_ONLY_CONTRACTS' | 'OPTIONAL_PUBLIC_DATA'
+  mutationAvailability: 'EXTERNAL_BLOCKER' | 'CERTIFICATION_REQUIRED' | 'READ_ONLY'
+  mutationBlocker: string
+  automaticFailoverAllowed: false
 }
 
 export const DEFAULT_EXECUTION_EXCHANGE_ORDER = Object.freeze([
@@ -25,6 +28,9 @@ export const EXCHANGE_PROVIDERS = Object.freeze({
     candidateExecutionEnabled: false,
     candidateWithdrawalsEnabled: false,
     implementationStatus: 'FOUNDATION',
+    mutationAvailability: 'EXTERNAL_BLOCKER',
+    mutationBlocker: 'BTCC_CURRENT_PROVIDER_CONTRACT_UNVERIFIED',
+    automaticFailoverAllowed: false,
   },
   BITGET: {
     id: 'BITGET',
@@ -34,6 +40,9 @@ export const EXCHANGE_PROVIDERS = Object.freeze({
     candidateExecutionEnabled: false,
     candidateWithdrawalsEnabled: false,
     implementationStatus: 'READ_ONLY_CONTRACTS',
+    mutationAvailability: 'CERTIFICATION_REQUIRED',
+    mutationBlocker: 'BITGET_RUNTIME_CERTIFICATION_AND_RELEASE_REQUIRED',
+    automaticFailoverAllowed: false,
   },
   COINBASE: {
     id: 'COINBASE',
@@ -43,6 +52,9 @@ export const EXCHANGE_PROVIDERS = Object.freeze({
     candidateExecutionEnabled: false,
     candidateWithdrawalsEnabled: false,
     implementationStatus: 'OPTIONAL_PUBLIC_DATA',
+    mutationAvailability: 'READ_ONLY',
+    mutationBlocker: 'MARKET_DATA_PROVIDER_ONLY',
+    automaticFailoverAllowed: false,
   },
 } as const satisfies Record<string, ExchangeProviderDescriptor>)
 

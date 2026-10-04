@@ -6,6 +6,8 @@ export interface RecoveryLookupInstruction {
   productId: string
   lookupBy: 'EXCHANGE_ORDER_ID' | 'CLIENT_ORDER_ID'
   lookupValue: string
+  expectedExchangeOrderId?: string | null
+  expectedClientOrderId?: string | null
   method: 'GET'
   mutationAllowed: false
   automaticRetryAllowed: false
@@ -62,6 +64,8 @@ export function planRecoveryLookup(candidate: LiveRecoveryCandidate): RecoveryLo
       productId: candidate.productId,
       lookupBy,
       lookupValue,
+      expectedExchangeOrderId: exchangeOrderId,
+      expectedClientOrderId: clientOrderId,
       method: 'GET' as const,
       mutationAllowed: false as const,
       automaticRetryAllowed: false as const,
