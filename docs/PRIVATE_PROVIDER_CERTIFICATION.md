@@ -79,6 +79,9 @@ and this service cannot project results into a live release or make an account
 READY. Persisting a passed run still requires the reviewed source/authorization
 attestation workflow.
 
-On 2026-10-04 GEM-ASSIST was reported offline. Its signed-in Cloudflare session
-could not be used to recheck entered secrets, deploy this service or run real
-provider requests. Local acceptance does not resolve that external blocker.
+On 2026-10-04 GEM-ASSIST reconnected. Wrangler confirmed the Analyzer account;
+after refreshing its cached OAuth session, an authenticated metadata-only API
+read returned success with total_count=0 for the configured credential store.
+All three certification secret names were absent. No secret values were read,
+and the credential preflight correctly blocked deployment. This service remains
+prepared source; no external certification request or mainnet activation ran.

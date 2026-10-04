@@ -8,7 +8,7 @@ function fixture() {
   let failDailyWrite=false
   const storage={sql:{exec(query:string,...args:(string|number)[]) {
     if(failDailyWrite && query.includes('INSERT INTO live_dispatch_daily_exposure')) throw Error('injected interrupted commit')
-    if(!args.length && query.includes('CREATE TABLE')) {db.exec(query);return {toArray:()=>[]}}
+    if(!args.length && query.startsWith('CREATE ')) {db.exec(query);return {toArray:()=>[]}}
     const rows=db.prepare(query).all(...args)
     return {toArray:()=>rows}
   }},transactionSync<T>(fn:()=>T):T {db.exec('BEGIN');try{const value=fn();db.exec('COMMIT');return value}catch(e){db.exec('ROLLBACK');throw e}}}
@@ -50,6 +50,7 @@ test('failed budget write rolls back attempt and allows exactly one subsequent c
   const f=fixture();try {
     f.failWrite();assert.throws(()=>f.store.claim(claim()),/interrupted/)
     assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM live_dispatch_admission').get()!.n,0)
+    assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM live_dispatch_budget_receipt').get()!.n,0)
     f.recover();f.store.claim(claim());assert.throws(()=>f.store.claim(claim()),/ALREADY_CLAIMED/)
   }finally{f.db.close()}
 })
@@ -66,8 +67,61 @@ test('wrong namespace, provider or mutated persisted account owner cannot claim'
   const f=fixture();try {
     assert.throws(()=>new LiveDispatchAdmissionStore(f.storage as any,{...f.identity,coordinatorName:'other'}),/SCOPE_INVALID/)
     assert.throws(()=>new LiveDispatchAdmissionStore(f.storage as any,{...f.identity,exchange:'BTCC'}),/SCOPE_INVALID/)
-    f.db.exec("UPDATE live_dispatch_owner SET account_ref_hash='changed'")
-    assert.throws(()=>f.store.claim(claim()),/SCOPE_INVALID/)
+    assert.throws(()=>f.db.exec("UPDATE live_dispatch_owner SET account_ref_hash='changed'"),/OWNER_IMMUTABLE/)
+    assert.throws(()=>f.db.exec('DELETE FROM live_dispatch_owner'),/OWNER_IMMUTABLE/)
+  }finally{f.db.close()}
+})
+test('durable exposure read retains interrupted attempts across restart and UTC rollover',()=>{
+  const f=fixture();try {
+    assert.equal(f.store.getDailyExposure(claim().claimedAt).usedAndReservedNotional,'0')
+    f.store.claim({...claim(),notional:'0.100000000000000001'})
+    f.store.claim({...claim(2),notional:'0.200000000000000002'})
+    const restarted=new LiveDispatchAdmissionStore(f.storage as any,f.identity)
+    assert.deepEqual(restarted.getDailyExposure(claim().claimedAt),{
+      accountRefHash:f.identity.accountRefHash,exchange:'BITGET',utcDay:'2026-10-04',usedAndReservedNotional:'0.300000000000000003'})
+    assert.equal(restarted.getDailyExposure('2026-10-05T00:00:00.000Z').usedAndReservedNotional,'0')
+    assert.throws(()=>restarted.getDailyExposure('2026-10-04'),/CLOCK_INVALID/)
+  }finally{f.db.close()}
+})
+test('editing or deleting an attempt or budget receipt cannot reopen dispatch',()=>{
+  const f=fixture();try {
+    f.store.claim(claim())
+    for(const sql of ["UPDATE live_dispatch_admission SET attempt_id='changed'",
+      'DELETE FROM live_dispatch_admission',"UPDATE live_dispatch_budget_receipt SET next_notional='0'",
+      'DELETE FROM live_dispatch_budget_receipt']) assert.throws(()=>f.db.exec(sql),/IMMUTABLE/)
+    assert.throws(()=>f.store.claim(claim()),/ALREADY_CLAIMED/)
+    assert.equal(f.store.getDailyExposure(claim().claimedAt).usedAndReservedNotional,'100')
+  }finally{f.db.close()}
+})
+test('lost or decreased daily cache fails before another attempt even after restart',()=>{
+  for(const sql of ["UPDATE live_dispatch_daily_exposure SET used_and_reserved_notional='0'",
+    'DELETE FROM live_dispatch_daily_exposure']) {
+    const f=fixture();try {
+      f.store.claim(claim()); f.db.exec(sql)
+      const restarted=new LiveDispatchAdmissionStore(f.storage as any,f.identity)
+      assert.throws(()=>restarted.getDailyExposure(claim().claimedAt),/BUDGET_INTEGRITY/)
+      assert.throws(()=>restarted.claim(claim(2)),/BUDGET_INTEGRITY/)
+      assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM live_dispatch_admission').get()!.n,1)
+    }finally{f.db.close()}
+  }
+})
+test('claims lacking budget receipts and orphan receipts fail closed',()=>{
+  const f=fixture();try {
+    assert.throws(()=>f.db.prepare('INSERT INTO live_dispatch_budget_receipt(attempt_id,utc_day,previous_notional,next_notional) VALUES(?,?,?,?)')
+      .run('orphan','2026-10-04','0','100'),/LINK_INVALID/)
+    const c=claim()
+    f.db.prepare('INSERT INTO live_dispatch_admission VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(c.attemptId,c.idempotencyKey,c.orderId,c.operation,
+      c.candidateHash,c.releaseId,c.releaseEvidenceHash,c.currentControlHash,c.claimedAt,'2026-10-04','100')
+    assert.throws(()=>f.store.claim(claim(2)),/BUDGET_INTEGRITY/)
+  }finally{f.db.close()}
+})
+test('SQL replacement cannot bypass immutable claims with recursive triggers disabled',()=>{
+  const f=fixture();try {
+    f.db.exec('PRAGMA recursive_triggers=OFF'); f.store.claim(claim())
+    for(const table of ['live_dispatch_owner','live_dispatch_admission','live_dispatch_budget_receipt']) {
+      assert.throws(()=>f.db.exec(`INSERT OR REPLACE INTO ${table} SELECT * FROM ${table}`),/IMMUTABLE/)
+    }
+    assert.equal(f.store.getDailyExposure(claim().claimedAt).usedAndReservedNotional,'100')
   }finally{f.db.close()}
 })
 test('malformed financial evidence and microscopic overspending leave no attempt',()=>{
