@@ -21,6 +21,9 @@ import {
   persistFillAccountingReconciliation,
   type PersistFillAccountingReconciliationInput,
 } from './fill-accounting-reconciliation-store.ts'
+import { assertCurrentOrderCompletionAuthorization, OrderCompletionAuthorizationError } from './order-completion-authorization.ts'
+import { persistCompletedOrder, OrderCompletionConflictError } from './order-completion-store.ts'
+import { releaseZeroFillReservations } from './zero-fill-reservation-release.ts'
 import { FillAccountingSerialQueue } from './fill-accounting-serialization.ts'
 import { assertCurrentRecoveryAccountingAuthorization } from './recovery-accounting-current-authorization.ts'
 import {
@@ -276,11 +279,26 @@ export class ExchangeAccountCoordinator {
     if (Number.isFinite(declaredLength) && declaredLength > MAX_ACCOUNTING_REQUEST_BYTES) {
       throw new RangeError('candidate accounting request exceeds size limit')
     }
-    const body = await request.text()
-    if (new TextEncoder().encode(body).byteLength > MAX_ACCOUNTING_REQUEST_BYTES) {
-      throw new RangeError('candidate accounting request exceeds size limit')
-    }
-    return JSON.parse(body) as T
+    const reader = request.body?.getReader()
+    if (!reader) throw new SyntaxError('JSON body is required')
+    const chunks: Uint8Array[] = []
+    let length = 0
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        length += value.byteLength
+        if (length > MAX_ACCOUNTING_REQUEST_BYTES) {
+          await reader.cancel().catch(() => {})
+          throw new RangeError('candidate accounting request exceeds size limit')
+        }
+        chunks.push(value)
+      }
+    } finally { reader.releaseLock() }
+    const bytes = new Uint8Array(length)
+    let offset = 0
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
+    return JSON.parse(new TextDecoder().decode(bytes)) as T
   }
 
   private async handleAccounting(request: Request): Promise<Response> {
@@ -407,10 +425,46 @@ export class ExchangeAccountCoordinator {
     }
   }
 
+  private async handleOrderCompletion(request: Request): Promise<Response> {
+    const unauthorized = this.authorizeAccounting(request)
+    if (unauthorized) return unauthorized
+    const accountId = this.state.id.name
+    if (!accountId || !/^[A-Za-z0-9:_-]{1,128}$/.test(accountId)) {
+      return json({ code: 'ORDER_COMPLETION_SCOPE_UNAVAILABLE' }, 503)
+    }
+    try {
+      const input = await this.readBoundedJson<{ orderId: string; authorizationEventId: string }>(request)
+      if (!input || Array.isArray(input) || Object.keys(input).length !== 2
+        || !['orderId', 'authorizationEventId'].every((key) =>
+          typeof input[key as keyof typeof input] === 'string'
+          && /^[A-Za-z0-9:_-]{1,128}$/.test(input[key as keyof typeof input]))) {
+        throw new TypeError('only order and completion authorization identifiers are accepted')
+      }
+      const result = await this.accountingQueue.run(async () => {
+        await assertCurrentOrderCompletionAuthorization(this.env, accountId, input.orderId,
+          input.authorizationEventId, new Date().toISOString())
+        await releaseZeroFillReservations(this.env, accountId, input.orderId, input.authorizationEventId)
+        return persistCompletedOrder(this.env, accountId, input.orderId)
+      })
+      return json({ ...result, serializedBy: 'EXCHANGE_ACCOUNT_COORDINATOR',
+        providerMutationAllowed: false, executionAllowed: false }, result.status === 'REPLAYED' ? 200 : 201)
+    } catch (error) {
+      const denied = error instanceof OrderCompletionAuthorizationError
+      const conflict = error instanceof OrderCompletionConflictError
+      const invalid = error instanceof TypeError || error instanceof RangeError || error instanceof SyntaxError
+      return json({ error: 'Order completion was not persisted',
+        code: denied || conflict ? error.code : invalid ? 'INVALID_ORDER_COMPLETION_INPUT' : 'ORDER_COMPLETION_PERSISTENCE_FAILED',
+        providerMutationAllowed: false, executionAllowed: false }, denied ? 403 : conflict ? 409 : invalid ? 400 : 500)
+    }
+  }
+
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url)
     const method = request.method.toUpperCase()
 
+    if (method === 'POST' && url.pathname === '/candidate/orders/complete') {
+      return this.handleOrderCompletion(request)
+    }
     if (method === 'POST' && url.pathname === ACCOUNTING_ROUTE) {
       return this.handleAccounting(request)
     }
