@@ -2,6 +2,7 @@ import worker, { requireApiKey, checkRateLimit, type Env } from './index'
 import { fastPathDecisionMetrics, fastPathFeedRegistry } from './fast-path'
 import { buildV2InfrastructureStatus } from './routes/v2-infrastructure'
 import { buildV2MarketFeedsStatus } from './routes/v2-market-feeds'
+import { buildRealtimeFeedStatus } from './routes/realtime-feed-status'
 import {
   handleAgentContextRequest,
   type AgentContextEnv,
@@ -162,12 +163,19 @@ async function readD1Status(env: Env): Promise<'healthy' | 'unavailable'> {
 }
 
 async function readGuardianSnapshot(env: Env) {
-  const row = await env.DB.prepare(
-    'SELECT triggered, reason, drawdown_pct FROM guardian_state WHERE id = 1 LIMIT 1',
-  ).first<{ triggered: number | boolean; reason: string | null; drawdown_pct: number }>().catch(() => null)
+  type GuardianSnapshotRow = { triggered: number | boolean; reason: string | null; drawdown_pct: number }
+  let row: GuardianSnapshotRow | null = null
+  try {
+    row = await env.DB.prepare(
+      'SELECT triggered, reason, drawdown_pct FROM guardian_state WHERE id = 1 LIMIT 1',
+    ).first<GuardianSnapshotRow>()
+  } catch {
+    // A failed read is unknown Guardian state, never clearance.
+  }
+  const available = row !== null && [true, false, 0, 1].includes(row.triggered)
   return {
-    halted: row?.triggered === true || row?.triggered === 1,
-    reason: row?.reason ?? null,
+    halted: !available || row?.triggered === true || row?.triggered === 1,
+    reason: !available ? 'GUARDIAN_STATE_UNAVAILABLE' : row?.reason ?? null,
     drawdownPct: numberOr(row?.drawdown_pct),
     maxDrawdownPct: numberOr(env.GUARDIAN_MAX_DRAWDOWN_PCT, 15),
   }
@@ -474,33 +482,40 @@ async function handleRealtimeWebSocket(request: Request, env: AgentEnv): Promise
     }
   }
 
-  const guardian = await readGuardianSnapshot(env)
   send({ type: 'status', ws: 'online', backend: 'online' })
-  send({
-    type: 'health',
-    kill_switch_active: guardian.halted,
-    mode: 'paper',
-    api_error_count: 0,
-    guardian_triggered: guardian.halted,
-    market_data_mode: 'live_public_paper',
-    market_data_connected: true,
-  })
-  send({
-    type: 'exchange_status',
-    exchange: env.MARKET_DATA_PUBLIC_EXCHANGE || 'coinbase',
-    market_data_mode: 'live_public_paper',
-    connected: true,
-    connection_state: 'connected',
-    fallback_active: false,
-    last_update_ts: Date.now(),
-    last_error: null,
-    stale: false,
-    symbols: [],
-    source: env.MARKET_DATA_PUBLIC_EXCHANGE || 'coinbase',
-  })
+  let refreshing = false
+  let closed = false
+  const refreshStatus = async () => {
+    if (refreshing || closed) return
+    refreshing = true
+    try {
+      const guardian = await readGuardianSnapshot(env)
+      const feed = buildRealtimeFeedStatus(fastPathFeedRegistry.list(), env.MARKET_DATA_PUBLIC_EXCHANGE || 'coinbase')
+      if (closed) return
+      send({
+        type: 'health',
+        kill_switch_active: guardian.halted,
+        mode: 'paper',
+        api_error_count: null,
+        guardian_triggered: guardian.halted,
+        market_data_mode: 'live_public_paper',
+        market_data_connected: feed.connected,
+      })
+      send(feed)
+    } finally {
+      refreshing = false
+    }
+  }
+  await refreshStatus()
 
-  const heartbeat = setInterval(() => send({ type: 'ping' }), 20_000)
-  const cleanup = () => clearInterval(heartbeat)
+  const heartbeat = setInterval(() => {
+    send({ type: 'ping' })
+    void refreshStatus().catch(() => cleanup())
+  }, 20_000)
+  const cleanup = () => {
+    closed = true
+    clearInterval(heartbeat)
+  }
   server.addEventListener('close', cleanup)
   server.addEventListener('error', cleanup)
   server.addEventListener('message', (event) => {

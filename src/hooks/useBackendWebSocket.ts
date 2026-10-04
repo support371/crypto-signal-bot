@@ -5,7 +5,7 @@ export interface WsHealthMessage {
   type: 'health';
   kill_switch_active: boolean;
   mode: string;
-  api_error_count: number;
+  api_error_count: number | null;
   guardian_triggered: boolean;
   market_data_mode: string;
   market_data_connected: boolean;
