@@ -153,7 +153,11 @@ export async function claimQueueDelivery(
   env: QueueEnv,
   eventId: string,
   startedAt: string,
+  maxAttempts?: number,
 ): Promise<boolean> {
+  if (maxAttempts !== undefined && (!Number.isSafeInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 100)) {
+    throw new TypeError('maxAttempts must be an integer from 1 to 100')
+  }
   const result = await env.DB.prepare(
     `UPDATE live_queue_messages
         SET status = 'PROCESSING',
@@ -164,11 +168,14 @@ export async function claimQueueDelivery(
             updated_at = CURRENT_TIMESTAMP
       WHERE event_id = ?
         AND status IN ('RECEIVED', 'FAILED')
-        AND available_at <= ?`,
+        AND available_at <= ?
+        AND (? IS NULL OR attempt_count < ?)`,
   ).bind(
     timestamp(startedAt, 'startedAt'),
     required(eventId, 'eventId'),
     timestamp(startedAt, 'startedAt'),
+    maxAttempts ?? null,
+    maxAttempts ?? null,
   ).run()
   return (result.meta?.changes ?? 0) === 1
 }
@@ -177,14 +184,18 @@ export async function completeQueueDelivery(
   env: QueueEnv,
   eventId: string,
   completedAt: string,
+  expectedStartedAt?: string,
 ): Promise<boolean> {
   const result = await env.DB.prepare(
     `UPDATE live_queue_messages
         SET status = 'COMPLETED', completed_at = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE event_id = ? AND status = 'PROCESSING'`,
+      WHERE event_id = ? AND status = 'PROCESSING'
+        AND (? IS NULL OR processing_started_at = ?)`,
   ).bind(
     timestamp(completedAt, 'completedAt'),
     required(eventId, 'eventId'),
+    expectedStartedAt ? timestamp(expectedStartedAt, 'expectedStartedAt') : null,
+    expectedStartedAt ? timestamp(expectedStartedAt, 'expectedStartedAt') : null,
   ).run()
   return (result.meta?.changes ?? 0) === 1
 }
@@ -196,18 +207,22 @@ export async function failQueueDelivery(
     errorCode: string
     errorDetail?: string | null
     retryAt: string
+    expectedStartedAt?: string
   },
 ): Promise<boolean> {
   const result = await env.DB.prepare(
     `UPDATE live_queue_messages
         SET status = 'FAILED', last_error_code = ?, last_error_detail = ?,
             available_at = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE event_id = ? AND status = 'PROCESSING'`,
+      WHERE event_id = ? AND status = 'PROCESSING'
+        AND (? IS NULL OR processing_started_at = ?)`,
   ).bind(
     required(input.errorCode, 'errorCode').slice(0, 128),
     input.errorDetail?.trim().slice(0, 2048) || null,
     timestamp(input.retryAt, 'retryAt'),
     required(input.eventId, 'eventId'),
+    input.expectedStartedAt ? timestamp(input.expectedStartedAt, 'expectedStartedAt') : null,
+    input.expectedStartedAt ? timestamp(input.expectedStartedAt, 'expectedStartedAt') : null,
   ).run()
   return (result.meta?.changes ?? 0) === 1
 }

@@ -135,7 +135,7 @@ jobs:
           TRADING_MODE: paper
           EXCHANGE_MODE: paper
           ALLOW_MAINNET: "false"
-        run: npx wrangler deploy
+        run: npm run deploy
 
       - name: Smoke check Worker endpoints after deploy
         if: ${{ github.event.inputs.deploy_worker == 'true' }}

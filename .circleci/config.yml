@@ -373,7 +373,7 @@ jobs:
           command: cd worker && ./node_modules/.bin/wrangler deploy --dry-run --outdir /tmp/crypto-signal-bot-worker-dry-run --config ../wrangler.toml
       - run:
           name: Deploy paper Worker to Cloudflare
-          command: cd worker && ./node_modules/.bin/wrangler deploy --config ../wrangler.toml
+          command: npm --prefix worker run deploy
       - run:
           name: Verify deployed paper Worker
           command: npm --prefix worker run smoke -- "$WORKER_URL"

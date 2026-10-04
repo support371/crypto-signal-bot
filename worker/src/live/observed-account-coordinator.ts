@@ -1,3 +1,5 @@
+import { settleReviewedFill } from './reviewed-fill-settlement.ts'
+import { ReservationSettlementConflictError } from './reservation-settlement-store.ts'
 import {
   ExchangeAccountCoordinator as BaseExchangeAccountCoordinator,
   type AccountCoordinatorEnv,
@@ -21,7 +23,24 @@ import {
   persistFillAccountingReconciliation,
   type PersistFillAccountingReconciliationInput,
 } from './fill-accounting-reconciliation-store.ts'
+import { assertCurrentOrderCompletionAuthorization, OrderCompletionAuthorizationError } from './order-completion-authorization.ts'
+import { persistCompletedOrder, OrderCompletionConflictError } from './order-completion-store.ts'
+import { releasePartialFillRemainder } from './partial-fill-reservation-release.ts'
+import { releaseZeroFillReservations } from './zero-fill-reservation-release.ts'
 import { FillAccountingSerialQueue } from './fill-accounting-serialization.ts'
+import { assertCurrentRecoveryAccountingAuthorization } from './recovery-accounting-current-authorization.ts'
+import {
+  orchestrateFreshRecoveryAccountingDispatch,
+  RecoveryAccountingDispatchAttemptConflictError,
+  type FreshRecoveryAccountingDispatchInput,
+} from './recovery-accounting-fresh-dispatch-orchestrator.ts'
+import {
+  RecoveryAccountingApprovalExpiredError,
+} from './recovery-accounting-dispatch-freshness.ts'
+import {
+  RecoveryAccountingDispatchNotApprovedError,
+  RecoveryAccountingDispatchConflictError,
+} from './recovery-accounting-dispatch.ts'
 
 interface ObservedAccountCoordinatorEnv extends AccountCoordinatorEnv {
   CANDIDATE_ACCOUNTING_TOKEN?: string
@@ -49,6 +68,7 @@ const MAX_OBSERVABILITY_EVENTS_PER_PASS = 50
 const OBSERVABILITY_RETRY_DELAY_MS = 60_000
 const ACCOUNTING_ROUTE = '/candidate/fills/account'
 const RECONCILIATION_ROUTE = '/candidate/fills/reconcile'
+const REVIEWED_RECOVERY_ROUTE = '/candidate/recovery-accounting/dispatch'
 const ACCOUNTING_TOKEN_HEADER = 'X-Candidate-Accounting-Token'
 const MAX_ACCOUNTING_REQUEST_BYTES = 512 * 1024
 
@@ -262,11 +282,26 @@ export class ExchangeAccountCoordinator {
     if (Number.isFinite(declaredLength) && declaredLength > MAX_ACCOUNTING_REQUEST_BYTES) {
       throw new RangeError('candidate accounting request exceeds size limit')
     }
-    const body = await request.text()
-    if (new TextEncoder().encode(body).byteLength > MAX_ACCOUNTING_REQUEST_BYTES) {
-      throw new RangeError('candidate accounting request exceeds size limit')
-    }
-    return JSON.parse(body) as T
+    const reader = request.body?.getReader()
+    if (!reader) throw new SyntaxError('JSON body is required')
+    const chunks: Uint8Array[] = []
+    let length = 0
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        length += value.byteLength
+        if (length > MAX_ACCOUNTING_REQUEST_BYTES) {
+          await reader.cancel().catch(() => {})
+          throw new RangeError('candidate accounting request exceeds size limit')
+        }
+        chunks.push(value)
+      }
+    } finally { reader.releaseLock() }
+    const bytes = new Uint8Array(length)
+    let offset = 0
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
+    return JSON.parse(new TextDecoder().decode(bytes)) as T
   }
 
   private async handleAccounting(request: Request): Promise<Response> {
@@ -351,15 +386,121 @@ export class ExchangeAccountCoordinator {
     }
   }
 
+  private async handleReviewedRecovery(request: Request): Promise<Response> {
+    const unauthorized = this.authorizeAccounting(request)
+    if (unauthorized) return unauthorized
+    // Account identity comes from the namespace routing, never the JSON body.
+    // Objects created by idFromString without a name cannot dispatch this stage.
+    const accountId = this.state.id.name
+    if (!accountId || !/^[A-Za-z0-9:_-]{1,128}$/.test(accountId)) {
+      return json({ error: 'Named account coordinator is required',
+        code: 'RECOVERY_ACCOUNTING_SCOPE_UNAVAILABLE' }, 503)
+    }
+    try {
+      const input = await this.readBoundedJson<FreshRecoveryAccountingDispatchInput>(request)
+      if (!input || typeof input !== 'object' || Array.isArray(input)
+        || Object.keys(input).length !== 3
+        || !['dispatchId', 'planId', 'approvalEventId'].every((key) =>
+          typeof input[key as keyof FreshRecoveryAccountingDispatchInput] === 'string'
+          && /^[A-Za-z0-9:_-]{1,128}$/.test(input[key as keyof FreshRecoveryAccountingDispatchInput]))) {
+        throw new TypeError('only immutable dispatch, plan and approval identifiers are accepted')
+      }
+      const outcome = await orchestrateFreshRecoveryAccountingDispatch(this.env, input, {
+        serializer: this.accountingQueue,
+        authorizeAccountingPlan: (approved, evaluatedAt) =>
+          assertCurrentRecoveryAccountingAuthorization(this.env, approved, evaluatedAt),
+        executeAccountingCommand: (command) => persistSpotFillAccountingVerified(this.env, command),
+      }, undefined, accountId)
+      return json({ ...outcome, serializedBy: 'EXCHANGE_ACCOUNT_COORDINATOR',
+        providerMutationAllowed: false, reservationApplied: false, executionAllowed: false,
+      }, outcome.dispatch.status === 'COMPLETED' ? 201 : 409)
+    } catch (error) {
+      const conflict = error instanceof RecoveryAccountingDispatchAttemptConflictError
+        || error instanceof RecoveryAccountingDispatchConflictError
+      const denied = error instanceof RecoveryAccountingDispatchNotApprovedError
+        || error instanceof RecoveryAccountingApprovalExpiredError
+      const invalid = error instanceof TypeError || error instanceof RangeError || error instanceof SyntaxError
+      return json({ error: 'Reviewed recovery accounting was not completed',
+        code: conflict || denied ? error.code : invalid ? 'INVALID_RECOVERY_ACCOUNTING_INPUT'
+          : 'RECOVERY_ACCOUNTING_PERSISTENCE_FAILED',
+        providerMutationAllowed: false, reservationApplied: false, executionAllowed: false,
+      }, conflict ? 409 : denied ? 403 : invalid ? 400 : 500)
+    }
+  }
+
+  private async handleOrderCompletion(request: Request): Promise<Response> {
+    const unauthorized = this.authorizeAccounting(request)
+    if (unauthorized) return unauthorized
+    const accountId = this.state.id.name
+    if (!accountId || !/^[A-Za-z0-9:_-]{1,128}$/.test(accountId)) {
+      return json({ code: 'ORDER_COMPLETION_SCOPE_UNAVAILABLE' }, 503)
+    }
+    try {
+      const input = await this.readBoundedJson<{ orderId: string; authorizationEventId: string }>(request)
+      if (!input || Array.isArray(input) || Object.keys(input).length !== 2
+        || !['orderId', 'authorizationEventId'].every((key) =>
+          typeof input[key as keyof typeof input] === 'string'
+          && /^[A-Za-z0-9:_-]{1,128}$/.test(input[key as keyof typeof input]))) {
+        throw new TypeError('only order and completion authorization identifiers are accepted')
+      }
+      const result = await this.accountingQueue.run(async () => {
+        await assertCurrentOrderCompletionAuthorization(this.env, accountId, input.orderId,
+          input.authorizationEventId, new Date().toISOString())
+        await releaseZeroFillReservations(this.env, accountId, input.orderId, input.authorizationEventId)
+        await releasePartialFillRemainder(this.env, accountId, input.orderId, input.authorizationEventId)
+        return persistCompletedOrder(this.env, accountId, input.orderId)
+      })
+      return json({ ...result, serializedBy: 'EXCHANGE_ACCOUNT_COORDINATOR',
+        providerMutationAllowed: false, executionAllowed: false }, result.status === 'REPLAYED' ? 200 : 201)
+    } catch (error) {
+      const denied = error instanceof OrderCompletionAuthorizationError
+      const conflict = error instanceof OrderCompletionConflictError
+      const invalid = error instanceof TypeError || error instanceof RangeError || error instanceof SyntaxError
+      return json({ error: 'Order completion was not persisted',
+        code: denied || conflict ? error.code : invalid ? 'INVALID_ORDER_COMPLETION_INPUT' : 'ORDER_COMPLETION_PERSISTENCE_FAILED',
+        providerMutationAllowed: false, executionAllowed: false }, denied ? 403 : conflict ? 409 : invalid ? 400 : 500)
+    }
+  }
+
+  private async handleReviewedSettlement(request: Request): Promise<Response> {
+    const unauthorized = this.authorizeAccounting(request)
+    if (unauthorized) return unauthorized
+    const accountId = this.state.id.name
+    if (!accountId || !/^[A-Za-z0-9:_-]{1,128}$/.test(accountId)) return json({ code: 'ORDER_SETTLEMENT_SCOPE_UNAVAILABLE' },503)
+    try {
+      const input = await this.readBoundedJson<{ fillId: string; authorizationEventId: string }>(request)
+      if (!input || Array.isArray(input) || Object.keys(input).length !== 2
+        || !['fillId','authorizationEventId'].every((key) => typeof input[key as keyof typeof input] === 'string'
+          && /^[A-Za-z0-9:_-]{1,128}$/.test(input[key as keyof typeof input]))) throw new TypeError('immutable IDs required')
+      const result = await this.accountingQueue.run(() => settleReviewedFill(this.env,accountId,input.fillId,input.authorizationEventId))
+      return json({ ...result,serializedBy:'EXCHANGE_ACCOUNT_COORDINATOR' },result.status==='REPLAYED'?200:201)
+    } catch (error) {
+      const denied=error instanceof OrderCompletionAuthorizationError
+      const conflict=error instanceof ReservationSettlementConflictError
+      const invalid=error instanceof TypeError || error instanceof SyntaxError || error instanceof RangeError
+      return json({ code:denied||conflict?error.code:invalid?'INVALID_ORDER_SETTLEMENT_INPUT':'ORDER_SETTLEMENT_UNAVAILABLE',
+        providerMutationAllowed:false,executionAllowed:false },denied?403:conflict?409:invalid?400:503)
+    }
+  }
+
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url)
     const method = request.method.toUpperCase()
 
+    if (method === 'POST' && url.pathname === '/candidate/reservations/settle') {
+      return this.handleReviewedSettlement(request)
+    }
+    if (method === 'POST' && url.pathname === '/candidate/orders/complete') {
+      return this.handleOrderCompletion(request)
+    }
     if (method === 'POST' && url.pathname === ACCOUNTING_ROUTE) {
       return this.handleAccounting(request)
     }
     if (method === 'POST' && url.pathname === RECONCILIATION_ROUTE) {
       return this.handleReconciliation(request)
+    }
+    if (method === 'POST' && url.pathname === REVIEWED_RECOVERY_ROUTE) {
+      return this.handleReviewedRecovery(request)
     }
 
     const response = await this.inner.fetch(request)

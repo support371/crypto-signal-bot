@@ -288,6 +288,7 @@ export async function persistReservationSettlement(
     idempotencyKey: required(input.idempotencyKey, 'idempotencyKey'),
     settledAt: timestamp(input.settledAt, 'settledAt'),
   }
+  if (typeof normalized.terminalFill !== 'boolean') throw new TypeError('terminalFill must be boolean')
   const settlementReceiptId = deterministicReceiptId(normalized.fillId)
   const stableRequestHash = await requestHash(normalized)
 
@@ -353,6 +354,29 @@ export async function persistReservationSettlement(
     throw new ReservationSettlementConflictError(
       'reservation order does not match immutable fill accounting receipt',
     )
+  }
+
+  // Account identifiers are financial authority, not arbitrary journal labels.
+  // Check both sides even when this fill consumes the entire reservation and
+  // no release journal is needed.
+  const ledgerAccounts = await env.DB.prepare(`
+    SELECT ledger_account_id, exchange_account_id, asset, account_type, status
+      FROM ledger_accounts
+     WHERE ledger_account_id IN (?, ?)
+  `).bind(normalized.availableAccountId, normalized.reservedAccountId).all<{
+    ledger_account_id: string; exchange_account_id: string; asset: string
+    account_type: string; status: string
+  }>()
+  const available = ledgerAccounts.results.find((row) => row.ledger_account_id === normalized.availableAccountId)
+  const reserved = ledgerAccounts.results.find((row) => row.ledger_account_id === normalized.reservedAccountId)
+  if (!available || !reserved || available.ledger_account_id === reserved.ledger_account_id
+    || available.exchange_account_id !== reservation.exchange_account_id
+    || reserved.exchange_account_id !== reservation.exchange_account_id
+    || available.asset !== reservation.asset || reserved.asset !== reservation.asset
+    || available.status !== 'ACTIVE' || reserved.status !== 'ACTIVE'
+    || !((available.account_type === 'CASH_AVAILABLE' && reserved.account_type === 'CASH_RESERVED')
+      || (available.account_type === 'INVENTORY_AVAILABLE' && reserved.account_type === 'INVENTORY_RESERVED'))) {
+    throw new ReservationSettlementConflictError('reservation ledger accounts are missing, restricted or mismatched')
   }
 
   const fillJournal = await loadFillJournal(env, accounting.journal_id)
