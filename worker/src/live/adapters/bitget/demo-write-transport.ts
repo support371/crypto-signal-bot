@@ -583,8 +583,12 @@ function classifyResponse(input: {
   return makeResult({
     ...base,
     category: 'ACKNOWLEDGED',
-    reason: 'provider_acknowledgment_identity_verified',
-    recoveryRequired: false,
+    reason: input.candidate.operation === 'CANCEL'
+      ? 'cancel_acknowledgment_requires_order_lookup'
+      : 'provider_acknowledgment_identity_verified',
+    // Cancel ACK confirms receipt only. A fill may race cancellation, so the
+    // existing one-shot GET recovery must establish the actual order outcome.
+    recoveryRequired: input.candidate.operation === 'CANCEL',
     providerAcknowledgmentVerified: true,
   })
 }

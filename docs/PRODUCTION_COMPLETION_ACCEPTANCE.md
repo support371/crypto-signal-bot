@@ -22,7 +22,7 @@ provider certification.
 | Mainnet submission/cancellation | No reviewed executable artifact wired to an activated release | Incomplete |
 | Real-money activation / withdrawals | Independent gates remain closed | Inactive |
 
-Combined validation: 559 Worker foundation tests, 184 provider contract tests, 54 HTTP contract tests, 51 frontend tests,
+Combined validation: 563 Worker foundation tests, 188 provider contract tests, 54 HTTP contract tests, 51 frontend tests,
 worker/architecture typechecks, frontend lint, production/target/usage contracts,
 operator frontend safety, paper/regulated/certification/candidate safety gates,
 and isolated migration empty/upgrade/replay checks passed. Private operations, coordinator-only and
@@ -50,3 +50,10 @@ coordinator-only profile needs D1 and keeps the same candidate namespace; R2
 permissions are unnecessary for this scoped projection artifact. Remote schema,
 namespace deployment, private service binding and provider activation remain
 unverified until actual deployment and certification evidence is captured.
+
+Provider response follow-up: candidate acknowledgement now requires both a valid
+2xx HTTP status and the exact Classic API success code `00000`; echoed order IDs
+cannot override a missing/error code. A demo cancel acknowledgement now retains
+its matching GET recovery instruction. Runner tests prove one cancel POST and
+one read-only recovery call, preserving incomplete observations without another
+mutation or automatic accounting. This does not activate a live cancel route.
