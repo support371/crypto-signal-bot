@@ -1,0 +1,28 @@
+name = "crypto-signal-bot-provider-certification"
+main = "worker/src/index_provider_certification.ts"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+preview_urls = false
+# Private service only; no routes/triggers. Generate CERTIFICATION_RUNNER_TOKEN
+# at deployment. It is not a provider-issued secret or a browser credential.
+
+[vars]
+ALLOW_MAINNET = "false"
+LIVE_EXECUTION_ENABLED = "false"
+WITHDRAWALS_ENABLED = "false"
+
+[[secrets_store_secrets]]
+binding = "BITGET_CERT_API_KEY"
+store_id = "b5f2c2cdae2c445b8ead1ceda7620fed"
+secret_name = "BITGET_CERT_API_KEY"
+
+[[secrets_store_secrets]]
+binding = "BITGET_CERT_API_SECRET"
+store_id = "b5f2c2cdae2c445b8ead1ceda7620fed"
+secret_name = "BITGET_CERT_API_SECRET"
+
+[[secrets_store_secrets]]
+binding = "BITGET_CERT_API_PASSPHRASE"
+store_id = "b5f2c2cdae2c445b8ead1ceda7620fed"
+secret_name = "BITGET_CERT_API_PASSPHRASE"

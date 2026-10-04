@@ -12,6 +12,7 @@
     "bundle:live-candidate": "wrangler deploy --dry-run --config ../wrangler.live-candidate.toml --outdir .wrangler/live-candidate",
     "bundle:withdrawals-candidate": "wrangler deploy --dry-run --config ../wrangler.withdrawals-candidate.toml --outdir .wrangler/withdrawals-candidate",
     "bundle:bitget-trade-quarantine": "wrangler deploy --dry-run --config ../wrangler.bitget-trade-quarantine.toml --outdir .wrangler/bitget-trade-quarantine",
+    "bundle:provider-certification": "wrangler deploy --dry-run --config ../wrangler.provider-certification.toml --outdir .wrangler/provider-certification",
     "test:live-foundation": "node --experimental-sqlite --experimental-strip-types --no-warnings --test tests/live-*.test.ts",
     "test:provider-contracts": "node --experimental-sqlite --experimental-strip-types --no-warnings --test tests/live-default-exchanges.test.ts tests/live-bitget-read-only-client.test.ts tests/live-bitget-certification-secret-provider.test.ts tests/live-bitget-read-only-certification.test.ts tests/live-bitget-read-only-certification-store.test.ts tests/live-bitget-read-only-certification-attestation.test.ts tests/live-bitget-attested-recovery-ingestion.test.ts tests/live-bitget-attested-recovery-readiness.test.ts tests/live-bitget-attested-recovery-readiness-observability.test.ts tests/live-operator-read-auth.test.ts tests/live-operator-deployment-readiness.test.ts tests/live-operator-read-http.test.ts tests/live-operator-operational-readiness-http.test.ts tests/live-operational-rehearsal-evaluator.test.ts tests/live-operational-rehearsal-store.test.ts tests/live-bitget-preview.test.ts tests/live-bitget-execution-candidate.test.ts tests/live-bitget-demo-write-transport.test.ts tests/live-bitget-demo-rate-limit-authority.test.ts tests/live-bitget-demo-dispatch-evidence.test.ts tests/live-bitget-demo-dispatch-evidence-sqlite.test.ts tests/live-bitget-demo-certification-runner.test.ts tests/live-bitget-demo-runtime-adapters.test.ts tests/live-bitget-demo-control-binding-store.test.ts tests/live-bitget-demo-certification-composition.test.ts tests/live-bitget-demo-deployment-readiness.test.ts tests/live-bitget-trade-quarantine.test.ts tests/live-bitget-user-stream.test.ts tests/live-bitget-recovery.test.ts tests/live-btcc-recovery.test.ts",
     "verify:paper-safety": "node scripts/verify-paper-safety.mjs",
@@ -68,7 +69,9 @@
     "migrate:reviewed:remote": "npm run verify:projection-resources && npm run prepare:reviewed-migrations && wrangler d1 migrations apply crypto-signal-bot-live-candidate-db --remote --config ../wrangler.reviewed-coordinator.toml",
     "deploy:reviewed-coordinator": "npm run verify:projection-resources && wrangler deploy --config ../wrangler.reviewed-coordinator.toml",
     "verify:reviewed-bindings": "node ../scripts/verify-reviewed-deployment-resources.mjs --projection --require-gateway",
-    "verify:provider-secret-store": "node ../scripts/verify-bitget-secret-store-resources.mjs"
+    "verify:provider-secret-store": "node ../scripts/verify-bitget-secret-store-resources.mjs",
+    "verify:provider-certification-resources": "node ../scripts/verify-provider-certification-resources.mjs",
+    "deploy:provider-certification": "npm run verify:provider-certification-resources && wrangler deploy --config ../wrangler.provider-certification.toml"
   },
   "dependencies": {
     "hono": "^4.13.10"
