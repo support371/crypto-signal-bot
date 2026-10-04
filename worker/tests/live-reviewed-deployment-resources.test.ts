@@ -70,7 +70,9 @@ test('checked-in templates stay private and fail closed on placeholder storage I
   const gateway=fs.readFileSync(new URL('../../wrangler.reviewed-operations.toml',import.meta.url),'utf8')
   const parsed=reviewedResourceConfig(candidate,gateway)
   assert.equal(parsed.gatewayPrivate,true)
-  assert.equal(parsed.dbId,parsed.gatewayDbId)
+  // The full provider artifact remains a locked template until all of its
+  // resource/provider gates pass; only projection profiles have a verified D1.
+  assert.equal(parsed.dbId,'00000000-0000-0000-0000-000000000000')
   assert.throws(()=>validateReviewedResourceIsolation(parsed),/NOT_CONFIGURED/)
   assert.equal(reviewedResourceConfig(candidate,gateway.replace('workers_dev = false','workers_dev = true')).gatewayPrivate,false)
   assert.throws(()=>reviewedResourceConfig(candidate+ '\ndatabase_id="unexpected"\n',gateway),/AMBIGUOUS/)
@@ -86,9 +88,9 @@ test('oversized API metadata is cancelled and cannot expose upstream contents',a
 test('projection-only preflight verifies the same private namespace without requiring provider storage',async()=>{
   const {reviewedCoordinatorConfig}=await import('../../scripts/verify-reviewed-deployment-resources.mjs')
   const coordinator=fs.readFileSync(new URL('../../wrangler.reviewed-coordinator.toml',import.meta.url),'utf8')
-    .replace('00000000-0000-0000-0000-000000000000',dbId)
+    .replace(/database_id = "[^"]+"/,`database_id = "${dbId}"`)
   const gateway=fs.readFileSync(new URL('../../wrangler.reviewed-operations.toml',import.meta.url),'utf8')
-    .replace('00000000-0000-0000-0000-000000000000',dbId)
+    .replace(/database_id = "[^"]+"/,`database_id = "${dbId}"`)
   const parsed=reviewedCoordinatorConfig(coordinator,gateway)
   assert.equal(parsed.profile,'PROJECTION_ONLY')
   let calls=0
@@ -102,7 +104,7 @@ test('projection-only preflight verifies the same private namespace without requ
 })
 
 test('isolated migration preparation excludes production paths and verifies empty application plus tracked replay',async()=>{
-  const {reviewedMigrationNames,reviewedMigrationFiles}=await import('../../scripts/prepare-reviewed-migrations.mjs')
+  const {reviewedMigrationNames,reviewedMigrationFiles,renderReviewedMigration}=await import('../../scripts/prepare-reviewed-migrations.mjs')
   const {DatabaseSync}=await import('node:sqlite')
   const directory=new URL('../migrations/',import.meta.url)
   const names=reviewedMigrationNames(fs.readdirSync(directory))
@@ -118,7 +120,7 @@ test('isolated migration preparation excludes production paths and verifies empt
     for(let pass=0;pass<2;pass++)for(const name of names){
       if(db.prepare('SELECT name FROM d1_migrations WHERE name=?').get(name))continue
       db.exec('BEGIN')
-      try{db.exec(fs.readFileSync(new URL(name,directory),'utf8'))
+      try{db.exec(renderReviewedMigration(fs.readFileSync(new URL(name,directory),'utf8')))
         db.prepare('INSERT INTO d1_migrations VALUES (?)').run(name);db.exec('COMMIT')
       }catch(error){db.exec('ROLLBACK');throw error}
     }
@@ -126,6 +128,36 @@ test('isolated migration preparation excludes production paths and verifies empt
     assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE name='live_partial_fill_reservation_releases'").get())
     assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE name='managed_users'").get(),undefined)
   }finally{db.close()}
+})
+
+test('D1-compatible migration rendering preserves conditional abort guards for true, false and null predicates',async()=>{
+  const {renderReviewedMigration}=await import('../../scripts/prepare-reviewed-migrations.mjs')
+  const {DatabaseSync}=await import('node:sqlite')
+  const original=`CREATE TABLE backing(id TEXT PRIMARY KEY);
+    CREATE TABLE receipt(id TEXT);
+    CREATE TRIGGER guarded BEFORE INSERT ON receipt BEGIN
+      SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM backing WHERE id=NEW.id)
+      THEN RAISE(ABORT, 'reviewed evidence missing') END;
+    END;`
+  const rendered=renderReviewedMigration(original)
+  assert.doesNotMatch(rendered,/CASE WHEN/)
+  assert.match(rendered,/SELECT RAISE\(ABORT, 'reviewed evidence missing'\) WHERE NOT EXISTS/)
+  for(const sql of [original,rendered]){
+    const db=new DatabaseSync(':memory:')
+    try{
+      db.exec(sql);db.exec("INSERT INTO backing VALUES ('verified')")
+      db.prepare('INSERT INTO receipt VALUES (?)').run('verified')
+      for(const id of ['missing',null])assert.throws(()=>db.prepare('INSERT INTO receipt VALUES (?)').run(id),/reviewed evidence missing/)
+      assert.equal(db.prepare('SELECT COUNT(*) AS n FROM receipt').get()!.n,1)
+    }finally{db.close()}
+  }
+  for(const name of ['016_live_reservation_settlement.sql','033_live_zero_fill_reservation_release.sql','034_live_partial_fill_reservation_release.sql']){
+    const sql=fs.readFileSync(new URL(`../migrations/${name}`,import.meta.url),'utf8')
+    const rendered=renderReviewedMigration(sql)
+    assert.doesNotMatch(rendered,/SELECT CASE WHEN NOT EXISTS/)
+    assert.equal((rendered.match(/RAISE\(ABORT/g)??[]).length,(sql.match(/RAISE\(ABORT/g)??[]).length)
+    assert.equal(renderReviewedMigration(rendered),rendered)
+  }
 })
 
 

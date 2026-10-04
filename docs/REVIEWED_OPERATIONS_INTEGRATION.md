@@ -80,7 +80,8 @@ verify the projection-only deployed coordinator namespace and D1 binding before
 private-service deployment. This private profile does not require KV/R2 or
 provider secrets; the full candidate-resource check retains those prerequisites. `deploy:reviewed-operations` runs that check directly
 before Wrangler, including when npm lifecycle hooks are disabled. The templates
-currently fail before network because their IDs are placeholders.
+for the full provider artifact still fail before network because its IDs are
+placeholders. Projection profiles reference the separately verified isolated D1.
 
 The preflight requires the deployment process's `CLOUDFLARE_ACCOUNT_ID` and
 `CLOUDFLARE_API_TOKEN`; neither a runtime account variable nor an API token from
@@ -111,10 +112,17 @@ the real SQLite coordinator constructor, named account scope, credential checks
 and private public-handler rejection; financial tests separately use real SQLite
 with accounting/reservation/authorization evidence.
 
-On 2026-10-04, the GEM-ASSIST request to create or discover the isolated candidate
-D1 database timed out with MCP HTTP 504. A subsequent device ping also timed out.
-The provisioning outcome is unknown. Before retrying any mutation, inspect the
-canonical account's database list for `crypto-signal-bot-live-candidate-db`,
-record its verified UUID, and reconcile all three D1 configuration files. No
-remote migration/deployment result is established. Do not claim the coordinator
-or private service is deployed from the local runtime/bundle evidence.
+On 2026-10-04, GEM-ASSIST reconnected after HTTP 504. Read-only discovery resolved
+the previous uncertain request before isolated D1 creation. Canonical database
+`crypto-signal-bot-live-candidate-db` is `45d89a06-e8de-432b-a3f0-bd4a5c47e922`;
+the real projection-only metadata preflight passed. The full provider artifact
+remains a locked template; only coordinator/operations profiles reference this D1.
+
+The remote migration stopped at 016 after 13 successful files. Read-only schema
+inspection confirmed the failed file had not partially added its version column
+or settlement tables. The generated copies rewrite conditional trigger aborts to
+equivalent `SELECT RAISE(...) WHERE NOT EXISTS (...)` SQL, avoiding the remote
+parser's rejection of an inner `CASE ... END;`. Original source migrations,
+tracking names and abort conditions remain intact. Local equivalence tests cover
+matching, missing and null backing evidence. Remote retry and namespace/service
+deployment are still pending; do not infer deployment from dry-run evidence.

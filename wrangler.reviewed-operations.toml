@@ -11,7 +11,7 @@ preview_urls = false
 [[d1_databases]]
 binding = "DB"
 database_name = "crypto-signal-bot-live-candidate-db"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "45d89a06-e8de-432b-a3f0-bd4a5c47e922"
 
 [[durable_objects.bindings]]
 name = "EXCHANGE_ACCOUNT_COORDINATOR"
