@@ -23,15 +23,15 @@ RELEASE_AUTHORIZATION_PRESENT = "false"
 
 [[secrets_store_secrets]]
 binding = "BITGET_TRADE_API_KEY"
-store_id = "077d4599269544239a34ade0f64d2f48"
+store_id = "b5f2c2cdae2c445b8ead1ceda7620fed"
 secret_name = "BITGET_TRADE_API_KEY"
 
 [[secrets_store_secrets]]
 binding = "BITGET_TRADE_API_SECRET"
-store_id = "077d4599269544239a34ade0f64d2f48"
+store_id = "b5f2c2cdae2c445b8ead1ceda7620fed"
 secret_name = "BITGET_TRADE_API_SECRET"
 
 [[secrets_store_secrets]]
 binding = "BITGET_TRADE_API_PASSPHRASE"
-store_id = "077d4599269544239a34ade0f64d2f48"
+store_id = "b5f2c2cdae2c445b8ead1ceda7620fed"
 secret_name = "BITGET_TRADE_API_PASSPHRASE"

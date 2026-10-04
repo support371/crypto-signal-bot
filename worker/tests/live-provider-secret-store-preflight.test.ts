@@ -11,7 +11,7 @@ const rows = config.secretNames.map((name:string) => ({name, scopes:['workers']}
 test('declared certification store names match metadata without reading values or certifying activation', async () => {
   let calls=0
   const report=await inspectCertificationStore(config,{environment,fetcher:async(url:string,options:RequestInit)=>{
-    calls++; assert.equal(options.method,'GET'); assert.match(url,/secrets_store\/stores\/077d4599269544239a34ade0f64d2f48\/secrets\?page=1&per_page=100$/)
+    calls++; assert.equal(options.method,'GET'); assert.ok(url.endsWith(`/secrets_store/stores/${config.storeId}/secrets?page=1&per_page=100`))
     assert.equal(options.headers.Authorization,`Bearer ${environment.CLOUDFLARE_API_TOKEN}`)
     return Response.json({success:true,result:rows})
   }})
