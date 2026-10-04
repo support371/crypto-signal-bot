@@ -144,6 +144,12 @@ class FakeDatabase {
   }
 
   all(sql: string): unknown[] {
+    if (sql.includes('FROM ledger_accounts')) return [
+      { ledger_account_id: 'ledger:USDT:available', exchange_account_id: 'bitget-account-ref',
+        asset: 'USDT', account_type: 'CASH_AVAILABLE', status: 'ACTIVE' },
+      { ledger_account_id: 'ledger:USDT:reserved', exchange_account_id: 'bitget-account-ref',
+        asset: 'USDT', account_type: 'CASH_RESERVED', status: 'ACTIVE' },
+    ]
     if (sql.includes('FROM ledger_entries')) return this.entries
     return []
   }
