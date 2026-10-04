@@ -56,6 +56,10 @@ export interface RecoveryAccountingDispatchResult {
 
 export interface RecoveryAccountingDispatchExecutor {
   serializer: Pick<FillAccountingSerialQueue, 'run'>
+  authorizeAccountingPlan?(
+    approvedPackage: ApprovedRecoveryAccountingPackage,
+    evaluatedAt: string,
+  ): Promise<void>
   executeAccountingCommand(
     command: BitgetRecoveryAccountingPlan['commands'][number],
   ): Promise<VerifiedFillAccountingResult>
