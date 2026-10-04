@@ -32,5 +32,7 @@ Credential discovery found declared Cloudflare Secrets Store
 `BITGET_CERT_API_KEY`, `BITGET_CERT_API_SECRET`, `BITGET_CERT_API_PASSPHRASE`;
 trade names use the `BITGET_TRADE_` prefix. These references do not prove the
 secrets exist. Both local and GEM-ASSIST repo environment templates were empty;
-the existing OAuth login received HTTP 403 for store metadata. Actual secrets,
+the original OAuth login received HTTP 403 for store metadata. After adding the
+Secrets Store scope, authenticated canonical-account metadata returned zero
+stores (`total_count: 0`) and the referenced store returned HTTP 404. Actual secrets,
 Classic/UTA account model and external provider certification remain unverified.
