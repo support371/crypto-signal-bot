@@ -522,6 +522,21 @@ function result(
   return Object.freeze({ persistenceStatus, ingestionPersistenceStatus, ...evidence })
 }
 
+/** Validate the existing immutable certification package before external reads. */
+export async function assertExternalRecoveryAttestation(
+  env: BitgetAttestedRecoveryIngestionEnv,
+  input: { attestationId: string; exchangeAccountId: string; productId: string; now: string },
+): Promise<void> {
+  const row = await loadAttestationPackage(env, required(input.attestationId, 'attestationId'))
+  await assertAttestationPackage(row, await loadCertificationChecks(env, row.certification_run_id))
+  const age = Date.parse(isoTimestamp(input.now, 'now')) - Date.parse(row.attested_at)
+  if (row.source_mode !== 'ISOLATED_READ_ONLY_CLIENT' || row.external_read_only_evidence !== 1
+    || row.run_exchange_account_id !== input.exchangeAccountId || row.run_product_id !== input.productId
+    || age < 0 || age > 86_400_000) {
+    throw new BitgetAttestedRecoveryIngestionConflictError('fresh external certification must match recovery account and product')
+  }
+}
+
 export async function persistAttestedBitgetRecoveryIngestion(
   env: BitgetAttestedRecoveryIngestionEnv,
   input: BitgetAttestedRecoveryIngestionInput,

@@ -37,15 +37,54 @@ provides durable queue registration, atomic claim, completion/failure and dead
 letter contracts. The existing account coordinator provides serialized
 assessment and accounting boundaries.
 
+## GET-only recovery consumption
+
+The canonical five-minute schedule awaits discovery before consuming reads.
+`LIVE_RECOVERY_READ_ENABLED=true` requires an explicit single
+`LIVE_RECOVERY_READ_ACCOUNT_ID`, `LIVE_RECOVERY_READ_ATTESTATIONS` mapping
+product IDs to existing immutable attestation IDs, and the existing
+`BITGET_CERT_API_KEY`, `BITGET_CERT_API_SECRET`, `BITGET_CERT_API_PASSPHRASE`
+Secrets Store bindings. Do not put credentials in vars, source or browser code.
+The account's `external_account_ref_hash` must equal `canonicalHash` of the
+Bitget account-info user ID. This credential group is deliberately scoped to
+one account; it does not infer a multi-account credential mapping.
+
+Each pass claims at most five discovery records using the existing queue
+contract. It verifies the queued payload hash/identity against current persisted
+order evidence, requires all eight certification checks and a matching external
+attestation no older than 24 hours, verifies actual GET credential permissions
+and provider account identity, then composes `BitgetReadOnlyRecoveryClient` and
+`runAttestedBitgetRecoveryCycle`. Collection response handling is shared with
+the existing certification parser; missing/full pages remain fail-closed.
+Base-sized orders require exact quantity, product, both known provider IDs,
+side and order type. Quote-sized/unknown-sized orders, missing IDs, changed
+observations, unavailable history windows and unsupported providers require
+review. No BTCC order is routed to Bitget.
+
+The stage persists immutable observations, pending accounting intents, the
+existing attested binding/audit event and a `NOTIFY_ALERT` outbox record with
+the reconciliation decision. It does not apply order-state, fill, balance,
+position, ledger or reservation projections. Those require the existing
+reviewed approval and serialized coordinator stages. A queue COMPLETED status
+means observation ingestion completed, not financial reconciliation completed.
+
+Only GET observation leases older than two minutes are reclaimable. Completion
+and failure require the current claim timestamp so an expired Worker cannot
+acknowledge a successor lease. Read failures retry at most three times, then
+remain FAILED with `RECOVERY_READ_REVIEW_REQUIRED` for operator review.
+Provider error text and credential values are never stored in queue errors.
+The reused transport body boundary now bounds reads as well as demo writes,
+including stalled fetches/bodies that ignore abort signals and oversized streams.
+Stable account/snapshot/attestation identifiers and observation timestamps make
+a crash between persistence and queue acknowledgement replayable.
+
 ## Remaining stages
 
-Discovery is runtime-wired, but its downstream consumer is not complete. A
-verified account-specific read credential mapping, provider GET lookup,
-attestation, serialized state projection, reviewed fill accounting, reservation
-settlement and replayable dashboard events are still required. Existing
-`BitgetReadOnlyRecoveryClient`, `runAttestedBitgetRecoveryCycle`, recovery
-accounting approval/dispatch and `ExchangeAccountCoordinator` must be composed
-for these stages. Do not replace them with another execution or ledger system.
+Serialized state projection, reviewed fill accounting, reservation settlement
+and authenticated replayable dashboard events still require integration.
+Existing recovery accounting approval/dispatch and
+`ExchangeAccountCoordinator` must remain the authority for those stages.
+Do not replace them with another execution or ledger system.
 
 The new flags remain disabled because this environment cannot verify or
 configure these database/account prerequisites. This does not designate paper

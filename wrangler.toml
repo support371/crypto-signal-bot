@@ -21,6 +21,11 @@ RATE_LIMIT_RPM = "120"
 # an explicit account allowlist are configured. It cannot submit provider orders.
 LIVE_RECOVERY_DISCOVERY_ENABLED = "false"
 LIVE_RECOVERY_ACCOUNT_IDS = "[]"
+# GET-only observation consumption requires explicit account identity, fresh
+# external attestations and the existing BITGET_CERT_* Secrets Store bindings.
+LIVE_RECOVERY_READ_ENABLED = "false"
+LIVE_RECOVERY_READ_ACCOUNT_ID = ""
+LIVE_RECOVERY_READ_ATTESTATIONS = "{}"
 # Browser-safe Supabase project identity values. These do not grant service-role access;
 # user authorization still requires a valid Supabase session JWT.
 SUPABASE_URL = "https://pxcahgcoeewvkhsdvylu.supabase.co"
