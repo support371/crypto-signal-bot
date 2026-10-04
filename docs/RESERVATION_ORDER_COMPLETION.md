@@ -31,14 +31,14 @@ financial evidence again and compares its hash to the stored completion event.
 The event references the terminal observation's existing audit hash; this phase
 does not manufacture a new immutable audit-chain entry.
 
-There is no public HTTP route or deployed activation for this primitive yet.
-Accounting review authorizes accounting only; it is not reused as implicit
-reservation-release authorization. Runtime integration still requires a distinct
-reviewed completion command, current scoped operator authority, and routing to
-the single named account coordinator. A cancellation with no fills still needs
-an independently reviewed reservation release; the fill settlement API cannot
-pretend that a zero-fill cancellation was a fill. Unknown recovery orders cannot
-be marked settled from FIFO evidence alone.
+The follow-up [reviewed runtime](REVIEWED_ORDER_COMPLETION_RUNTIME.md) connects
+this primitive to an internal coordinator command with operation-specific current
+authority. Public mutations remain blocked and no activation has been deployed.
+The follow-up also supplies an independently recorded zero-fill cancellation
+release; it creates no synthetic fill. Accounting approval is not reused as
+reservation-release authority. Partial-fill cancellation still needs reviewed
+remainder release if its last fill was already settled as nonterminal. Unknown
+recovery orders cannot be marked settled from FIFO evidence alone.
 
 Validation uses real SQLite with foreign keys and migrations 003–030, actual FIFO
 posting, reservation journals/receipts and order events. It exercises consumption
