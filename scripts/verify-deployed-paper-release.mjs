@@ -1,6 +1,11 @@
+import { readFileSync } from 'node:fs'
+
 const DEFAULT_FRONTEND_URL = 'https://crypto-signal-bot-indol.vercel.app'
 const DEFAULT_BACKEND_URL = 'https://crypto-signal-bot-api.analyzer-d94.workers.dev'
-const RELEASE_CONTRACT = 'paper-certification-2026-08-15'
+const RELEASE_CONTRACT = JSON.parse(readFileSync(new URL('../public/release.json', import.meta.url), 'utf8')).release_contract
+if (typeof RELEASE_CONTRACT !== 'string' || !/^paper-certification-\d{4}-\d{2}-\d{2}$/.test(RELEASE_CONTRACT)) {
+  throw new Error('Committed release manifest must specify a paper certification contract')
+}
 const REQUEST_TIMEOUT_MS = 12_000
 
 function readArgument(name, fallback) {
