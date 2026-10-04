@@ -20,6 +20,13 @@ test('BTCC and Bitget are the only default execution exchanges', () => {
   assert.equal(EXCHANGE_PROVIDERS.BITGET.executionPriority, 2)
   assert.equal(EXCHANGE_PROVIDERS.COINBASE.marketDataOnly, true)
   assert.equal(EXCHANGE_PROVIDERS.COINBASE.executionDefault, false)
+  assert.equal(EXCHANGE_PROVIDERS.BTCC.mutationAvailability, 'EXTERNAL_BLOCKER')
+  assert.equal(EXCHANGE_PROVIDERS.BITGET.mutationAvailability, 'CERTIFICATION_REQUIRED')
+  assert.equal(EXCHANGE_PROVIDERS.COINBASE.mutationAvailability, 'READ_ONLY')
+  for (const provider of Object.values(EXCHANGE_PROVIDERS)) {
+    assert.equal(provider.automaticFailoverAllowed, false)
+    assert.equal(provider.candidateExecutionEnabled, false)
+  }
   assert.throws(() => normalizeExecutionExchange('coinbase'), /Unsupported execution exchange/)
 })
 

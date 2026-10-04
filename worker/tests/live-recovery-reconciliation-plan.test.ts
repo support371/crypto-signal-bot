@@ -23,6 +23,8 @@ test('recovery lookup prefers exchange order identity and is GET-only', () => {
   assert.equal(plan.status, 'LOOKUP_READY')
   assert.equal(plan.instruction?.lookupBy, 'EXCHANGE_ORDER_ID')
   assert.equal(plan.instruction?.lookupValue, 'exchange-1')
+  assert.equal(plan.instruction?.expectedExchangeOrderId, 'exchange-1')
+  assert.equal(plan.instruction?.expectedClientOrderId, 'client-1')
   assert.equal(plan.instruction?.method, 'GET')
   assert.equal(plan.instruction?.mutationAllowed, false)
   assert.equal(plan.automaticRetryAllowed, false)
