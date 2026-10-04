@@ -1,4 +1,5 @@
 import { canonicalHash, canonicalJson } from '../../canonical-json.ts'
+import { responseRows } from '../../bitget-read-only-certification.ts'
 import type {
   ExchangeFillSnapshot,
   ExchangeOrderSnapshot,
@@ -58,8 +59,7 @@ function envelopeData(value: unknown, field: string): readonly unknown[] {
   if (code && code !== '00000') {
     throw new BitgetRecoveryIncompleteError(`${field} returned Bitget code ${code}`)
   }
-  if (!Array.isArray(root.data)) throw new TypeError(`${field}.data must be an array`)
-  return root.data
+  return responseRows(root, field, field === 'fills' ? ['fillList', 'fills', 'list'] : ['orderList', 'orders', 'list'])
 }
 
 function requestTime(value: unknown, fallback: number): number {
