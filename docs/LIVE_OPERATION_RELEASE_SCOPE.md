@@ -44,3 +44,10 @@ primitive is implemented in `live-dispatch-admission-store.ts`; it atomically
 claims attempt, idempotency and logical-order identity with exact daily exposure,
 rejects replay after restart and rolls back interrupted commits. It grants no
 execution capability and is not wired into a deployed transport.
+
+`live-operation-current-authorization.ts` now reloads current roles, the exact
+step-up session, immutable ALLOW event and persisted order/account scope in one
+D1 transactional batch. It ignores historical actor-role JSON and rejects
+revocation, expiry, wrong audience/actor, stale reads and account/product mismatch.
+This is a source dependency, not a credentials or transport authorization. The
+remaining connected acceptance stages are in `FULL_LIVE_IMPLEMENTATION_ACCEPTANCE.md`.
