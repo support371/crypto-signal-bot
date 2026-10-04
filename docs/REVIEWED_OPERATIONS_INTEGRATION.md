@@ -67,3 +67,54 @@ artifact, current account-specific external provider certification, release and
 runtime control binding, durable attempts and recovery evidence. BTCC's current
 authoritative contract is unverified. Do not label these capabilities Active or
 all-pass based on these source tests.
+
+
+## Resource metadata preflight
+
+`npm --prefix worker run verify:candidate-resources` validates the canonical
+build account and configuration isolation, then makes bounded authenticated GET
+requests for the candidate D1 database, KV namespace list (first 100 entries),
+and R2 bucket metadata. A missing/denied/mismatched response is a blocking result,
+never proof that a resource does not exist. Use `verify:reviewed-resources` to
+verify the projection-only deployed coordinator namespace and D1 binding before
+private-service deployment. This private profile does not require KV/R2 or
+provider secrets; the full candidate-resource check retains those prerequisites. `deploy:reviewed-operations` runs that check directly
+before Wrangler, including when npm lifecycle hooks are disabled. The templates
+currently fail before network because their IDs are placeholders.
+
+The preflight requires the deployment process's `CLOUDFLARE_ACCOUNT_ID` and
+`CLOUDFLARE_API_TOKEN`; neither a runtime account variable nor an API token from
+another account selects the canonical deployment. Token permissions must allow
+resource metadata inspection. Raw API responses, upstream error messages and
+credentials are never printed. The result reports resource verification only;
+it does not certify a provider or verify mainnet activation. This check creates,
+deletes and changes no resources, bindings or provider state.
+
+
+## Coordinator-only deployment profile
+
+`wrangler.reviewed-coordinator.toml` bundles the same candidate Worker name,
+`ExchangeAccountCoordinator` class and `v1` SQLite namespace migration as the
+full candidate artifact. It exports only the existing coordinator and a 404
+public handler. workers.dev/preview URLs are disabled, with no public routes,
+triggers or provider credentials. Its only resource prerequisite is isolated D1.
+Later expansion of this same Worker/class keeps the namespace rather than
+creating a second account authority. The private operations service imports that
+same namespace.
+
+`prepare:reviewed-migrations` copies only the 31 live files (003–030, 033–034)
+into a generated migration directory. Sequential unique filenames preserve source
+order while avoiding duplicate 018 prefixes. Wrangler tracks these in
+`d1_migrations`. Actual Wrangler local application passed for all 31; a second
+application reported no migrations to apply. A Miniflare/workerd test exercises
+the real SQLite coordinator constructor, named account scope, credential checks
+and private public-handler rejection; financial tests separately use real SQLite
+with accounting/reservation/authorization evidence.
+
+On 2026-10-04, the GEM-ASSIST request to create or discover the isolated candidate
+D1 database timed out with MCP HTTP 504. A subsequent device ping also timed out.
+The provisioning outcome is unknown. Before retrying any mutation, inspect the
+canonical account's database list for `crypto-signal-bot-live-candidate-db`,
+record its verified UUID, and reconcile all three D1 configuration files. No
+remote migration/deployment result is established. Do not claim the coordinator
+or private service is deployed from the local runtime/bundle evidence.

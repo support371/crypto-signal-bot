@@ -1,0 +1,33 @@
+name = "crypto-signal-bot-live-candidate"
+main = "worker/src/index_reviewed_coordinator.ts"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+preview_urls = false
+# Same Worker name, class and migration tag as the full candidate artifact:
+# this creates no second account namespace when the artifact is expanded later.
+# Projection commands need only isolated D1 and the internal accounting secret.
+# No provider credentials, public routes or triggers are bound.
+
+[vars]
+TRADING_MODE = "live-candidate"
+EXCHANGE_MODE = "live-candidate"
+NETWORK = "testnet"
+ALLOW_MAINNET = "false"
+LIVE_EXECUTION_ENABLED = "false"
+WITHDRAWALS_ENABLED = "false"
+CANDIDATE_RESOURCES_CONFIGURED = "false"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "crypto-signal-bot-live-candidate-db"
+migrations_dir = "worker/.wrangler/reviewed-migrations"
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[[durable_objects.bindings]]
+name = "EXCHANGE_ACCOUNT_COORDINATOR"
+class_name = "ExchangeAccountCoordinator"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ExchangeAccountCoordinator"]
