@@ -345,7 +345,12 @@ export async function orchestrateFreshRecoveryAccountingDispatch(
   input: FreshRecoveryAccountingDispatchInput,
   executor: RecoveryAccountingDispatchExecutor,
   clock: RecoveryAccountingDispatchClock = SYSTEM_CLOCK,
+  expectedExchangeAccountId?: string,
 ): Promise<FreshRecoveryAccountingDispatchOutcome> {
+  if (expectedExchangeAccountId !== undefined
+    && !/^[A-Za-z0-9:_-]{1,128}$/.test(expectedExchangeAccountId)) {
+    throw new TypeError('coordinator exchange account scope is invalid')
+  }
   return executor.serializer.run(async () => {
     const evaluatedAt = iso(clock.now().toISOString(), 'clock.now')
     const approvedPackage = await loadFreshApprovedRecoveryAccountingPackage(
@@ -354,6 +359,13 @@ export async function orchestrateFreshRecoveryAccountingDispatch(
       input.approvalEventId,
       evaluatedAt,
     )
+    if (expectedExchangeAccountId !== undefined
+      && approvedPackage.plan.exchangeAccountId !== expectedExchangeAccountId) {
+      throw new RecoveryAccountingDispatchAttemptConflictError(
+        'reviewed recovery plan belongs to another account coordinator',
+      )
+    }
+    await executor.authorizeAccountingPlan?.(approvedPackage, evaluatedAt)
     const attempt = await claimFreshRecoveryAccountingDispatchAttempt(
       env,
       input,

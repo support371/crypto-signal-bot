@@ -22,6 +22,19 @@ import {
   type PersistFillAccountingReconciliationInput,
 } from './fill-accounting-reconciliation-store.ts'
 import { FillAccountingSerialQueue } from './fill-accounting-serialization.ts'
+import { assertCurrentRecoveryAccountingAuthorization } from './recovery-accounting-current-authorization.ts'
+import {
+  orchestrateFreshRecoveryAccountingDispatch,
+  RecoveryAccountingDispatchAttemptConflictError,
+  type FreshRecoveryAccountingDispatchInput,
+} from './recovery-accounting-fresh-dispatch-orchestrator.ts'
+import {
+  RecoveryAccountingApprovalExpiredError,
+} from './recovery-accounting-dispatch-freshness.ts'
+import {
+  RecoveryAccountingDispatchNotApprovedError,
+  RecoveryAccountingDispatchConflictError,
+} from './recovery-accounting-dispatch.ts'
 
 interface ObservedAccountCoordinatorEnv extends AccountCoordinatorEnv {
   CANDIDATE_ACCOUNTING_TOKEN?: string
@@ -49,6 +62,7 @@ const MAX_OBSERVABILITY_EVENTS_PER_PASS = 50
 const OBSERVABILITY_RETRY_DELAY_MS = 60_000
 const ACCOUNTING_ROUTE = '/candidate/fills/account'
 const RECONCILIATION_ROUTE = '/candidate/fills/reconcile'
+const REVIEWED_RECOVERY_ROUTE = '/candidate/recovery-accounting/dispatch'
 const ACCOUNTING_TOKEN_HEADER = 'X-Candidate-Accounting-Token'
 const MAX_ACCOUNTING_REQUEST_BYTES = 512 * 1024
 
@@ -351,6 +365,48 @@ export class ExchangeAccountCoordinator {
     }
   }
 
+  private async handleReviewedRecovery(request: Request): Promise<Response> {
+    const unauthorized = this.authorizeAccounting(request)
+    if (unauthorized) return unauthorized
+    // Account identity comes from the namespace routing, never the JSON body.
+    // Objects created by idFromString without a name cannot dispatch this stage.
+    const accountId = this.state.id.name
+    if (!accountId || !/^[A-Za-z0-9:_-]{1,128}$/.test(accountId)) {
+      return json({ error: 'Named account coordinator is required',
+        code: 'RECOVERY_ACCOUNTING_SCOPE_UNAVAILABLE' }, 503)
+    }
+    try {
+      const input = await this.readBoundedJson<FreshRecoveryAccountingDispatchInput>(request)
+      if (!input || typeof input !== 'object' || Array.isArray(input)
+        || Object.keys(input).length !== 3
+        || !['dispatchId', 'planId', 'approvalEventId'].every((key) =>
+          typeof input[key as keyof FreshRecoveryAccountingDispatchInput] === 'string'
+          && /^[A-Za-z0-9:_-]{1,128}$/.test(input[key as keyof FreshRecoveryAccountingDispatchInput]))) {
+        throw new TypeError('only immutable dispatch, plan and approval identifiers are accepted')
+      }
+      const outcome = await orchestrateFreshRecoveryAccountingDispatch(this.env, input, {
+        serializer: this.accountingQueue,
+        authorizeAccountingPlan: (approved, evaluatedAt) =>
+          assertCurrentRecoveryAccountingAuthorization(this.env, approved, evaluatedAt),
+        executeAccountingCommand: (command) => persistSpotFillAccountingVerified(this.env, command),
+      }, undefined, accountId)
+      return json({ ...outcome, serializedBy: 'EXCHANGE_ACCOUNT_COORDINATOR',
+        providerMutationAllowed: false, reservationApplied: false, executionAllowed: false,
+      }, outcome.dispatch.status === 'COMPLETED' ? 201 : 409)
+    } catch (error) {
+      const conflict = error instanceof RecoveryAccountingDispatchAttemptConflictError
+        || error instanceof RecoveryAccountingDispatchConflictError
+      const denied = error instanceof RecoveryAccountingDispatchNotApprovedError
+        || error instanceof RecoveryAccountingApprovalExpiredError
+      const invalid = error instanceof TypeError || error instanceof RangeError || error instanceof SyntaxError
+      return json({ error: 'Reviewed recovery accounting was not completed',
+        code: conflict || denied ? error.code : invalid ? 'INVALID_RECOVERY_ACCOUNTING_INPUT'
+          : 'RECOVERY_ACCOUNTING_PERSISTENCE_FAILED',
+        providerMutationAllowed: false, reservationApplied: false, executionAllowed: false,
+      }, conflict ? 409 : denied ? 403 : invalid ? 400 : 500)
+    }
+  }
+
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url)
     const method = request.method.toUpperCase()
@@ -360,6 +416,9 @@ export class ExchangeAccountCoordinator {
     }
     if (method === 'POST' && url.pathname === RECONCILIATION_ROUTE) {
       return this.handleReconciliation(request)
+    }
+    if (method === 'POST' && url.pathname === REVIEWED_RECOVERY_ROUTE) {
+      return this.handleReviewedRecovery(request)
     }
 
     const response = await this.inner.fetch(request)
