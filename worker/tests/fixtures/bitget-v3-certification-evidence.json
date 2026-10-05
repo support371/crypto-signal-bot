@@ -1,0 +1,75 @@
+{
+  "runId": "v3-cert-mock-1791194441857",
+  "provider": "BITGET",
+  "apiVersion": "V3",
+  "exchangeAccountId": "BITGET:UTA:6682030769",
+  "status": "PASSED",
+  "checks": [
+    {
+      "name": "READ_ONLY_PERMISSIONS",
+      "status": "PASS",
+      "reason": null,
+      "latencyMs": 34,
+      "evidenceHash": "cf19e586010a7019f7d9b5b51b6609dd5f387c186629b43177e71f4ab6d81e3f"
+    },
+    {
+      "name": "ACCOUNT_ASSETS_CONTRACT",
+      "status": "PASS",
+      "reason": null,
+      "latencyMs": 35,
+      "evidenceHash": "205e8a0db0a3e990176f7e7846649bad407fe9e20596b9702221bb7e05e0a1b0"
+    },
+    {
+      "name": "POSITION_CONTRACT",
+      "status": "PASS",
+      "reason": null,
+      "latencyMs": 35,
+      "evidenceHash": "7735b56699366ccfb6ee25eb8ae26941eca137cad44385785a709a7240bc94a0"
+    },
+    {
+      "name": "INSTRUMENTS_CONTRACT",
+      "status": "PASS",
+      "reason": null,
+      "latencyMs": 35,
+      "evidenceHash": "5af8fe6f73c36057ee5d3abbc83df273937c1bb7ab316b13081b73dfdef47f97"
+    },
+    {
+      "name": "READ_ONLY_ENFORCEMENT",
+      "status": "PASS",
+      "reason": null,
+      "latencyMs": 19,
+      "evidenceHash": "50983f4df2f87004d068053ffa7e1b7f0a9c9e3ea93599f9eee89d4ea954a83d"
+    }
+  ],
+  "evaluatedAt": "2026-10-05T10:00:41.856Z",
+  "evidenceHash": "5bcb85de6a4f7e500fe3bbe8c34842377fe1d9ec2fa0d0ba5db49fa82d15a2e4",
+  "unifiedAccountSnapshot": {
+    "accountEquityUsd": "0.33",
+    "effectiveEquityUsd": "0.33",
+    "maintenanceMarginUsd": "0",
+    "initialMarginUsd": "0",
+    "marginRatio": "0",
+    "unrealisedPnlUsd": "0",
+    "balances": [
+      {
+        "accountId": "BITGET:UTA:BTC",
+        "asset": "BTC",
+        "available": "0.000003",
+        "held": "0",
+        "active": true,
+        "ready": true,
+        "observedAt": "2026-10-05T10:00:41.856Z"
+      }
+    ],
+    "observedAt": "2026-10-05T10:00:41.856Z"
+  },
+  "positionCount": 1,
+  "productCount": 1,
+  "certifiedForLive": false,
+  "providerMutationAllowed": false,
+  "automaticRetryAllowed": false,
+  "transferAllowed": false,
+  "withdrawalAllowed": false,
+  "executionAllowed": false,
+  "credentialsPersisted": false
+}
