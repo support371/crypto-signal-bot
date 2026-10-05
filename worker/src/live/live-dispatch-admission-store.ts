@@ -1,4 +1,6 @@
 import { addDecimal, asDecimalString, compareDecimal } from './decimal.ts'
+import { canonicalHash } from './canonical-json.ts'
+import { evaluateLiveOperationRelease, type LiveOperationReleaseInput, type OperationReleaseEvidence } from './live-operation-release-policy.ts'
 
 export interface LiveDispatchClaim {
   attemptId: string
@@ -14,6 +16,15 @@ export interface LiveDispatchClaim {
   notional: string | null
   maxOrderNotional: string
   maxDailyNotional: string
+}
+
+export type ReleaseScopedDispatchClaim = Omit<LiveDispatchClaim,
+  'releaseId' | 'releaseEvidenceHash' | 'claimedAt' | 'maxOrderNotional' | 'maxDailyNotional'> & {productId: string}
+
+/** Server dependencies: reload persisted release/runtime inside the account's serialized operation. */
+export interface DispatchReleaseLoader {
+  loadRelease(): Promise<{release: Readonly<OperationReleaseEvidence> | null; runtime: LiveOperationReleaseInput['runtime']}>
+  clock(): Date
 }
 
 interface SqlStore {
@@ -35,6 +46,11 @@ function amount(value: unknown) {
     return fail('LIVE_DISPATCH_AMOUNT_INVALID')
   }
   return asDecimalString(value)
+}
+function clockTime(clock: () => Date) {
+  const value = clock()
+  if (!(value instanceof Date) || !Number.isFinite(value.getTime())) return fail('LIVE_DISPATCH_CLOCK_INVALID')
+  return value.getTime()
 }
 
 /**
@@ -132,7 +148,75 @@ export class LiveDispatchAdmissionStore {
       || rows[0].account_ref_hash !== this.#accountRefHash || rows[0].exchange !== this.#exchange) fail('LIVE_DISPATCH_ACCOUNT_SCOPE_INVALID')
   }
 
-  claim(input: Readonly<LiveDispatchClaim>) {
+  /**
+   * Join a fresh persisted release to atomic admission. No caller-provided
+   * allowance, limit, timestamp or release hash is accepted. This remains a
+   * prerequisite, not execution authority; current role/risk/reservation/
+   * Guardian/provider checks must surround it in the serialized coordinator.
+   */
+  async claimWithRelease(input: Readonly<ReleaseScopedDispatchClaim>, dependencies: DispatchReleaseLoader) {
+    const keys = ['attemptId','idempotencyKey','orderId','operation','candidateHash','currentControlHash','notional','productId']
+    if (!input || typeof input !== 'object' || Array.isArray(input)
+      || Object.keys(input).length !== keys.length || keys.some(key => !Object.hasOwn(input,key))) fail('LIVE_DISPATCH_SCOPED_INPUT_INVALID')
+    input = Object.freeze({attemptId:input.attemptId,idempotencyKey:input.idempotencyKey,orderId:input.orderId,
+      operation:input.operation,candidateHash:input.candidateHash,currentControlHash:input.currentControlHash,
+      notional:input.notional,productId:input.productId})
+    for (const value of [input.attemptId,input.idempotencyKey,input.orderId]) if (typeof value !== 'string' || !identifier.test(value)) fail('LIVE_DISPATCH_IDENTITY_INVALID')
+    for (const value of [input.candidateHash,input.currentControlHash]) if (typeof value !== 'string' || !hash.test(value)) fail('LIVE_DISPATCH_EVIDENCE_INVALID')
+    if (typeof input.productId !== 'string' || input.productId.length > 42 || !/^[A-Z0-9]+-[A-Z0-9]+$/.test(input.productId)) fail('LIVE_DISPATCH_PRODUCT_INVALID')
+    if (!['PLACE','CANCEL'].includes(input.operation)) fail('LIVE_DISPATCH_OPERATION_INVALID')
+    if (input.operation === 'CANCEL' ? input.notional !== null : compareDecimal(amount(input.notional),amount('0')) <= 0) fail('LIVE_DISPATCH_AMOUNT_INVALID')
+    if (typeof dependencies?.loadRelease !== 'function' || typeof dependencies?.clock !== 'function') fail('LIVE_DISPATCH_RELEASE_LOADER_REQUIRED')
+    const clock = dependencies.clock.bind(dependencies), loader = dependencies.loadRelease.bind(dependencies)
+    const started = clockTime(clock)
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let timedOut = false
+    const deadline = new Promise<never>((_,reject) => {timer = setTimeout(() => {
+      timedOut = true; reject(new Error('LIVE_DISPATCH_RELEASE_RELOAD_TIMEOUT'))
+    },2_000)})
+    try {
+      return await Promise.race([deadline,(async () => {
+        let loaded: Awaited<ReturnType<DispatchReleaseLoader['loadRelease']>>
+        try {loaded = await loader()} catch {return fail('LIVE_DISPATCH_RELEASE_UNAVAILABLE')}
+        const r = loaded?.release, v = loaded?.runtime
+        if (!r || !v) return fail('LIVE_DISPATCH_RELEASE_UNAVAILABLE')
+        if (!Array.isArray(r.allowedProducts) || r.allowedProducts.length > 100
+          || r.allowedProducts.some(p => typeof p !== 'string' || p.length > 42 || !/^[A-Z0-9]+-[A-Z0-9]+$/.test(p))) fail('LIVE_DISPATCH_RELEASE_INVALID')
+        const release = Object.freeze({releaseId:r.releaseId,gitSha:r.gitSha,workerDeploymentId:r.workerDeploymentId,
+          frontendDeploymentId:r.frontendDeploymentId,schemaVersion:r.schemaVersion,exchange:r.exchange,
+          accountRefHash:r.accountRefHash,allowedProducts:Object.freeze([...r.allowedProducts]),
+          maxOrderNotional:r.maxOrderNotional,maxDailyNotional:r.maxDailyNotional,startsAt:r.startsAt,
+          expiresAt:r.expiresAt,status:r.status,securityReviewRef:r.securityReviewRef,complianceReviewRef:r.complianceReviewRef})
+        const runtime = Object.freeze({artifact:v.artifact,network:v.network,releaseId:v.releaseId,gitSha:v.gitSha,
+          workerDeploymentId:v.workerDeploymentId,frontendDeploymentId:v.frontendDeploymentId,schemaVersion:v.schemaVersion,
+          withdrawalsEnabled:v.withdrawalsEnabled})
+        // Bound all persisted scalar fields before hashing or coercion in policy.
+        if (Object.entries(release).some(([key,value]) => key !== 'allowedProducts' && (typeof value !== 'string' || value.length > 256))
+          || Object.entries(runtime).some(([key,value]) => key !== 'withdrawalsEnabled' && (typeof value !== 'string' || value.length > 256))) fail('LIVE_DISPATCH_RELEASE_INVALID')
+        const maxOrder = amount(release.maxOrderNotional), maxDaily = amount(release.maxDailyNotional)
+        const releaseEvidenceHash = await canonicalHash(release)
+        // A timed-out loader/hash may resolve later; it cannot leave a late claim.
+        const evaluated = clockTime(clock)
+        if (timedOut || evaluated < started || evaluated - started >= 2_000) fail('LIVE_DISPATCH_RELEASE_RELOAD_TIMEOUT')
+        const evaluatedAt = new Date(evaluated).toISOString(), day = utcDay(evaluatedAt)
+        const claim: LiveDispatchClaim = {...input,releaseId:release.releaseId,releaseEvidenceHash,claimedAt:evaluatedAt,
+          maxOrderNotional:maxOrder,maxDailyNotional:maxDaily}
+        const prepared = this.#prepare(claim)
+        return this.#storage.transactionSync(() => this.#commit(claim,prepared,(previous) => {
+          const committed = clockTime(clock), committedAt = new Date(committed).toISOString()
+          if (timedOut || committed < evaluated || committed - started >= 2_000 || utcDay(committedAt) !== day) fail('LIVE_DISPATCH_RELEASE_RELOAD_TIMEOUT')
+          const report = evaluateLiveOperationRelease({release,runtime,operation:input.operation,
+            exchange:this.#exchange,accountRefHash:this.#accountRefHash,productId:input.productId,
+            evaluatedAt:committedAt,orderNotional:input.notional,dailyExposure:{accountRefHash:this.#accountRefHash,
+              exchange:this.#exchange,utcDay:day,usedAndReservedNotional:previous}})
+          if (!report.releaseScopeSatisfied) fail('LIVE_DISPATCH_RELEASE_SCOPE_DENIED')
+          return committedAt
+        }))
+      })()])
+    } finally {if (timer !== undefined) clearTimeout(timer)}
+  }
+
+  #prepare(input: Readonly<LiveDispatchClaim>) {
     for (const value of [input.attemptId,input.idempotencyKey,input.orderId,input.releaseId]) if (typeof value !== 'string' || !identifier.test(value)) fail('LIVE_DISPATCH_IDENTITY_INVALID')
     for (const value of [input.candidateHash,input.releaseEvidenceHash,input.currentControlHash]) if (typeof value !== 'string' || !hash.test(value)) fail('LIVE_DISPATCH_EVIDENCE_INVALID')
     if (!['PLACE','CANCEL'].includes(input.operation)) fail('LIVE_DISPATCH_OPERATION_INVALID')
@@ -142,7 +226,17 @@ export class LiveDispatchAdmissionStore {
     const notional = input.operation === 'CANCEL' ? zero : amount(input.notional)
     if (input.operation === 'CANCEL' && input.notional !== null || input.operation === 'PLACE' && compareDecimal(notional,zero) <= 0) fail('LIVE_DISPATCH_AMOUNT_INVALID')
     if (compareDecimal(notional,maxOrder) > 0) fail('LIVE_DISPATCH_ORDER_LIMIT')
-    return this.#storage.transactionSync(() => {
+    return {day,notional,maxDaily}
+  }
+
+  /** Low-level compatibility primitive; future executable composition must use claimWithRelease. */
+  claim(input: Readonly<LiveDispatchClaim>) {
+    const prepared = this.#prepare(input)
+    return this.#storage.transactionSync(() => this.#commit(input,prepared))
+  }
+
+  #commit(input: Readonly<LiveDispatchClaim>, {day,notional,maxDaily}: {day:string;notional:ReturnType<typeof amount>;maxDaily:ReturnType<typeof amount>},
+    validateRelease?: (previous: ReturnType<typeof amount>) => string) {
       this.#assertOwner()
       const existing = this.#storage.sql.exec(`SELECT attempt_id FROM live_dispatch_admission
         WHERE attempt_id=? OR idempotency_key=? OR (order_id=? AND operation=?) LIMIT 1`,
@@ -150,6 +244,7 @@ export class LiveDispatchAdmissionStore {
       // Even an interrupted or identical attempt cannot produce another dispatch capability.
       if (existing.length) fail('LIVE_DISPATCH_ATTEMPT_ALREADY_CLAIMED')
       const previous = this.#dailyExposure(day)
+      if (validateRelease) input = {...input,claimedAt:validateRelease(previous)}
       const next = addDecimal(previous,notional)
       if (input.operation === 'PLACE' && compareDecimal(next,maxDaily) > 0) fail('LIVE_DISPATCH_DAILY_LIMIT')
       this.#storage.sql.exec(`INSERT INTO live_dispatch_admission VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
@@ -161,6 +256,5 @@ export class LiveDispatchAdmissionStore {
       return Object.freeze({attemptId:input.attemptId,accountId:this.#accountId,accountRefHash:this.#accountRefHash,
         exchange:this.#exchange,candidateHash:input.candidateHash,claimedAt:input.claimedAt,utcDay:day,
         usedAndReservedNotional:next,executionAllowed:false as const,automaticRetryAllowed:false as const})
-    })
   }
 }
