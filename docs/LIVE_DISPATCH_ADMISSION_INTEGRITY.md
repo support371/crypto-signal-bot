@@ -22,6 +22,23 @@ constructor does not silently reconstruct an allowance from incomplete state.
 Any repair needs a separately reviewed reconciliation; deleting the budget cache
 cannot authorize an additional send.
 
+`claimWithRelease` connects server-reloaded release scope to that transaction.
+Its command accepts only attempt/order/idempotency identity, operation, candidate
+and current-control hashes, conservative notional, and product. It rejects a
+supplied timestamp, release hash, limit or daily allowance. The server loader
+provides persisted release evidence and the exact executable runtime revision;
+the method snapshots those fields and computes the stored release hash itself.
+
+Release lookup/hash preparation is bounded to two seconds with a deadline latch
+that prevents a late-resolving lookup from creating a claim. The clock is checked
+after lookup and again inside the transaction, after reading current exposure.
+Expiry, revocation, account/product/source/deployment/schema mismatch and limits
+are checked at that final time. A UTC-day change during preparation rejects the
+operation before writes. Release replacement does not reset existing reservations.
+The loader must be a read-only server dependency called inside the account's
+serialized operation; this method does not turn caller-provided release JSON
+into authority or supply a persisted-release loader for the future runtime.
+
 This primitive does not establish execution authority and is not deployed into
 the paper or projection-only coordinator. Current release, roles, step-up,
 Guardian, risk, reservations and external provider certification must still be
