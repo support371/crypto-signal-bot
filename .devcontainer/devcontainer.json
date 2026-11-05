@@ -1,4 +1,16 @@
 {
   "image": "mcr.microsoft.com/devcontainers/universal:2",
-  "features": {}
+  "features": {},
+  "postCreateCommand": "bash .devcontainer/install-phone-terminal.sh",
+  "postStartCommand": "bash .devcontainer/start-phone-terminal.sh",
+  "forwardPorts": [
+    7681
+  ],
+  "portsAttributes": {
+    "7681": {
+      "label": "GEM Phone Terminal",
+      "onAutoForward": "notify",
+      "visibility": "private"
+    }
+  }
 }
