@@ -12,10 +12,19 @@ case "$ARCH" in
     ;;
 esac
 
-TMP="$(mktemp)"
-trap 'rm -f "$TMP"' EXIT
-URL="https://github.com/tsl0922/ttyd/releases/download/${VERSION}/${ASSET}"
-curl --fail --location --silent --show-error "$URL" --output "$TMP"
-chmod 0755 "$TMP"
-sudo install -m 0755 "$TMP" /usr/local/bin/ttyd
+BASE_URL="https://github.com/tsl0922/ttyd/releases/download/${VERSION}"
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
+curl --fail --location --silent --show-error "${BASE_URL}/${ASSET}" --output "${TMP_DIR}/${ASSET}"
+curl --fail --location --silent --show-error "${BASE_URL}/SHA256SUMS" --output "${TMP_DIR}/SHA256SUMS"
+
+(
+  cd "$TMP_DIR"
+  grep -E "[[:space:]]${ASSET}$" SHA256SUMS > SHA256SUMS.selected
+  test -s SHA256SUMS.selected
+  sha256sum --check SHA256SUMS.selected
+)
+
+chmod 0755 "${TMP_DIR}/${ASSET}"
+sudo install -m 0755 "${TMP_DIR}/${ASSET}" /usr/local/bin/ttyd
 /usr/local/bin/ttyd --version
