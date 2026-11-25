@@ -90,8 +90,11 @@ make test-v
 # Frontend lint
 npm run lint
 
-# Backend lint
-.venv/bin/python -m ruff check backend/
+# Integration tests
+.venv/bin/python -m pytest tests/ -v --tb=short
+
+# Backend lint (blocking — same as CI)
+.venv/bin/python -m ruff check backend/ --select E,W,F --ignore E402,F401,E501,E741
 ```
 
 ### Test Paper Trading

@@ -13,7 +13,7 @@ from typing import List, Optional
 
 import pytest
 
-from backend.logic.indicators import (
+from backend.policy.indicators import (
     rsi, last_rsi,
     atr, last_atr,
 )

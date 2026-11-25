@@ -14,8 +14,8 @@ async def test_restore_no_op_on_empty_db():
     import backend.services.portfolio.service as svc
 
     mock_snap_row   = None  # no equity snapshot
-    mock_pos_rows   = []
-    mock_trade_rows = []
+    _mock_pos_rows   = []
+    _mock_trade_rows = []
 
     mock_session = AsyncMock()
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)
@@ -80,7 +80,8 @@ async def test_upsert_position_called_after_buy_fill():
     async def mock_upsert(symbol, account_id=None):
         upsert_calls.append(symbol)
 
-    mock_snap = MagicMock(); mock_snap.price = "70000"
+    mock_snap = MagicMock()
+    mock_snap.price = "70000"
 
     # Approve all orders from the risk gate so we can test the fill path
     from backend.services.risk_gate.service import RiskGateDecision

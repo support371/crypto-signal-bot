@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { apiFetch } from '@/lib/api';
+import { fetchBackendJson } from '@/lib/backend';
 import type { BackendExchangeStatus } from '@/hooks/useBackendStatus';
 
 export interface UseExchangeStatusResult {
@@ -16,7 +16,7 @@ export function useExchangeStatus(pollIntervalMs = 30000): UseExchangeStatusResu
 
   const fetchStatus = useCallback(async () => {
     try {
-      const data = await apiFetch<BackendExchangeStatus>('/exchange/status');
+      const data = await fetchBackendJson<BackendExchangeStatus>('/exchange/status');
       setStatus(data);
       setError(null);
     } catch (err) {

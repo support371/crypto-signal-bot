@@ -184,7 +184,17 @@ async def get_single_price(
     symbol = symbol.strip().upper()
     try:
         snap = await get_price(symbol)
-        return _snapshot_to_response(snap)
+        resp = _snapshot_to_response(snap)
+        if snap.stale:
+            return JSONResponse(
+                status_code=200,
+                headers={
+                    "X-Market-Data-Stale": "true",
+                    "Retry-After": "15",
+                },
+                content=resp.model_dump(),
+            )
+        return resp
     except MarketDataStale as exc:
         return _stale_response(exc)
     except MarketDataUnavailable as exc:

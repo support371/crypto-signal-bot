@@ -287,7 +287,7 @@ class TestIdempotency:
             patch("backend.services.guardian_bot.service._publish_guardian_event", new=AsyncMock()),
         ):
             await guardian.activate_kill_switch("first reason")
-            first_reason = guardian._kill_switch_reason
+            _first_reason = guardian._kill_switch_reason
             await guardian.activate_kill_switch("second reason")
 
         # Kill switch stays active; reason updated to latest

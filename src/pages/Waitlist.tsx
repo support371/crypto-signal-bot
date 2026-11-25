@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { BackendUnavailableError, apiFetch } from "@/lib/api";
+import { FrontendBackendError, fetchBackendJson } from "@/lib/backend";
 
 export default function Waitlist() {
   const [email, setEmail] = useState("");
@@ -13,14 +13,14 @@ export default function Waitlist() {
     setError(null);
     setLoading(true);
     try {
-      await apiFetch("/api/v1/waitlist", {
+      await fetchBackendJson("/api/v1/waitlist", {
         method: "POST",
         body: JSON.stringify({ email }),
       });
       setMessage("You have been added to the waitlist.");
       setEmail("");
     } catch (err) {
-      if (err instanceof BackendUnavailableError && err.status === 400) {
+      if (err instanceof FrontendBackendError && err.status === 400) {
         setError("This email is already on the waitlist or is not valid.");
       } else {
         setError("Unable to join waitlist. Please try again.");

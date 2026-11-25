@@ -1,7 +1,7 @@
 """Initial schema — all authoritative tables
 
 Revision ID: 0001_initial
-Revises: 
+Revises:
 Create Date: 2026-04-19
 
 Creates:

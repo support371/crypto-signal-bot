@@ -1,7 +1,7 @@
 
 import time
 import random
-from backend.logic.indicators import macd
+from backend.policy.indicators import macd
 
 def benchmark():
     n = 100000

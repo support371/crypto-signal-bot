@@ -18,7 +18,8 @@ class BrokerOrderRepository:
     def __init__(self, session: AsyncSession): self.session = session
 
     async def save(self, r: BrokerOrderRecord) -> None:
-        self.session.add(r); await self.session.flush()
+        self.session.add(r)
+        await self.session.flush()
 
     async def get_by_venue(self, venue: str, limit: int = 100) -> Sequence[BrokerOrderRecord]:
         res = await self.session.execute(
@@ -31,7 +32,8 @@ class BrokerOrderRepository:
     async def update_status(self, client_order_id: str, status: str,
                             fill_price: Optional[float] = None) -> None:
         vals = {"status": status, "updated_at": int(time.time())}
-        if fill_price is not None: vals["fill_price"] = fill_price
+        if fill_price is not None:
+            vals["fill_price"] = fill_price
         await self.session.execute(
             update(BrokerOrderRecord)
             .where(BrokerOrderRecord.client_order_id == client_order_id)
@@ -43,7 +45,8 @@ class BrokerPositionRepository:
     def __init__(self, session: AsyncSession): self.session = session
 
     async def save(self, r: BrokerPositionRecord) -> None:
-        self.session.add(r); await self.session.flush()
+        self.session.add(r)
+        await self.session.flush()
 
     async def get_open(self, venue: str) -> Sequence[BrokerPositionRecord]:
         res = await self.session.execute(
@@ -68,7 +71,8 @@ class BrokerFillRepository:
     def __init__(self, session: AsyncSession): self.session = session
 
     async def save(self, r: BrokerFillRecord) -> None:
-        self.session.add(r); await self.session.flush()
+        self.session.add(r)
+        await self.session.flush()
 
     async def get_by_venue(self, venue: str, limit: int = 50) -> Sequence[BrokerFillRecord]:
         res = await self.session.execute(
@@ -83,7 +87,8 @@ class BrokerHealthRepository:
     def __init__(self, session: AsyncSession): self.session = session
 
     async def save(self, r: BrokerHealthRecord) -> None:
-        self.session.add(r); await self.session.flush()
+        self.session.add(r)
+        await self.session.flush()
 
     async def get_latest(self, venue: str) -> Optional[BrokerHealthRecord]:
         res = await self.session.execute(

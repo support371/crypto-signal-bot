@@ -104,7 +104,7 @@ class TestDecisionTraceAPI:
         context.api_error_count = 0
         context.failed_order_count = 0
         context.latest_signal_by_symbol = {}
-        from backend.logic.audit_store import clear_audit
+        from backend.audit.store import clear_audit
         clear_audit()
         yield
         clear_audit()
@@ -184,7 +184,7 @@ class TestDecisionTraceAPI:
     def test_trace_captures_risk_rules(self):
         from backend.app import app
         client = TestClient(app)
-        resp = client.post("/intent/paper", json={
+        client.post("/intent/paper", json={
             "symbol": "BTCUSDT", "side": "BUY",
             "order_type": "MARKET", "quantity": 0.001,
         })

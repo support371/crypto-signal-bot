@@ -1,7 +1,7 @@
 """Tests for the signal engine."""
 
 from backend.models_core import Features
-from backend.logic.signals import classify_regime, build_signal
+from backend.policy.signals import classify_regime, build_signal
 
 
 def _make_features(**kwargs) -> Features:

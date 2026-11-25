@@ -245,7 +245,6 @@ class TestFetchCandlesChain:
     @pytest.mark.asyncio
     async def test_falls_back_to_generic_chain_when_binance_us_returns_empty(self):
         import backend.services.signal_service.service as svc
-        from backend.adapters.exchanges.base import OhlcvCandle
 
         svc._ohlcv_adapter = None
 

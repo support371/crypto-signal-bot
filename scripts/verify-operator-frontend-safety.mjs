@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 const client = await readFile(new URL('../src/lib/operatorReadinessApi.ts', import.meta.url), 'utf8');
 const page = await readFile(new URL('../src/pages/OperatorReadiness.tsx', import.meta.url), 'utf8');
 const app = await readFile(new URL('../src/AppCore.tsx', import.meta.url), 'utf8');
-const layout = await readFile(new URL('../src/components/LayoutCore.tsx', import.meta.url), 'utf8');
+const account = await readFile(new URL('../src/pages/Account.tsx', import.meta.url), 'utf8');
 const gateway = await readFile(new URL('../api/operator/readiness.js', import.meta.url), 'utf8');
 const responseSchema = await readFile(new URL('../contracts/operator-readiness-response.schema.json', import.meta.url), 'utf8');
 const settingsModal = await readFile(new URL('../src/components/dashboard/SettingsModal.tsx', import.meta.url), 'utf8');
@@ -90,7 +90,7 @@ for (const required of [
 ]) {
   assert.ok(app.includes(required), `operator frontend route must include ${required}`);
 }
-assert.ok(layout.includes('to="/operator-readiness"'), 'operator frontend navigation link is missing');
+assert.ok(account.includes('to="/operator-readiness"'), 'operator frontend navigation link is missing');
 
 for (const forbidden of [
   /localStorage/i,

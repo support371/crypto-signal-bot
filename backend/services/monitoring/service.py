@@ -112,8 +112,6 @@ async def _process_results(results: List[ProbeResult]) -> None:
         if name not in _probe_states:
             _probe_states[name] = ProbeState()
         state = _probe_states[name]
-        prev_ok = state.last_result.ok if state.last_result else True
-
         state.last_result = result
 
         if result.ok:

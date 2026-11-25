@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
@@ -8,15 +9,14 @@ const productFiles = [
   '../pages/Auth.tsx',
   '../pages/PublicHome.tsx',
   '../pages/PrivacyPolicy.tsx',
-  '../components/Header.tsx',
   '../components/SetupRequiredScreen.tsx',
-  '../components/Sidebar.tsx',
   '../components/dashboard/Header.tsx',
   '../components/dashboard/PortfolioPanel.tsx',
   '../components/dashboard/CommandConsolePanel.tsx',
   '../components/dashboard/EarningsPanel.tsx',
   '../components/dashboard/GuardianPanel.tsx',
   '../components/dashboard/SurgePanel.tsx',
+  '../hooks/useDashboardOrchestration.ts',
   '../../public/privacy/index.html',
 ] as const;
 

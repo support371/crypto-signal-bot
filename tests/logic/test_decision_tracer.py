@@ -3,7 +3,7 @@
 Tests for DecisionTracer — covers BUY, SELL, HOLD, and ring-buffer behaviour.
 """
 import pytest
-from backend.logic.decision_tracer import DecisionTracer, HoldReason
+from backend.audit.tracer import DecisionTracer, HoldReason
 
 
 @pytest.fixture

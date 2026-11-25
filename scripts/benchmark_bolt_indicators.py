@@ -1,7 +1,7 @@
 
 import time
 import random
-from backend.logic.indicators import rsi, atr
+from backend.policy.indicators import rsi, atr
 
 def benchmark():
     n = 100000

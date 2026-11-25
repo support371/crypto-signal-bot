@@ -8,7 +8,7 @@ def _reload_audit_store(monkeypatch, tmp_path, event_log_enabled=False):
     monkeypatch.setenv("EVENT_LOG_ENABLED", "true" if event_log_enabled else "false")
     monkeypatch.setenv("EVENT_LOG_PATH", str(tmp_path / "event_log.db"))
 
-    import backend.logic.audit_store as audit_store
+    import backend.audit.store as audit_store
 
     return importlib.reload(audit_store)
 

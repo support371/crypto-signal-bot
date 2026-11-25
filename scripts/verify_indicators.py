@@ -1,6 +1,6 @@
 
 import math
-from backend.logic.indicators import rsi as rsi_opt, atr as atr_opt
+from backend.policy.indicators import rsi as rsi_opt, atr as atr_opt
 
 def rsi_orig(values, period=14):
     if len(values) < period + 1:

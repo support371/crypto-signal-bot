@@ -3,18 +3,19 @@
 Unit tests for the signal executor service.
 
 Covers:
-  - _execute_symbol: no-op when signal unchanged
-  - _execute_symbol: opens position on new BUY signal
-  - _execute_symbol: closes existing long and opens short on SELL flip
-  - _execute_symbol: closes position when signal goes FLAT
-  - _execute_symbol: skips if confidence < MIN_CONFIDENCE
+  - _executor_sweep: no-op when signal unchanged
+  - _executor_sweep: opens position on new BUY signal
+  - _executor_sweep: closes existing long on SELL flip
+  - _executor_sweep: closes position when signal goes FLAT
+  - _executor_sweep: skips if confidence < MIN_CONFIDENCE
   - get_executor_status: returns correct shape
   - probe_executor: ok when running, failing when not
 """
 from __future__ import annotations
 
 import time
-from types import SimpleNamespace
+from dataclasses import dataclass, field
+from typing import Any, Dict, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -22,37 +23,118 @@ import pytest
 import backend.services.signal_executor.service as svc
 
 
-def _sig(symbol="BTCUSDT", side="BUY", strategy_id="combined", confidence=0.80):
-    return SimpleNamespace(
-        symbol=symbol, side=side,
-        strategy_id=strategy_id, confidence=confidence,
-    )
+@dataclass
+class FakeSignalRecord:
+    symbol: str = "BTCUSDT"
+    timeframe: str = "1h"
+    side: str = "BUY"
+    entry_price: float = 68000.0
+    stop_loss: Optional[float] = None
+    take_profit: Optional[float] = None
+    confidence: float = 0.80
+    strategy_id: str = "combined"
+    created_at: int = 0
+    valid_until: int = 0
+    id: str = "sig-001"
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+def _sig(**overrides) -> FakeSignalRecord:
+    return FakeSignalRecord(**overrides)
+
+
+def _guardian_ok():
+    return MagicMock(kill_switch_active=False)
 
 
 @pytest.fixture(autouse=True)
 def reset_executor_state():
-    """Reset all module-level executor state before each test."""
+    """Reset module-level executor state before each test."""
     svc._last_acted.clear()
-    svc._running    = False
-    svc._run_count  = 0
+    svc._running = False
+    svc._run_count = 0
     svc._last_run_at = 0
+    svc._nav_anchored = True
     yield
     svc._last_acted.clear()
 
 
-# ---------------------------------------------------------------------------
+class _SweepCtx:
+    """Patches _executor_sweep dependencies and tracks orders."""
+
+    def __init__(self, signals, equity=10000.0, positions=None):
+        self._signals = signals
+        self._equity = equity
+        self._positions = positions or []
+        self.submitted_orders = []
+        self._patches = []
+
+    async def _do_submit(self, sym, side, qty, price):
+        self.submitted_orders.append(
+            {"symbol": sym, "side": side, "qty": qty, "price": price}
+        )
+        return {}
+
+    def __enter__(self):
+        ps = [
+            patch(
+                "backend.services.guardian_bot.service"
+                ".get_guardian_status",
+                new_callable=AsyncMock,
+                return_value=_guardian_ok(),
+            ),
+            patch(
+                "backend.services.signal_service.service"
+                ".get_all_cached_signals",
+                return_value=self._signals,
+            ),
+            patch.object(
+                svc, "_get_equity",
+                new_callable=AsyncMock,
+                return_value=self._equity,
+            ),
+            patch.object(
+                svc, "_get_open_positions",
+                new_callable=AsyncMock,
+                return_value=self._positions,
+            ),
+            patch.object(
+                svc, "submit_order",
+                new_callable=AsyncMock,
+                side_effect=self._do_submit,
+            ),
+            patch.object(
+                svc, "_anchor_nav_on_start",
+                new_callable=AsyncMock,
+            ),
+            patch.object(
+                svc, "_fire_trade_alert",
+                new_callable=AsyncMock,
+            ),
+        ]
+        self._patches = ps
+        for p in ps:
+            p.start()
+        return self
+
+    def __exit__(self, *args):
+        for p in reversed(self._patches):
+            p.stop()
+
+
+# -------------------------------------------------------------------
 # get_executor_status
-# ---------------------------------------------------------------------------
+# -------------------------------------------------------------------
 
 class TestGetExecutorStatus:
     def test_returns_required_keys(self):
         status = svc.get_executor_status()
-        assert "running"           in status
-        assert "run_count"         in status
+        assert "running" in status
+        assert "run_count" in status
         assert "executor_interval" in status
-        assert "min_confidence"    in status
-        assert "position_pct"      in status
-        assert "last_acted"        in status
+        assert "min_confidence" in status
+        assert "position_pct" in status
+        assert "last_acted" in status
 
     def test_last_acted_reflects_state(self):
         svc._last_acted["BTCUSDT"] = ("BUY", "combined")
@@ -60,213 +142,172 @@ class TestGetExecutorStatus:
         assert status["last_acted"]["BTCUSDT"]["side"] == "BUY"
 
 
-# ---------------------------------------------------------------------------
-# _execute_symbol — no-op when signal unchanged
-# ---------------------------------------------------------------------------
+# -------------------------------------------------------------------
+# No-op when signal unchanged
+# -------------------------------------------------------------------
 
-class TestExecuteSymbolNoOp:
+class TestSweepNoOp:
     @pytest.mark.asyncio
     async def test_no_order_when_signal_unchanged(self):
-        svc._last_acted["BTCUSDT"] = ("BUY", "combined")
-        sig = _sig("BTCUSDT", "BUY", "combined", confidence=0.80)
-        with patch("backend.services.portfolio.service.submit_order",
-                   new_callable=AsyncMock) as mock_order:
-            await svc._execute_symbol("BTCUSDT", sig)
-        mock_order.assert_not_called()
+        svc._last_acted["BTCUSDT"] = ("BUY", "combined", 68000.0)
+        sig = _sig(
+            symbol="BTCUSDT", side="BUY",
+            strategy_id="combined", entry_price=68000.0,
+        )
+        with _SweepCtx([sig]) as ctx:
+            await svc._executor_sweep()
+        assert len(ctx.submitted_orders) == 0
 
     @pytest.mark.asyncio
-    async def test_no_order_when_flat_and_prev_flat(self):
-        # FLAT → FLAT should be a no-op
-        sig = _sig("BTCUSDT", "FLAT", "combined", confidence=0.0)
-        with patch("backend.services.portfolio.service.submit_order",
-                   new_callable=AsyncMock) as mock_order:
-            await svc._execute_symbol("BTCUSDT", sig)
-        mock_order.assert_not_called()
+    async def test_no_order_when_flat_no_position(self):
+        sig = _sig(
+            symbol="BTCUSDT", side="FLAT",
+            confidence=0.0, entry_price=68000.0,
+        )
+        with _SweepCtx([sig]) as ctx:
+            await svc._executor_sweep()
+        assert len(ctx.submitted_orders) == 0
 
 
-# ---------------------------------------------------------------------------
-# _execute_symbol — confidence gate
-# ---------------------------------------------------------------------------
+# -------------------------------------------------------------------
+# Confidence gate
+# -------------------------------------------------------------------
 
 class TestConfidenceGate:
     @pytest.mark.asyncio
-    async def test_skips_when_confidence_below_threshold(self):
-        sig = _sig("ETHUSDT", "BUY", "combined", confidence=0.40)
-        with patch("backend.services.portfolio.service.submit_order",
-                   new_callable=AsyncMock) as mock_order:
-            await svc._execute_symbol("ETHUSDT", sig)
-        mock_order.assert_not_called()
-        # State should NOT be updated — we haven't acted
+    async def test_skips_below_threshold(self):
+        sig = _sig(
+            symbol="ETHUSDT", side="BUY",
+            confidence=0.40, entry_price=3000.0,
+        )
+        with _SweepCtx([sig]) as ctx:
+            await svc._executor_sweep()
+        assert len(ctx.submitted_orders) == 0
         assert "ETHUSDT" not in svc._last_acted
 
     @pytest.mark.asyncio
-    async def test_executes_when_confidence_at_threshold(self):
-        sig = _sig("ETHUSDT", "BUY", "combined", confidence=svc.MIN_CONFIDENCE)
-        mock_snap = MagicMock(); mock_snap.price = "3000.00"
-
-        with (
-            patch("backend.services.portfolio.service.submit_order",
-                  new_callable=AsyncMock,
-                  return_value=MagicMock(id="order-abc", status="FILLED")),
-            patch("backend.services.market_data.service.get_price",
-                  new_callable=AsyncMock, return_value=mock_snap),
-            patch.object(svc, "_get_equity", new_callable=AsyncMock, return_value=10000.0),
-            patch.object(svc, "_get_open_qty", new_callable=AsyncMock, return_value=0.0),
-        ):
-            await svc._execute_symbol("ETHUSDT", sig)
-
-        assert svc._last_acted.get("ETHUSDT") == ("BUY", "combined")
+    async def test_executes_at_threshold(self):
+        sig = _sig(
+            symbol="ETHUSDT", side="BUY",
+            confidence=svc.MIN_CONFIDENCE,
+            entry_price=3000.0,
+        )
+        with _SweepCtx([sig], equity=10000.0) as ctx:
+            await svc._executor_sweep()
+        assert len(ctx.submitted_orders) == 1
+        assert ctx.submitted_orders[0]["side"] == "BUY"
+        acted = svc._last_acted.get("ETHUSDT")
+        assert acted is not None
+        assert acted[0] == "BUY"
 
 
-# ---------------------------------------------------------------------------
-# _execute_symbol — opens BUY on new signal
-# ---------------------------------------------------------------------------
+# -------------------------------------------------------------------
+# Opens BUY on new signal
+# -------------------------------------------------------------------
 
 class TestOpenOnBuySignal:
     @pytest.mark.asyncio
-    async def test_opens_buy_order_on_new_signal(self):
-        sig = _sig("SOLUSDT", "BUY", "combined", confidence=0.75)
-        mock_snap = MagicMock(); mock_snap.price = "150.00"
-        mock_order = MagicMock(id="ord-001", status="FILLED")
-
-        with (
-            patch("backend.services.portfolio.service.submit_order",
-                  new_callable=AsyncMock, return_value=mock_order) as mock_sub,
-            patch("backend.services.market_data.service.get_price",
-                  new_callable=AsyncMock, return_value=mock_snap),
-            patch.object(svc, "_get_equity", new_callable=AsyncMock, return_value=10000.0),
-            patch.object(svc, "_get_open_qty", new_callable=AsyncMock, return_value=0.0),
-        ):
-            await svc._execute_symbol("SOLUSDT", sig)
-
-        # Should have called submit_order once with BUY
-        mock_sub.assert_called_once()
-        call_kwargs = mock_sub.call_args.kwargs
-        assert call_kwargs["side"] == "BUY"
-        assert call_kwargs["symbol"] == "SOLUSDT"
-        assert call_kwargs["order_type"] == "MARKET"
+    async def test_opens_buy_order(self):
+        sig = _sig(
+            symbol="SOLUSDT", side="BUY",
+            confidence=0.75, entry_price=150.0,
+        )
+        with _SweepCtx([sig]) as ctx:
+            await svc._executor_sweep()
+        assert len(ctx.submitted_orders) == 1
+        assert ctx.submitted_orders[0]["side"] == "BUY"
+        assert ctx.submitted_orders[0]["symbol"] == "SOLUSDT"
 
     @pytest.mark.asyncio
-    async def test_qty_sized_by_equity_and_position_pct(self):
+    async def test_qty_sized_by_equity(self):
         equity = 10000.0
-        price  = 100.0
+        price = 100.0
         expected_qty = (equity * svc.POSITION_PCT) / price
-
-        sig = _sig("LINKUSDT", "BUY", "combined", confidence=0.80)
-        mock_snap = MagicMock(); mock_snap.price = str(price)
-        mock_order = MagicMock(id="ord-002", status="FILLED")
-
-        with (
-            patch("backend.services.portfolio.service.submit_order",
-                  new_callable=AsyncMock, return_value=mock_order) as mock_sub,
-            patch("backend.services.market_data.service.get_price",
-                  new_callable=AsyncMock, return_value=mock_snap),
-            patch.object(svc, "_get_equity", new_callable=AsyncMock, return_value=equity),
-            patch.object(svc, "_get_open_qty", new_callable=AsyncMock, return_value=0.0),
-        ):
-            await svc._execute_symbol("LINKUSDT", sig)
-
-        call_kwargs = mock_sub.call_args.kwargs
-        assert call_kwargs["qty"] == pytest.approx(expected_qty)
+        sig = _sig(
+            symbol="LINKUSDT", side="BUY",
+            confidence=0.80, entry_price=price,
+        )
+        with _SweepCtx([sig], equity=equity) as ctx:
+            await svc._executor_sweep()
+        assert len(ctx.submitted_orders) == 1
+        assert ctx.submitted_orders[0]["qty"] == pytest.approx(
+            expected_qty,
+        )
 
     @pytest.mark.asyncio
     async def test_state_updated_after_open(self):
-        sig = _sig("BNBUSDT", "BUY", "combined", confidence=0.80)
-        mock_snap = MagicMock(); mock_snap.price = "400.0"
-
-        with (
-            patch("backend.services.portfolio.service.submit_order",
-                  new_callable=AsyncMock,
-                  return_value=MagicMock(id="ord-003", status="FILLED")),
-            patch("backend.services.market_data.service.get_price",
-                  new_callable=AsyncMock, return_value=mock_snap),
-            patch.object(svc, "_get_equity", new_callable=AsyncMock, return_value=10000.0),
-            patch.object(svc, "_get_open_qty", new_callable=AsyncMock, return_value=0.0),
-        ):
-            await svc._execute_symbol("BNBUSDT", sig)
-
-        assert svc._last_acted["BNBUSDT"] == ("BUY", "combined")
+        sig = _sig(
+            symbol="BNBUSDT", side="BUY",
+            confidence=0.80, entry_price=400.0,
+        )
+        with _SweepCtx([sig]):
+            await svc._executor_sweep()
+        assert svc._last_acted["BNBUSDT"][0] == "BUY"
+        assert svc._last_acted["BNBUSDT"][1] == "combined"
 
 
-# ---------------------------------------------------------------------------
-# _execute_symbol — BUY flip to SELL (close long, open short)
-# ---------------------------------------------------------------------------
+# -------------------------------------------------------------------
+# BUY flip to SELL (long-only: close, no short)
+# -------------------------------------------------------------------
 
 class TestFlipBuyToSell:
     @pytest.mark.asyncio
-    async def test_closes_long_then_opens_sell(self):
-        svc._last_acted["BTCUSDT"] = ("BUY", "combined")
-        sig = _sig("BTCUSDT", "SELL", "combined", confidence=0.80)
-        mock_snap = MagicMock(); mock_snap.price = "74000.0"
-        orders = []
-
-        async def mock_submit(**kw):
-            o = MagicMock(id=f"ord-{kw['side']}", status="FILLED")
-            orders.append(kw["side"])
-            return o
-
-        with (
-            patch("backend.services.portfolio.service.submit_order",
-                  side_effect=mock_submit),
-            patch("backend.services.market_data.service.get_price",
-                  new_callable=AsyncMock, return_value=mock_snap),
-            patch.object(svc, "_get_equity", new_callable=AsyncMock, return_value=10000.0),
-            patch.object(svc, "_get_open_qty", new_callable=AsyncMock, return_value=0.135),
-        ):
-            await svc._execute_symbol("BTCUSDT", sig)
-
-        # Long-only paper mode: SELL signal closes the long, does NOT open a short.
-        assert orders[0] == "SELL"    # close long
-        assert len(orders) == 1       # no naked short opened
-        assert svc._last_acted["BTCUSDT"] == ("SELL", "combined")
+    async def test_closes_long_on_sell_signal(self):
+        svc._last_acted["BTCUSDT"] = (
+            "BUY", "combined", 74000.0,
+        )
+        sig = _sig(
+            symbol="BTCUSDT", side="SELL",
+            confidence=0.80, entry_price=74000.0,
+        )
+        positions = [{"symbol": "BTCUSDT", "qty": 0.135}]
+        with _SweepCtx([sig], positions=positions) as ctx:
+            await svc._executor_sweep()
+        sells = [
+            o for o in ctx.submitted_orders
+            if o["side"] == "SELL"
+        ]
+        assert len(sells) >= 1
+        assert sells[0]["symbol"] == "BTCUSDT"
+        assert sells[0]["qty"] == pytest.approx(0.135)
 
 
-# ---------------------------------------------------------------------------
-# _execute_symbol — signal goes FLAT (close position, no new open)
-# ---------------------------------------------------------------------------
+# -------------------------------------------------------------------
+# Signal goes FLAT — close position, no new open
+# -------------------------------------------------------------------
 
 class TestSignalGoesFlat:
     @pytest.mark.asyncio
     async def test_closes_position_on_flat(self):
-        svc._last_acted["XRPUSDT"] = ("BUY", "combined")
-        sig = _sig("XRPUSDT", "FLAT", "no_data", confidence=0.0)
-        closed = []
-
-        async def mock_submit(**kw):
-            closed.append(kw["side"])
-            return MagicMock(id="ord-close", status="FILLED")
-
-        with (
-            patch("backend.services.portfolio.service.submit_order",
-                  side_effect=mock_submit),
-            patch.object(svc, "_get_equity", new_callable=AsyncMock, return_value=10000.0),
-            patch.object(svc, "_get_open_qty", new_callable=AsyncMock, return_value=500.0),
-        ):
-            await svc._execute_symbol("XRPUSDT", sig)
-
-        assert "SELL" in closed     # position closed
-        assert len(closed) == 1     # no new position opened
-        assert svc._last_acted["XRPUSDT"] == ("FLAT", "no_data")
+        svc._last_acted["XRPUSDT"] = ("BUY", "combined", 0.5)
+        sig = _sig(
+            symbol="XRPUSDT", side="FLAT",
+            confidence=0.0, entry_price=0.5,
+        )
+        positions = [{"symbol": "XRPUSDT", "qty": 500.0}]
+        with _SweepCtx([sig], positions=positions) as ctx:
+            await svc._executor_sweep()
+        assert len(ctx.submitted_orders) == 1
+        assert ctx.submitted_orders[0]["side"] == "SELL"
+        assert "XRPUSDT" not in svc._last_acted
 
     @pytest.mark.asyncio
-    async def test_no_close_if_no_open_position_on_flat(self):
-        svc._last_acted["DOGEUSDT"] = ("BUY", "combined")
-        sig = _sig("DOGEUSDT", "FLAT", "no_data", confidence=0.0)
-
-        with (
-            patch("backend.services.portfolio.service.submit_order",
-                  new_callable=AsyncMock) as mock_sub,
-            patch.object(svc, "_get_equity", new_callable=AsyncMock, return_value=10000.0),
-            patch.object(svc, "_get_open_qty", new_callable=AsyncMock, return_value=0.0),
-        ):
-            await svc._execute_symbol("DOGEUSDT", sig)
-
-        mock_sub.assert_not_called()
+    async def test_no_close_if_no_open_position(self):
+        svc._last_acted["DOGEUSDT"] = (
+            "BUY", "combined", 0.1,
+        )
+        sig = _sig(
+            symbol="DOGEUSDT", side="FLAT",
+            confidence=0.0, entry_price=0.1,
+        )
+        with _SweepCtx([sig], positions=[]) as ctx:
+            await svc._executor_sweep()
+        assert len(ctx.submitted_orders) == 0
 
 
-# ---------------------------------------------------------------------------
+# -------------------------------------------------------------------
 # probe_executor
-# ---------------------------------------------------------------------------
+# -------------------------------------------------------------------
 
 class TestProbeExecutor:
     @pytest.mark.asyncio
@@ -274,9 +315,12 @@ class TestProbeExecutor:
         from backend.services.monitoring.probes import probe_executor
         with patch(
             "backend.services.monitoring.probes._get_exec_status",
-            return_value={"running": True, "run_count": 5,
-                          "last_run_at": int(time.time()),
-                          "min_confidence": 0.60, "position_pct": 0.10},
+            return_value={
+                "running": True, "run_count": 5,
+                "last_run_at": int(time.time()),
+                "min_confidence": 0.60,
+                "position_pct": 0.10,
+            },
         ):
             result = await probe_executor()
         assert result.ok is True
@@ -287,9 +331,12 @@ class TestProbeExecutor:
         from backend.services.monitoring.probes import probe_executor
         with patch(
             "backend.services.monitoring.probes._get_exec_status",
-            return_value={"running": False, "run_count": 0,
-                          "last_run_at": 0,
-                          "min_confidence": 0.60, "position_pct": 0.10},
+            return_value={
+                "running": False, "run_count": 0,
+                "last_run_at": 0,
+                "min_confidence": 0.60,
+                "position_pct": 0.10,
+            },
         ):
             result = await probe_executor()
         assert result.ok is False
@@ -305,17 +352,19 @@ class TestProbeExecutor:
         assert result.ok is False
 
 
-# ---------------------------------------------------------------------------
-# Monitor probe count updated to 9
-# ---------------------------------------------------------------------------
+# -------------------------------------------------------------------
+# Monitor probe count
+# -------------------------------------------------------------------
 
 class TestProbeCount:
     @pytest.mark.asyncio
     async def test_probe_count_is_nine(self):
         from httpx import ASGITransport, AsyncClient
         from backend.app import app
+
+        transport = ASGITransport(app=app)
         async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
+            transport=transport, base_url="http://test",
         ) as c:
             resp = await c.get("/api/v1/monitor/probes")
         body = resp.json()

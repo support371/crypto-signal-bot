@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -170,11 +171,11 @@ describe('operator readiness gateway transport', () => {
 
 describe('operator readiness browser source safety', () => {
   it('contains no browser credential storage or direct operator Worker transport', async () => {
-    const [client, page, app, layout, gateway] = await Promise.all([
+    const [client, page, app, account, gateway] = await Promise.all([
       readFile(new URL('../lib/operatorReadinessApi.ts', import.meta.url), 'utf8'),
       readFile(new URL('../pages/OperatorReadiness.tsx', import.meta.url), 'utf8'),
       readFile(new URL('../AppCore.tsx', import.meta.url), 'utf8'),
-      readFile(new URL('../components/LayoutCore.tsx', import.meta.url), 'utf8'),
+      readFile(new URL('../pages/Account.tsx', import.meta.url), 'utf8'),
       readFile(new URL('../../api/operator/readiness.js', import.meta.url), 'utf8'),
     ]);
     const browserBoundary = `${client}\n${page}`;
@@ -218,6 +219,6 @@ describe('operator readiness browser source safety', () => {
     expect(gateway).toContain("response.setHeader('Allow', 'GET, HEAD, OPTIONS')");
     expect(app).toContain('path="/operator-readiness"');
     expect(app).toContain('<ProtectedPage>');
-    expect(layout).toContain('to="/operator-readiness"');
+    expect(account).toContain('to="/operator-readiness"');
   });
 });

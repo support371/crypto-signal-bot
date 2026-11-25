@@ -1,6 +1,6 @@
 """Unit tests for strategy evaluation and signal combiner."""
 import pytest
-from backend.logic.strategies import (
+from backend.policy.strategies import (
     trend_follow,
     mean_reversion,
     momentum,

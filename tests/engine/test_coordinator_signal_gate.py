@@ -311,7 +311,7 @@ class TestSignalsEvaluateEndpoint:
                     "/api/v1/signals/evaluate",
                     json={"symbol": "btcusdt"},
                 )
-        mock_eval.assert_called_once_with("BTCUSDT")
+        mock_eval.assert_called_once_with("BTCUSDT", strategy="ema_crossover")
 
     @pytest.mark.asyncio
     async def test_evaluate_500_on_service_error(self):

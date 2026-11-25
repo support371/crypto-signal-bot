@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { fetchBackendJson } from "@/lib/backend";
 
 type Provider = {
   name: string;
@@ -15,7 +15,7 @@ export default function IntegrationsStatus() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    apiFetch<{ providers: Provider[] }>("/api/v1/integrations/status")
+    fetchBackendJson<{ providers: Provider[] }>("/api/v1/integrations/status")
       .then((data) => setProviders(data.providers || []))
       .catch((err) => setError(err instanceof Error ? err.message : "Unable to load status"))
       .finally(() => setLoading(false));

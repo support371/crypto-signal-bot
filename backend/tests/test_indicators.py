@@ -1,7 +1,7 @@
 """Unit tests for the indicator library."""
 import math
 import pytest
-from backend.logic.indicators import (
+from backend.policy.indicators import (
     ema, last_ema,
     rsi, last_rsi,
     macd, last_macd,

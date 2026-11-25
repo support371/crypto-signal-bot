@@ -1,110 +1,252 @@
 # Decision Trace Specification
 
 > Defines the structured trace format for every trading decision.
+> Last verified against implementation: November 2026.
 
 ## Purpose
 
-Every trading decision — from signal detection through risk evaluation to execution — must emit a structured trace. Traces enable:
+Every trading decision — from signal detection through risk evaluation to execution — emits a structured trace. Traces enable:
 
 1. **Auditability**: Replay any decision to understand why it was made.
 2. **Determinism verification**: Same inputs must produce the same decision.
 3. **Debugging**: Pinpoint where a decision diverged from expectations.
 
-## Trace Schema
+## Implementation Overview
 
-```typescript
-interface DecisionTrace {
-  // Identity
-  trace_id: string;           // UUID, unique per decision
-  intent_id: string;          // Links to ExecutionIntent.id
-  timestamp: number;          // Unix epoch (seconds)
+The system has **two complementary tracing subsystems**:
 
-  // Input context
-  symbol: string;             // e.g. "BTCUSDT"
-  side: "BUY" | "SELL";
-  quantity: float;            // Requested quantity
-  price: float;               // Price at decision time
-  mode: "paper" | "live";
+| Subsystem | Module | Scope | Storage |
+|-----------|--------|-------|---------|
+| **DecisionTrace** (Pydantic) | `backend/models/decision_trace.py` | Structured per-intent traces with signal, risk, execution and guardian snapshots | JSON file via `backend/audit/store.py` |
+| **DecisionTracer** (ring buffer) | `backend/audit/tracer.py` | Signal executor decisions (BUY/SELL/CLOSE/HOLD) with config snapshots | In-memory deque, bounded by `trace_max_entries` setting |
 
-  // Signal stage
-  signal: {
-    regime: "TREND" | "RANGE" | "CHAOS";
-    direction: "UP" | "DOWN" | "NEUTRAL";
-    confidence: float;        // 0.0 - 1.0
-    features: {
-      spread_pct: float;
-      imbalance: float;
-      mid_vel: float;
-      depth_decay: float;
-      vol_spike: boolean;
-      short_reversal: boolean;
-    };
-  };
+Both are populated during the intent processing pipeline in `app.py`.
 
-  // Risk stage
-  risk: {
-    score: float;             // 0.0 - 1.0 (higher = riskier)
-    rules_evaluated: RuleTrace[];
-    approved: boolean;
-    combined_size_multiplier: float;
-    adjusted_quantity: float;  // After size multiplier
-    rejection_reasons: string[];
-  };
+---
 
-  // Execution stage
-  execution: {
-    status: "FILLED" | "RISK_REJECTED" | "FAILED" | "CANCELLED";
-    fill_price: float | null;
-    fill_quantity: float | null;
-    slippage_pct: float | null;
-    adapter: "paper" | "binance" | "bitget" | "btcc";
-    notes: string | null;
-  };
+## DecisionTrace Model
 
-  // Guardian state at decision time
-  guardian: {
-    kill_switch_active: boolean;
-    kill_switch_reason: string | null;
-    guardian_triggered: boolean;
-    drawdown_pct: float;
-    api_error_count: number;
-    failed_order_count: number;
-  };
-}
+Defined in `backend/models/decision_trace.py` as Pydantic v2 models. Serialized via `.to_dict()` → `.model_dump()`.
 
-interface RuleTrace {
-  rule_name: string;          // e.g. "MaxPosition", "PortfolioExposure"
-  passed: boolean;
-  reason: string;
-  size_multiplier: float;
-}
+```python
+class DecisionTrace(BaseModel):
+    # Identity
+    trace_id: str           # UUID, auto-generated
+    intent_id: str          # Links to ExecutionIntent.id
+    timestamp: float        # Unix epoch (seconds), auto-generated
+
+    # Input context
+    symbol: str             # e.g. "BTCUSDT"
+    side: str               # "BUY" | "SELL"
+    quantity: float         # Requested quantity
+    price: float            # Price at decision time
+    mode: str               # "paper" | "live"
+
+    # Nested snapshots
+    signal: SignalSnapshot
+    risk: RiskSnapshot
+    execution: ExecutionSnapshot
+    guardian: GuardianSnapshot
 ```
 
-## Current Implementation Status
+### SignalSnapshot
 
-### What exists today
+```python
+class SignalSnapshot(BaseModel):
+    regime: str = "UNKNOWN"       # "TREND" | "RANGE" | "CHAOS" | "UNKNOWN"
+    direction: str = "NEUTRAL"    # "UP" | "DOWN" | "NEUTRAL"
+    confidence: float = 0.0       # 0.0 – 1.0
+    horizon_minutes: int = 0      # Signal evaluation horizon
+```
 
-The current system emits partial traces:
+### RiskSnapshot
 
-- **Intent processing** (`_process_intent()` in `app.py`): Creates `ExecutionIntent` with id, status, notes. Appends to audit store.
-- **Risk evaluation** (`RiskRuleEngine.evaluate()`): Returns `RiskEngineResult` with per-rule results, combined multiplier, approval status.
-- **Audit store** (`logic/audit_store.py`): Persists intent dicts as JSON. Accessible via `/audit` endpoint.
-- **Risk events**: Appended separately via `append_risk_event()`.
+```python
+class RiskSnapshot(BaseModel):
+    score: float = 0.0                        # 0.0 – 1.0 (higher = riskier)
+    rules_evaluated: list[RuleTrace] = []     # Per-rule results
+    approved: bool = False
+    combined_size_multiplier: float = 1.0
+    adjusted_quantity: float | None = None    # After size multiplier
+    rejection_reasons: list[str] = []
+```
 
-### What's missing for full trace
+### RuleTrace
 
-1. **Signal stage**: Signal classification results are not attached to intent traces. The signal is computed in `build_market_state_result()` but not linked to the execution path.
-2. **Unified trace object**: Currently intent, risk event, and audit entry are separate records. They should be unified into a single `DecisionTrace`.
-3. **Guardian snapshot**: Guardian state at decision time is not captured in the trace.
-4. **Persistence**: Traces are in-memory. Need database persistence for replay.
+```python
+class RuleTrace(BaseModel):
+    rule_name: str            # e.g. "MaxPosition", "PortfolioExposure"
+    passed: bool
+    reason: str
+    size_multiplier: float = 1.0
+```
 
-## Implementation Roadmap
+### ExecutionSnapshot
 
-1. Create `backend/models/decision_trace.py` with the Pydantic model above.
-2. Modify `_process_intent()` to construct a `DecisionTrace` at each stage.
-3. Add `GET /trace/{intent_id}` endpoint to retrieve full traces.
-4. Add `GET /traces` with filtering by symbol, status, time range.
-5. Persist traces to the database alongside existing audit entries.
+```python
+class ExecutionSnapshot(BaseModel):
+    status: str = "PENDING"               # "FILLED" | "RISK_REJECTED" | "FAILED" | "CANCELLED" | "PENDING"
+    fill_price: float | None = None
+    fill_quantity: float | None = None
+    slippage_pct: float | None = None
+    adapter: str = "paper"                # "paper" | "binance" | "bitget" | "btcc"
+    notes: str | None = None
+```
+
+### GuardianSnapshot
+
+```python
+class GuardianSnapshot(BaseModel):
+    kill_switch_active: bool = False
+    kill_switch_reason: str | None = None
+    guardian_triggered: bool = False
+    drawdown_pct: float = 0.0
+    api_error_count: int = 0
+    failed_order_count: int = 0
+```
+
+---
+
+## DecisionTracer (Ring Buffer)
+
+Defined in `backend/audit/tracer.py`. Singleton instance: `decision_tracer`.
+
+Records every signal executor decision including **HOLD** decisions (why the system did NOT trade). Uses an in-memory `deque` bounded by `settings.trace_max_entries`.
+
+### TraceEntry Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `trace_id` | str | UUID |
+| `timestamp` | float | Unix epoch |
+| `symbol` | str | e.g. "BTCUSDT" |
+| `decision` | str | "BUY" / "SELL" / "CLOSE" / "HOLD" |
+| `side` | str \| None | "BUY" / "SELL" / None (for HOLD/CLOSE) |
+| `confidence` | float | Signal confidence |
+| `strategy_id` | str | Which strategy produced the signal |
+| `signal_side` | str | Raw signal direction from engine |
+| `equity` | float | Account equity at decision time |
+| `notional` | float | Position notional value |
+| `mode` | str | "paper" / "live" |
+| `hold_reasons` | list[HoldReason] | Structured reasons for HOLD decisions |
+| `fill_price` | float \| None | Execution fill price |
+| `fill_quantity` | float \| None | Filled quantity |
+| `fill_status` | str \| None | Fill result status |
+| `fill_error` | str \| None | Error message if execution failed |
+| `config_snapshot_hash` | str \| None | Hash of config at decision time |
+| `min_confidence_threshold` | float | Config: minimum confidence to trade |
+| `max_positions` | int | Config: max concurrent positions |
+| `position_pct` | float | Config: position size as fraction of equity |
+
+### HoldReason
+
+```python
+@dataclass
+class HoldReason:
+    code: str           # e.g. "LOW_CONFIDENCE", "MAX_POSITIONS", "GUARDIAN_TRIGGERED"
+    description: str
+    threshold: float | None = None
+    actual: float | None = None
+```
+
+### Tracer API
+
+| Method | Description |
+|--------|-------------|
+| `record(entry)` | Append a TraceEntry to the ring buffer |
+| `get_recent(n=50)` | Last n traces (newest first) as dicts |
+| `get_for_symbol(symbol, n=50)` | Traces filtered by symbol |
+| `get_hold_traces(n=50)` | HOLD decisions only |
+| `get_stats()` | Aggregate counts: total, buy, sell, close, hold, hold_pct, hold_reason_breakdown |
+| `flush()` | Clear all traces (testing only) |
+| `make_entry(**kwargs)` | Factory that reads current settings for config fields |
+
+---
+
+## ExecutionIntent Model
+
+Defined in `backend/models/execution_intent.py`. Pydantic v2 `BaseModel`.
+
+```python
+class ExecutionIntent(BaseModel):
+    id: str                        # UUID, auto-generated
+    symbol: str
+    side: Side                     # Enum: BUY | SELL
+    order_type: OrderType          # Enum: MARKET | LIMIT
+    quantity: float
+    price: float | None
+    time_in_force: TimeInForce     # Enum: GTC | IOC | FOK
+    status: IntentStatus           # Enum: see state machine
+    notes: str | None
+    created_at: float              # Unix epoch
+    updated_at: float              # Unix epoch
+    fill_price: float | None
+    fill_quantity: float | None
+    mode: str                      # "paper" | "live"
+    strategy_id: str | None
+    venue_id: str | None
+```
+
+---
+
+## Intent State Machine
+
+Defined in `backend/engine/state_machine.py`. Enforces valid transitions; raises `StateTransitionError` on invalid ones.
+
+```
+PENDING ──→ RISK_APPROVED ──→ SUBMITTED ──→ FILLED          (terminal)
+   │              │                │
+   │              │                ├──→ PARTIALLY_FILLED ──→ FILLED
+   │              │                │                    ├──→ CANCELLED
+   │              │                │                    └──→ FAILED
+   │              │                ├──→ CANCELLED        (terminal)
+   │              │                └──→ FAILED           (terminal)
+   │              └──→ FAILED
+   │
+   └──→ RISK_REJECTED                                   (terminal)
+```
+
+**Terminal states** (no further transitions): `FILLED`, `CANCELLED`, `FAILED`, `RISK_REJECTED`.
+
+The `transition()` function mutates the intent in place, updates `updated_at`, and optionally sets `notes`, `fill_price`, and `fill_quantity`.
+
+---
+
+## API Endpoints
+
+### Structured DecisionTrace endpoints (audit_v1)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/traces` | GET | Recent structured traces. Params: `symbol`, `status`, `limit` (default 50) |
+| `/trace/{intent_id}` | GET | Single trace by intent ID. Returns 404 if not found. |
+
+### Ring-buffer decision endpoints (decisions_v1)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/decisions` | GET | Recent executor decisions. Param: `n` (default 50, max 500) |
+| `/api/v1/decisions/holds` | GET | HOLD decisions only with structured reasons |
+| `/api/v1/decisions/stats` | GET | Aggregate counts: buy/sell/close/hold breakdown |
+| `/api/v1/decisions/{symbol}` | GET | Decisions filtered by symbol |
+
+---
+
+## Persistence
+
+### DecisionTrace storage (`backend/audit/store.py`)
+
+- Traces are appended via `append_trace(trace_data)` to a JSON file.
+- Each trace is also copied to the event log via `_copy_to_event_log("audit.trace", ...)`.
+- Retrieval: `get_traces(symbol, status, limit)` and `get_trace_by_intent_id(intent_id)`.
+- Thread-safe via `threading.Lock`.
+
+### DecisionTracer storage
+
+- In-memory `deque(maxlen=trace_max_entries)` on the singleton `decision_tracer`.
+- Not persisted across restarts. Suitable for operational dashboards and debugging.
+
+---
 
 ## Determinism Contract
 
@@ -114,4 +256,13 @@ For a decision to be deterministic:
 - **Processing**: feature extraction → signal classification → risk evaluation → fill simulation
 - **Output**: Same inputs must produce the same `DecisionTrace`
 
-The only non-deterministic element is the synthetic price generator (`_synthetic_price()`), which uses `random.gauss()`. For replay testing, seed the RNG or provide explicit prices.
+The paper adapter uses deterministic fill simulation (fills at requested price). The only non-deterministic element is the synthetic price generator for simulation mode, which uses `math.sin()` oscillations (deterministic given the same timestamp).
+
+---
+
+## Test Coverage
+
+Decision trace tests are in `backend/tests/test_decision_trace.py` (7 tests):
+
+1. **Model tests**: Default construction, full construction with all nested snapshots, serialization roundtrip.
+2. **API tests**: Empty traces endpoint, trace creation on paper buy, trace lookup by intent ID, 404 for missing trace, symbol filtering, risk rules capture, guardian state capture.

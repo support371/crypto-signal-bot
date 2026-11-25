@@ -1,9 +1,25 @@
-name: CI (manual advisory)
-# Required validation is owned by CircleCI. GitHub Actions is manual-only so
+name: CI (advisory)
+# Required validation is owned by CircleCI. GitHub Actions CI is advisory —
 # GitHub billing or runner availability cannot block engineering or release review.
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'src/**'
+      - 'package.json'
+      - 'tsconfig.json'
+      - 'vite.config.ts'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'src/**'
+      - 'package.json'
+      - 'tsconfig.json'
+      - 'vite.config.ts'
 
 jobs:
   backend:
@@ -35,7 +51,7 @@ jobs:
         run: python -m py_compile backend/app.py backend/public_app.py
 
       - name: Lint backend (ruff)
-        run: python -m ruff check backend/ --select E,W,F --ignore E402,F401,E501,E741 --exit-zero
+        run: python -m ruff check backend/ --select E,W,F --ignore E402,F401,E501,E741
 
       - name: Run full backend test suite
         run: python -m pytest backend/tests/ -x -q

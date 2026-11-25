@@ -1,7 +1,7 @@
 """Tests for the risk engine."""
 
 from backend.models_core import Features, Signal
-from backend.logic.risk import compute_risk_score, risk_gate
+from backend.risk.scoring import compute_risk_score, risk_gate
 
 
 def _make_features(**kwargs) -> Features:

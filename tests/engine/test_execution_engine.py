@@ -456,7 +456,7 @@ class TestIntentRouteShapes:
         mock_auth = AuthConfig(api_key=None, auth_enabled=False)
         order = _make_order()
 
-        common_patches = {
+        _common_patches = {
             "backend.routes.intent.get_auth_config": mock_auth,
             "backend.engine.coordinator.is_kill_switch_active": AsyncMock(return_value=False),
             "backend.engine.coordinator._check_risk_approval": AsyncMock(return_value=(True, "approved")),

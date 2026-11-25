@@ -53,6 +53,7 @@ class ExecutionIntent(BaseModel):
     mode: str = "paper"
     strategy_id: Optional[str] = None
     venue_id: Optional[str] = None
+    idempotency_key: Optional[str] = None
 
 
 class IntentRequest(BaseModel):
@@ -64,6 +65,7 @@ class IntentRequest(BaseModel):
     time_in_force: TimeInForce = TimeInForce.GTC
     strategy_id: Optional[str] = None
     venue_id: Optional[str] = None
+    idempotency_key: Optional[str] = None
 
 
 class IntentResponse(BaseModel):

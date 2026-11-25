@@ -44,7 +44,7 @@ from backend.replay.replayer import (
     ReplayCandle,
     _classify,
 )
-from backend.logic.indicators import (
+from backend.policy.indicators import (
     atr as compute_atr_series,
     bollinger_bands as compute_bb_series,
     ema as compute_ema_series,

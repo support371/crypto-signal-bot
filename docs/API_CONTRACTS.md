@@ -1,91 +1,116 @@
 # API Contracts
 
-> Canonical reference for all backend API endpoints. Updated as of PR #75.
+> Canonical reference for all backend API endpoints. Updated November 2026.
 
 ## Authentication
 
-Two auth mechanisms:
+**API Key** (`X-API-Key` header): Required for write endpoints when `BACKEND_API_KEY` is set. When not set, all endpoints are open (dev/paper mode). Auth-required endpoints are marked below with **Auth**.
 
-1. **API Key** (`X-API-Key` header): Required for write endpoints when `BACKEND_API_KEY` is set. When not set, all endpoints are open (dev mode).
-2. **Rate Limiting**: Per-IP, 120 requests/minute default. Applied via `Depends(rate_limit.rate_limit)`.
+## Core Endpoints
 
-## Endpoints
+These are the primary endpoints used by the frontend dashboard and external integrations.
 
 ### Health & Status
 
-#### `GET /health` (also `/healthz`, `/api/health`)
-No auth. No rate limit.
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/health` | No | Primary health check |
+| GET | `/healthz` | No | Alias for `/health` |
+| GET | `/api/health` | No | Alias for `/health` |
+| GET | `/ready` | No | Readiness probe with diagnostics |
+| GET | `/ping` | No | Simple liveness check |
+| GET | `/version` | No | Backend version info |
+
+#### `GET /health` response
 
 ```json
 {
   "status": "ok",
   "service": "crypto-signal-bot-backend",
-  "runtime": "asgi" | "render",
-  "mode": "paper" | "live",
-  "network": "testnet" | "mainnet",
-  "adapter": "paper" | "binance" | "bitget" | "btcc",
+  "runtime": "asgi",
+  "mode": "paper",
+  "network": "testnet",
+  "adapter": "paper",
   "kill_switch_active": false,
   "halted": false,
   "guardian_triggered": false,
-  "market_data_mode": "synthetic_paper" | "live_public_paper" | "execution_only",
+  "market_data_mode": "live_public_paper",
   "market_data_connected": false,
-  "market_data_source": "synthetic" | "binance-public" | "bitget-public",
+  "market_data_source": "coingecko-rest",
   "uptime_seconds": 123.456
 }
 ```
 
-#### `GET /ready`
-No auth. No rate limit. Readiness check with diagnostics (no secrets exposed).
+### Configuration
 
-#### `GET /exchange/status`
-Rate limited.
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/config` | No | Runtime configuration (no secrets) |
+| GET | `/config/snapshot` | No | Full config snapshot |
+| GET | `/runtime/status` | No | Runtime status |
+| GET | `/mainnet-gate/status` | No | Mainnet gate status |
+
+### Market Data
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/price` | No | Current price. Query: `?symbol=BTCUSDT` |
+| GET | `/signal/latest` | No | Latest signal classification. Query: `?symbol=BTCUSDT` |
+| POST | `/market-state` | **Auth** | Submit market state for signal classification |
+| GET | `/exchange/status` | No | Exchange connectivity status |
+| GET | `/exchange/supported` | No | Supported exchange list |
+| GET | `/exchange/circuit-breakers` | No | Circuit breaker statuses |
+| GET | `/exchange/validate` | No | Exchange validation |
+| POST | `/exchange/test-connection` | No | Test exchange connection |
+| GET | `/market/feed/status` | No | Market feed status |
+| GET | `/surge/status` | No | Surge scanner status |
+
+#### `GET /price` response
 
 ```json
 {
-  "trading_mode": "paper",
-  "execution_mode": "paper",
-  "market_data_mode": "synthetic_paper",
-  "paper_use_live_market_data": false,
-  "exchange": null,
-  "connected": false,
-  "connection_state": "disabled",
-  "fallback_active": false,
-  "stale": true,
-  "symbols": [],
-  "source": "synthetic",
-  "last_update_ts": null,
-  "last_error": null
+  "symbol": "BTCUSDT",
+  "price": 68000.0,
+  "change24h": 2.5,
+  "volume24h": 1000000.0,
+  "marketCap": 800000000000.0,
+  "timestamp": 1700000000.0,
+  "source": "coingecko-rest",
+  "market_data_mode": "live_public_paper"
 }
 ```
 
-#### `GET /config`
-Rate limited. Exposes runtime configuration (no secrets).
+Error responses: `404` (symbol not tracked), `503` (market data unavailable).
+
+#### `GET /signal/latest` response
 
 ```json
 {
-  "trading_mode": "paper",
-  "network": "testnet",
-  "exchange": "binance",
-  "adapter_mode": "paper",
-  "adapter_exchange": "binance",
-  "market_data_public_exchange": "binance",
-  "paper_use_live_market_data": false,
-  "config_path": "backend/config/config.yaml",
-  "cors_origins": ["..."],
-  "risk_config": {
-    "max_position_pct": 0.05,
-    "max_daily_loss_pct": 0.03,
-    "volatility_threshold": 0.08,
-    "max_leverage": 1.0,
-    "max_slippage_pct": 0.005
+  "available": true,
+  "signal": {
+    "symbol": "BTCUSDT",
+    "direction": "UP",
+    "confidence": 0.85,
+    "regime": "TREND",
+    "strategy_id": "momentum-v1"
   }
 }
 ```
 
+When unavailable: `{"available": false, "message": "No signal cached"}`.
+
 ### Portfolio & Trading
 
-#### `GET /balance`
-Rate limited.
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/balance` | No | Account balances and positions |
+| GET | `/positions` | No | Open positions |
+| GET | `/orders` | No | Order history. Query: `?symbol=BTCUSDT` |
+| POST | `/intent/paper` | **Auth** | Submit paper trade intent |
+| POST | `/intent/live` | **Auth** | Submit live trade intent (blocked by kill switch) |
+| POST | `/withdraw` | **Auth** | Paper withdrawal simulation |
+
+#### `GET /balance` response
 
 ```json
 {
@@ -94,39 +119,9 @@ Rate limited.
 }
 ```
 
-Note: Balance values are returned as **strings**. Cast to float for numeric operations.
+Note: Balance values are strings. Cast to float for numeric operations.
 
-#### `GET /positions`
-Rate limited.
-
-```json
-{
-  "positions": []
-}
-```
-
-#### `GET /orders`
-Rate limited. Optional query: `?symbol=BTCUSDT`
-
-```json
-{
-  "orders": [
-    {
-      "id": "uuid",
-      "symbol": "BTCUSDT",
-      "side": "BUY",
-      "order_type": "MARKET",
-      "quantity": 0.01,
-      "price": null,
-      "status": "FILLED",
-      "created_at": 1700000000.0
-    }
-  ]
-}
-```
-
-#### `POST /intent/paper`
-Auth required (when `BACKEND_API_KEY` set).
+#### `POST /intent/paper` request / response
 
 Request:
 ```json
@@ -135,180 +130,64 @@ Request:
   "side": "BUY",
   "order_type": "MARKET",
   "quantity": 0.01,
-  "price": null
+  "price": null,
+  "idempotency_key": "optional-unique-key"
 }
 ```
+
+The `idempotency_key` field is optional. When provided, duplicate requests with the same key return the original intent's ID with status `DUPLICATE_REJECTED` instead of executing again.
 
 Response:
 ```json
 {
   "id": "uuid",
-  "status": "FILLED" | "RISK_REJECTED" | "FAILED",
-  "notes": "Paper fill at 43000.00 (slippage: 0.014%)"
+  "status": "FILLED",
+  "notes": "Paper fill at 68000.00 (slippage: 0.014%)"
 }
 ```
 
-#### `POST /intent/live`
-Auth required. Blocked when kill-switch is active (returns 503).
-
-Same request/response schema as `/intent/paper`.
-
-### Market Data
-
-#### `GET /price`
-Rate limited. Optional query: `?symbol=BTCUSDT` (defaults to BTCUSDT).
-
-**Paper mode (synthetic):**
-```json
-{
-  "symbol": "BTCUSDT",
-  "price": 43017.035,
-  "change24h": 0.0,
-  "volume24h": 0.0,
-  "marketCap": 0.0,
-  "timestamp": 1700000000.0,
-  "source": "synthetic",
-  "exchange": null,
-  "market_data_mode": "synthetic_paper"
-}
-```
-
-**Error responses:**
-- `404` — `{"error": "symbol_not_tracked", "symbol": "XYZUSDT"}` (hybrid mode, symbol not in tracked list)
-- `503` — `{"error": "market_data_unavailable", "symbol": "BTCUSDT"}` (hybrid mode, feed down)
-- `503` — `{"error": "execution_unavailable", "symbol": "BTCUSDT"}` (live mode, adapter not connected)
-
-#### `GET /signal/latest`
-Rate limited. Optional query: `?symbol=BTCUSDT`
-
-Returns the most recent signal classification for the given symbol (or latest overall if no symbol specified).
-
-#### `POST /market-state`
-Auth required.
-
-Request:
-```json
-{
-  "symbol": "BTCUSDT",
-  "price": 43000.0,
-  "change24h": 2.5,
-  "volume24h": 1000000.0,
-  "marketCap": 800000000000.0
-}
-```
-
-Returns signal classification result. Also caches the result and broadcasts via WebSocket.
+Status values: `FILLED`, `RISK_REJECTED`, `FAILED`, `DUPLICATE_REJECTED`.
 
 ### Kill-Switch & Guardian
 
-#### `POST /kill-switch`
-Operator key required (when `BACKEND_API_KEY` set, requires `X-API-Key` header).
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/kill-switch` | **Auth** | Toggle global kill switch |
+| POST | `/kill-switch/scope` | **Auth** | Toggle scoped kill switch (strategy/venue) |
+| GET | `/guardian/status` | No | Guardian status and thresholds |
 
-Request:
-```json
-{
-  "activate": true,
-  "reason": "manual halt"
-}
-```
-
-Response:
-```json
-{
-  "kill_switch_active": true,
-  "action": "activated",
-  "reason": "manual halt",
-  "kill_switch_reason": "manual halt",
-  "audit_id": "audit-1700000000-1"
-}
-```
-
-#### `POST /kill-switch/scope`
-Operator key required.
-
-Request:
-```json
-{
-  "activate": true,
-  "scope_type": "strategy",
-  "scope_id": "momentum-v1",
-  "reason": "pausing strategy"
-}
-```
-
-#### `GET /guardian/status`
-Rate limited.
+#### `GET /guardian/status` response
 
 ```json
 {
-  "triggered": false,
-  "trigger_reason": null,
-  "trigger_ts": null,
   "kill_switch_active": false,
+  "triggered": false,
   "kill_switch_reason": null,
+  "trigger_reason": null,
   "drawdown_pct": 0.0,
+  "daily_loss_pct": 0.0,
   "api_error_count": 0,
   "failed_order_count": 0,
   "thresholds": {
+    "max_drawdown_pct": 3.0,
+    "max_daily_loss_pct": 5.0,
     "max_api_errors": 5,
-    "max_failed_orders": 3,
-    "max_drawdown_pct": 3.0
+    "max_failed_orders": 3
   },
   "market_data": { "..." }
 }
 ```
 
-### Reconciliation
+### Audit & Traces
 
-#### `GET /reconciliation/status`
-Rate limited.
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/audit` | No | Full audit trail |
+| GET | `/traces` | No | Decision traces. Query: `?symbol=&status=&limit=50` |
+| GET | `/trace/{intent_id}` | No | Single trace by intent ID |
+| GET | `/metrics` | No | Prometheus-format metrics |
 
-```json
-{
-  "status": "ok",
-  "report": {
-    "usdt_balance": 10000.0,
-    "realized_pnl": 0.0,
-    "lot_count": 0,
-    "trade_count": 0,
-    "timestamp": 1700000000.0
-  }
-}
-```
-
-Returns `{"status": "no_report"}` if reconciliation has not run yet.
-
-### Earnings
-
-#### `GET /earnings/summary`
-Rate limited. Returns P&L summary.
-
-#### `GET /earnings/history`
-Rate limited. Optional query: `?symbol=BTCUSDT&limit=100`
-
-```json
-{
-  "trades": [...]
-}
-```
-
-#### `POST /earnings/reset`
-Auth required. Clears the earnings ledger.
-
-### Audit
-
-#### `GET /audit`
-Rate limited. Returns the full audit trail (intents, orders, withdrawals, risk events, traces).
-
-### Decision Traces
-
-#### `GET /traces`
-Rate limited. Returns structured decision traces with optional filters.
-
-**Query parameters:**
-- `symbol` (optional): Filter by trading symbol (e.g. `BTCUSDT`)
-- `status` (optional): Filter by execution status (e.g. `FILLED`, `RISK_REJECTED`)
-- `limit` (optional): Max traces to return (1-500, default 50)
+#### `GET /traces` response
 
 ```json
 [
@@ -319,69 +198,189 @@ Rate limited. Returns structured decision traces with optional filters.
     "symbol": "BTCUSDT",
     "side": "BUY",
     "quantity": 0.001,
-    "price": 43000.0,
+    "price": 68000.0,
     "mode": "paper",
     "signal": {
       "regime": "TREND",
       "direction": "UP",
-      "confidence": 0.85,
-      "horizon_minutes": 15
+      "confidence": 0.85
     },
     "risk": {
       "score": 0.0,
       "rules_evaluated": [
         {"rule_name": "MaxPosition", "passed": true, "reason": "Within limits", "size_multiplier": 1.0}
       ],
-      "approved": true,
-      "combined_size_multiplier": 1.0,
-      "adjusted_quantity": 0.001,
-      "rejection_reasons": []
+      "approved": true
     },
     "execution": {
       "status": "FILLED",
-      "fill_price": 43010.0,
-      "fill_quantity": 0.001,
-      "slippage_pct": 0.00023,
-      "adapter": "paper",
-      "notes": "Paper fill"
+      "fill_price": 68010.0,
+      "adapter": "paper"
     },
     "guardian": {
       "kill_switch_active": false,
-      "kill_switch_reason": null,
-      "guardian_triggered": false,
-      "drawdown_pct": 0.0,
-      "api_error_count": 0,
-      "failed_order_count": 0
+      "drawdown_pct": 0.0
     }
   }
 ]
 ```
 
-#### `GET /trace/{intent_id}`
-Rate limited. Returns a single decision trace by intent ID. Returns 404 if not found.
+### Reconciliation
 
-### WebSocket
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/reconciliation/status` | No | Reconciliation report |
+| GET | `/reconciliation/exchange` | No | Exchange reconciliation |
 
-#### `WS /ws/updates`
-Streams real-time updates. Messages include a `type` field:
+### Earnings
 
-- `health` — Initial snapshot on connect
-- `kill_switch` — Kill-switch state change
-- `market_update` — Price/signal update for a symbol
-- `exchange_status` — Market data connection state change
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/earnings/summary` | No | P&L summary |
+| GET | `/earnings/history` | No | Trade history. Query: `?symbol=&limit=100` |
+| POST | `/earnings/reset` | **Auth** | Clear earnings ledger |
 
-### Metrics
+### Analysis
 
-#### `GET /metrics`
-Returns Prometheus-format metrics (if `prometheus_client` is installed).
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/analyze-features` | **Auth** | Feature extraction + signal classification |
+| POST | `/simulate-session` | **Auth** | Multi-step simulation |
 
-### Utility
+---
 
-#### `POST /withdraw`
-Auth required. Paper withdrawal simulation.
+## V1 API Routes
 
-#### `POST /analyze`
-Auth required. Feature extraction + signal classification.
+Versioned API routes under `/api/v1/`. These are mounted via routers and serve the richer operational interface.
 
-#### `POST /simulate`
-Auth required. Multi-step simulation.
+> **Note**: Several routers have a double-prefix issue (e.g., `/api/v1/console/api/v1/console/...`). The frontend uses the actual resolved paths. This is documented as-is until the router mounting is cleaned up in Phase 1.1.
+
+### Signals (`/api/v1/signals/...`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `.../public` | Public signal data |
+| GET | `.../status` | Signal engine status |
+| GET | `.../{symbol}` | Signal for specific symbol |
+| POST | `.../evaluate` | Force re-evaluate a symbol |
+
+### Portfolio (`/api/v1/.../portfolio`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `.../portfolio` | Portfolio summary |
+| GET | `.../portfolio/trades` | Trade history |
+| GET | `.../portfolio/positions` | Position details |
+| GET | `.../portfolio/pnl/daily` | Daily P&L |
+| GET | `.../portfolio/equity-history` | Equity curve |
+| POST | `.../portfolio/reset` | Reset portfolio |
+
+### Guardian (`/api/v1/.../guardian`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `.../guardian/status` | Guardian status (v1) |
+| POST | `.../guardian/reset` | Reset guardian counters |
+| GET | `.../guardian/thresholds` | Current thresholds |
+| POST | `.../guardian/set-nav` | Set NAV baseline |
+
+### Console (`/api/v1/console/...`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `.../status` | Console status |
+| GET | `.../audit` | Console audit log |
+| POST | `.../trade` | Submit trade via console |
+| POST | `.../signal-override` | Set signal override |
+| DELETE | `.../signal-override/{symbol}` | Cancel signal override |
+| POST | `.../signal-reeval` | Force signal re-evaluation |
+| POST | `.../kill-switch` | Toggle kill switch via console |
+| POST | `.../guardian/reset` | Reset guardian via console |
+| POST | `.../portfolio/reset` | Reset portfolio via console |
+| POST | `.../positions/close` | Close position |
+| POST | `.../positions/close-all` | Close all positions |
+| POST | `.../positions/cancel-order` | Cancel order |
+| GET/POST | `.../guardian/thresholds` | Get/update thresholds |
+
+### Decisions (`/api/v1/decisions/...`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `.../decisions` | Recent decisions |
+| GET | `.../decisions/holds` | HOLD decisions |
+| GET | `.../decisions/stats` | Decision statistics |
+| GET | `.../decisions/{symbol}` | Decisions for symbol |
+
+### Monitoring (`/api/v1/monitor/...`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `.../status` | Monitor status |
+| GET | `.../probes` | Available probes |
+| POST | `.../run` | Run probes now |
+| GET | `.../ingestion` | Ingestion telemetry |
+| GET | `.../ingestion/{symbol}` | Symbol ingestion telemetry |
+| POST | `.../ingestion/symbols` | Reconfigure symbols |
+
+### Backtest & Replay
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `.../backtest/strategies` | Available strategies |
+| POST | `.../backtest` | Run backtest |
+| POST | `.../backtest/compare` | Compare strategies |
+| POST | `.../backtest/live` | Live backtest |
+| POST | `.../replay` | Run replay |
+| GET | `.../replay/strategies` | Replay strategies |
+
+### Orders (`/api/v1/.../orders`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `.../orders` | List orders |
+| POST | `.../orders` | Create order |
+| GET | `.../orders/{order_id}` | Get order by ID |
+
+### Risk
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `.../risk/evaluate` | Evaluate risk for intent |
+
+---
+
+## WebSocket Endpoints
+
+| Path | Description |
+|------|-------------|
+| `/ws/updates` | Primary real-time update stream |
+| `/ws` | Alias WebSocket endpoint |
+| `/stream` | Streaming endpoint |
+| `/stream/latest` | GET — latest stream snapshot |
+
+### WebSocket message types
+
+All messages include a `type` field:
+
+| Type | Direction | Description |
+|------|-----------|-------------|
+| `status` | Server → Client | Connection status on connect |
+| `ping` | Server → Client | Heartbeat (every 10s) |
+| `ticker` | Server → Client | Price ticker update |
+| `health` | Server → Client | Health state change |
+| `kill_switch` | Server → Client | Kill-switch state change |
+| `market_update` | Server → Client | Price/signal update for a symbol |
+| `exchange_status` | Server → Client | Market data connection state change |
+| `order_update` | Server → Client | Order fill/status change |
+| `guardian_alert` | Server → Client | Guardian threshold breach |
+
+---
+
+## Safe-Mode Behavior
+
+Per CLAUDE.md safety constraints:
+
+- **Paper mode**: All endpoints return real simulated data, not fabricated success values
+- **Kill switch**: When active, `POST /intent/live` returns 503; `POST /intent/paper` still works
+- **No withdrawal execution**: `/withdraw` performs paper simulation only
+- **Missing live data**: Returns typed error responses, never silent fabrication

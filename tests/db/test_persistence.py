@@ -233,7 +233,8 @@ class TestPositionFIFO:
 class TestMigrationStructure:
     def test_migration_has_upgrade_and_downgrade(self):
         """Initial migration must have both upgrade() and downgrade()."""
-        import importlib.util, os
+        import importlib.util
+        import os
         migration_path = os.path.join(
             os.path.dirname(__file__),
             "../../backend/db/migrations/0001_initial.py"

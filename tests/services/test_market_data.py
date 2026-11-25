@@ -210,27 +210,30 @@ class TestOrderedAdapterFailover:
 
 class TestStalenessDetection:
     @pytest.mark.asyncio
-    async def test_stale_exception_raised_when_cache_exists_and_adapter_fails(self):
+    async def test_stale_snapshot_returned_when_cache_exists_and_adapter_fails(self):
         """
         When adapter fails AND there is a cached ticker:
-        MarketDataStale is raised (not MarketDataUnavailable).
-        The stale ticker is attached.
+        A stale PriceSnapshot is returned (stale=True), not an exception.
         """
         ticker = _make_ticker()
         old_ts = int(time.time()) - (PRICE_STALE_THRESHOLD_SECONDS + 10)
         _last_known["BTCUSDT"] = (ticker, old_ts)
 
         adapter = MagicMock()
-        adapter.fetch_ticker = AsyncMock(side_effect=AdapterUnavailableError("down"))
+        adapter.fetch_ticker = AsyncMock(
+            side_effect=AdapterUnavailableError("down"),
+        )
         adapter.exchange_name = "test"
 
-        with patch("backend.services.market_data.service._get_adapters",
-                   new=AsyncMock(return_value=[adapter])):
-            with pytest.raises(MarketDataStale) as exc_info:
-                await get_price("BTCUSDT")
+        with patch(
+            "backend.services.market_data.service._get_adapters",
+            new=AsyncMock(return_value=[adapter]),
+        ):
+            snap = await get_price("BTCUSDT")
 
-        assert exc_info.value.stale_ticker is not None
-        assert float(exc_info.value.stale_ticker.price) == pytest.approx(50_000.0)
+        assert snap.stale is True
+        assert float(snap.price) == pytest.approx(50_000.0)
+        assert snap.market_data_mode == "unavailable"
 
         # Clean up
         del _last_known["BTCUSDT"]

@@ -300,7 +300,7 @@ async def reset_portfolio_route(body: PortfolioResetRequest) -> PortfolioResetOu
 
     from backend.config.runtime import get_runtime_config
     from backend.logic import context
-    from backend.logic.audit_store import append_risk_event
+    from backend.audit.store import append_risk_event
     from backend.services.guardian_bot.service import (
         deactivate_kill_switch,
         get_guardian_status,

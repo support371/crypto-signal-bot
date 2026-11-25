@@ -90,7 +90,7 @@ class TestStopLoss:
             "backend.services.surge_scanner.service._close_position_emergency",
             new=AsyncMock(),
         ) as mock_close:
-            alert = await scanner._scan_symbol(symbol)
+            _alert = await scanner._scan_symbol(symbol)
 
         mock_close.assert_not_called()
         assert scanner._stop_losses_triggered == 0

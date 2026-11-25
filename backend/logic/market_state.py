@@ -2,8 +2,8 @@
 
 import time
 from typing import Any, Dict, Optional
-from backend.logic.risk import compute_risk_score, risk_gate
-from backend.logic.signals import build_signal
+from backend.risk.scoring import compute_risk_score, risk_gate
+from backend.policy.signals import build_signal
 from backend.models_core import Features
 from backend.config.runtime import get_runtime_config
 

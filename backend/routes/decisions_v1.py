@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query
 
-from backend.logic.decision_tracer import decision_tracer
+from backend.audit.tracer import decision_tracer
 
 router = APIRouter(prefix="/api/v1/decisions", tags=["decisions"])
 

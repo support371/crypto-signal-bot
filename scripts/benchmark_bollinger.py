@@ -1,7 +1,7 @@
 
 import time
 import random
-from backend.logic.indicators import last_bollinger
+from backend.policy.indicators import last_bollinger
 
 def benchmark():
     n = 1000

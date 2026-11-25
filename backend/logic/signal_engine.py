@@ -19,14 +19,14 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from backend.logic.indicators import (
+from backend.policy.indicators import (
     last_atr,
     last_bollinger,
     last_ema,
     last_macd,
     last_rsi,
 )
-from backend.logic.strategies import (
+from backend.policy.strategies import (
     combine_strategies,
     momentum,
     mean_reversion,

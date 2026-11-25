@@ -2,7 +2,7 @@
 import time
 import random
 from typing import List, Optional, Tuple
-from backend.logic.indicators import ema, macd as original_macd
+from backend.policy.indicators import ema, macd as original_macd
 
 def optimized_macd(
     values: List[float],
